@@ -35,34 +35,11 @@ pub fn bind_keys(cx: &mut App) {
     ]);
 }
 
-/// Which topbar action fired; the shell registers one callback for all of them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Action {
-    Search,
-    Theme,
-    Accounts,
-    View,
-    Keys,
-    Sync,
-}
+#[path = "topbar_mode.rs"]
+mod mode;
 
-/// One action pill: its element id, its label, its key hint and the action it fires.
-struct Pill {
-    id: &'static str,
-    label: &'static str,
-    hint: Option<&'static str>,
-    action: Action,
-}
-
-/// The action pills, in prototype order after the search filter.
-#[rustfmt::skip]
-const PILLS: [Pill; 5] = [
-    Pill { id: "top-theme", label: "Theme", hint: Some("T"), action: Action::Theme },
-    Pill { id: "top-accounts", label: "Accounts", hint: None, action: Action::Accounts },
-    Pill { id: "top-view", label: "View", hint: Some("Alt+V"), action: Action::View },
-    Pill { id: "top-keys", label: "Keys", hint: Some("?"), action: Action::Keys },
-    Pill { id: "top-sync", label: "Sync", hint: Some("Alt+S"), action: Action::Sync },
-];
+pub use mode::Action;
+use mode::{PILLS, Pill};
 
 /// The callback every topbar action fires, on the UI thread.
 type OnAction = Rc<dyn Fn(Action, &mut App)>;
