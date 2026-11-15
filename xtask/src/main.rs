@@ -9,6 +9,10 @@ mod bench_data_tests;
 mod bench_git_fixture;
 #[cfg(test)]
 mod bench_git_fixture_tests;
+#[cfg(test)]
+mod bench_git_payload;
+#[cfg(test)]
+mod bench_git_payload_tests;
 mod bench_rng;
 mod lock_drift;
 #[cfg(test)]
