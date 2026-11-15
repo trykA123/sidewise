@@ -1,30 +1,66 @@
-//! Primary sidebar control (`New comparison`): interactive button semantics, focus and activation.
+//! Interactive sidebar row controls: shared button wrapper and primary control.
 
-use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{AnyElement, KeyDownEvent, MouseButton, ReadGlobal as _, Role, transparent_black};
+use gpui_kit::base::{ObservedElement, TestSupportExt as _};
+use gpui_kit::{
+    AnyElement, FocusHandle, KeyDownEvent, MouseButton, ReadGlobal as _, Role, Stateful,
+    transparent_black,
+};
 use navo_ui::prelude::*;
 
 use super::{Entry, Sidebar, SidebarEvent};
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::{DIMS, ModeTokens};
 
+/// Specification for one interactive sidebar row control.
+struct RowControl<'a> {
+    id: ElementId,
+    entry: &'a Entry,
+    focus: FocusHandle,
+    event: SidebarEvent,
+}
+
 impl Sidebar {
-    /// Interactive `New comparison` row wrapping [`Self::row_view`] with button role and focus.
+    /// Interactive `New comparison` row wrapping [`Self::action_row`].
     pub(super) fn primary_row(
         &self,
         entry: &Entry,
         m: &ModeTokens,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        self.action_row(
+            RowControl {
+                id: "new-compare".into(),
+                entry,
+                focus: self.new_compare_focus.clone(),
+                event: SidebarEvent::NewCompare,
+            },
+            m,
+            cx,
+        )
+        .into_any_element()
+    }
+
+    /// Builds an interactive button row around [`Self::row_view`] with focus tracking and activation.
+    fn action_row(
+        &self,
+        control: RowControl<'_>,
+        m: &ModeTokens,
+        cx: &mut Context<Self>,
+    ) -> ObservedElement<Stateful<Div>> {
+        let RowControl {
+            id,
+            entry,
+            focus,
+            event,
+        } = control;
         let (ring, hover) = (m.accent, m.accent_tint);
         let ring_w = px(SidewiseTheme::global(cx).spec.ring_px);
-        let focus = self.new_compare_focus.clone();
         self.row_view(entry, m, cx)
-            .id("new-compare")
+            .id(id)
             .role(Role::Button)
-            .aria_label("New comparison")
+            .aria_label(entry.label.clone())
             .test_support()
-            .track_focus(&self.new_compare_focus)
+            .track_focus(&focus)
             .rounded(DIMS.btn_r)
             .border(ring_w)
             .border_color(transparent_black())
@@ -35,9 +71,9 @@ impl Sidebar {
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 focus.focus(window, cx);
             })
-            .on_click(cx.listener(|_, _, _, cx| {
+            .on_click(cx.listener(move |_, _, _, cx| {
                 cx.stop_propagation();
-                cx.emit(SidebarEvent::NewCompare);
+                cx.emit(event);
             }))
             .on_key_down(|key: &KeyDownEvent, _, cx| {
                 let stroke = &key.keystroke;
@@ -46,6 +82,5 @@ impl Sidebar {
                     cx.stop_propagation();
                 }
             })
-            .into_any_element()
     }
 }
