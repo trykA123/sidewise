@@ -6,6 +6,10 @@ mod bench_data_large;
 #[cfg(test)]
 mod bench_data_tests;
 #[cfg(test)]
+mod bench_git_commits;
+#[cfg(test)]
+mod bench_git_commits_tests;
+#[cfg(test)]
 mod bench_git_fixture;
 #[cfg(test)]
 mod bench_git_fixture_tests;
