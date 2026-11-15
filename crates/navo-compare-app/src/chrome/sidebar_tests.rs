@@ -202,7 +202,7 @@ impl ToggleHost {
             sidebar,
             parent_toggled: Rc::new(Cell::new(false)),
             parent_keys: Rc::new(Cell::new(0)),
-            outside: cx.focus_handle(),
+            outside: cx.focus_handle().tab_stop(true),
             input: text_field_state("", window, cx),
             _sub,
         }
@@ -542,4 +542,101 @@ fn tab_close_emits_close_tab_only_with_size_and_keeps_textfield_focus(cx: &mut T
     })
     .expect("close tab");
     assert_eq!(*rig.events.borrow(), vec![SidebarEvent::CloseTab(1)]);
+}
+
+/// Sends `key` in `window` and asserts `target` gains focus.
+fn assert_focus_step(
+    window: &mut gpui_kit::Window,
+    key: &str,
+    target: impl Into<gpui_kit::ElementId>,
+    cx: &mut App,
+) {
+    window.press(key, cx);
+    window.render_frame(cx);
+    assert_eq!(window.find(target).focused(), Some(true), "{key}");
+}
+
+/// Checks root-entry and wrapping traversal with empty and updated tabs, propagation, and Enter/Space.
+fn assert_empty_and_grown_navigation(rig: &HostRig, cx: &mut TestAppContext) {
+    cx.update_window(rig.window, |_, window, cx| {
+        rig.view.update(cx, |sb, cx| sb.set_tabs(vec![], 0, cx));
+        rig.view.read(cx).handle.clone().focus(window, cx);
+        window.render_frame(cx);
+        assert_focus_step(window, "up", "new-compare", cx);
+        assert_focus_step(window, "tab", "new-compare", cx);
+
+        rig.view.update(cx, |sb, cx| {
+            sb.set_tabs(vec!["First".into(), "Second".into()], 0, cx)
+        });
+        window.render_frame(cx);
+        assert_focus_step(window, "down", ("open-tab", 0usize), cx);
+        assert_focus_step(window, "tab", ("open-tab", 1usize), cx);
+        assert_focus_step(window, "tab", "new-compare", cx);
+        assert_focus_step(window, "shift-tab", ("open-tab", 1usize), cx);
+        assert_focus_step(window, "up", ("open-tab", 0usize), cx);
+        assert!(rig.events.borrow().is_empty(), "focus move emits nothing");
+
+        let before = rig.parent_keys.get();
+        window.press("enter", cx);
+        for key in ["ctrl-down", "shift-up", "ctrl-tab", "alt-tab", "a"] {
+            window.press(key, cx);
+        }
+        assert_eq!(rig.parent_keys.get(), before + 5);
+    })
+    .expect("empty and grown navigation");
+    assert_eq!(*rig.events.borrow(), vec![SidebarEvent::SelectTab(0)]);
+}
+
+/// Down/Up and Tab/Shift+Tab cycle `New comparison` and `Open tabs`, skip static rows, and wrap cleanly.
+#[gpui_kit::test]
+fn navigation_cycles_wrapped_rows_including_root_empty_and_set_tabs(cx: &mut TestAppContext) {
+    let rig = open_host_with_outside(cx);
+    cx.update_window(rig.window, |_, window, cx| {
+        assert_focus_step(window, "down", "new-compare", cx);
+        assert_focus_step(window, "down", ("open-tab", 0usize), cx);
+        assert_focus_step(window, "down", "new-compare", cx);
+        assert_focus_step(window, "up", ("open-tab", 0usize), cx);
+
+        rig.view.read(cx).handle.clone().focus(window, cx);
+        window.render_frame(cx);
+        assert_focus_step(window, "shift-tab", ("open-tab", 0usize), cx);
+    })
+    .expect("initial navigation");
+    assert_empty_and_grown_navigation(&rig, cx);
+}
+
+/// Pressing `Tab` stays in `Sidebar` when focused there, and keeps normal `Root` traversal on an outside `TextField`.
+#[gpui_kit::test]
+fn outside_textfield_tab_keeps_root_traversal_outside_sidebar(cx: &mut TestAppContext) {
+    let rig = open_host_with_outside(cx);
+    cx.update_window(rig.window, |_, window, cx| {
+        rig.view.update(cx, |sb, cx| {
+            sb.set_tabs(vec!["First".into(), "Second".into()], 0, cx)
+        });
+        window.render_frame(cx);
+        rig.view.read(cx).tab_focuses[1].clone().focus(window, cx);
+        window.render_frame(cx);
+        assert_focus_step(window, "tab", "new-compare", cx);
+
+        rig.input.update(cx, |input, cx| input.focus(window, cx));
+        window.render_frame(cx);
+        assert!(rig.input.read(cx).focus_handle(cx).is_focused(window));
+        assert!(!rig.view.read(cx).contains_focus(window, cx));
+
+        window.press("tab", cx);
+        window.render_frame(cx);
+        assert!(
+            rig.outside.is_focused(window),
+            "Tab must use Root traversal"
+        );
+        assert!(!rig.view.read(cx).contains_focus(window, cx));
+
+        rig.input.update(cx, |input, cx| input.focus(window, cx));
+        window.render_frame(cx);
+        window.press("down", cx);
+        window.render_frame(cx);
+        assert!(!rig.view.read(cx).contains_focus(window, cx));
+    })
+    .expect("outside textfield tab");
+    assert!(rig.events.borrow().is_empty());
 }

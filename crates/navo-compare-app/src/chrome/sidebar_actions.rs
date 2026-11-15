@@ -13,6 +13,13 @@ use super::{Entry, Sidebar, SidebarEvent};
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::{DIMS, ModeTokens};
 
+/// Direction for keyboard row traversal inside [`Sidebar`].
+#[derive(Clone, Copy)]
+pub(super) enum RowDirection {
+    Next,
+    Previous,
+}
+
 /// Descriptors for rendering an open-tab row from `Sidebar::tabs`.
 pub(super) struct TabRow<'a> {
     index: usize,
@@ -164,5 +171,25 @@ impl Sidebar {
                     cx.stop_propagation();
                 }
             })
+    }
+
+    /// Moves focus across `New comparison` and `Open tabs`, wrapping in both directions.
+    pub(super) fn focus_row(&self, direction: RowDirection, window: &mut Window, cx: &mut App) {
+        let count = 1 + self.tab_focuses.len();
+        let current = std::iter::once(&self.new_compare_focus)
+            .chain(self.tab_focuses.iter())
+            .position(|handle| handle.is_focused(window));
+        let target_ix = match (current, direction) {
+            (Some(i), RowDirection::Next) => (i + 1) % count,
+            (Some(i), RowDirection::Previous) => (i + count - 1) % count,
+            (None, RowDirection::Next) => 0,
+            (None, RowDirection::Previous) => count - 1,
+        };
+        let target = if target_ix == 0 {
+            &self.new_compare_focus
+        } else {
+            &self.tab_focuses[target_ix - 1]
+        };
+        target.focus(window, cx);
     }
 }

@@ -16,9 +16,9 @@ use crate::theme_data::palettes::{DIMS, ModeTokens};
 #[path = "sidebar_actions.rs"]
 mod actions;
 
-gpui_kit::actions!(sidebar, [ToggleRail]);
+gpui_kit::actions!(sidebar, [ToggleRail, NextRow, PreviousRow]);
 
-/// Key context of the sidebar root; Ctrl+\ is bound inside it.
+/// Key context of the sidebar root; Ctrl+\ and row traversal keys bind inside it.
 const CONTEXT: &str = "Sidebar";
 /// The mark side both modes draw: the Material pack's 1x bucket.
 const MARK: u32 = 16;
@@ -34,9 +34,15 @@ pub enum SidebarEvent {
     RailToggled(bool),
 }
 
-/// Binds Ctrl+\ in the `Sidebar` context; the shell calls it from its own `bind_keys`.
+/// Binds `Sidebar`-scoped keys; the shell calls this from its own `bind_keys`.
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("ctrl-\\", ToggleRail, Some(CONTEXT))]);
+    cx.bind_keys([
+        KeyBinding::new("ctrl-\\", ToggleRail, Some(CONTEXT)),
+        KeyBinding::new("down", NextRow, Some(CONTEXT)),
+        KeyBinding::new("tab", NextRow, Some(CONTEXT)),
+        KeyBinding::new("up", PreviousRow, Some(CONTEXT)),
+        KeyBinding::new("shift-tab", PreviousRow, Some(CONTEXT)),
+    ]);
 }
 
 /// A row's mark: a bundled chrome glyph, or a Material file mark from U11c.
@@ -337,14 +343,21 @@ impl Render for Sidebar {
             side.spec.light
         };
         let (from, to) = (self.from, self.width());
-        let sections = self.sections();
-        let footer = self.footer_view(&m, cx);
         let body = div()
             .key_context(CONTEXT)
             .track_focus(&self.handle)
+            .tab_group()
             .on_action(cx.listener(|this, _: &ToggleRail, _, cx| {
                 cx.stop_propagation();
                 this.toggle_rail(cx);
+            }))
+            .on_action(cx.listener(|this, _: &NextRow, window, cx| {
+                this.focus_row(actions::RowDirection::Next, window, cx);
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &PreviousRow, window, cx| {
+                this.focus_row(actions::RowDirection::Previous, window, cx);
+                cx.stop_propagation();
             }))
             .flex()
             .flex_col()
@@ -358,12 +371,8 @@ impl Render for Sidebar {
             .px(DIMS.inset_x)
             .pt(DIMS.inset_y)
             .gap_3()
-            .children(
-                sections
-                    .iter()
-                    .map(|section| self.group_view(section, &m, cx)),
-            )
-            .child(footer);
+            .children(self.sections().iter().map(|s| self.group_view(s, &m, cx)))
+            .child(self.footer_view(&m, cx));
         match motion::anim("sidebar-width", side.motion.side_ms, cx) {
             Some(enter) => body
                 .with_animation("sidebar-width", enter, move |el, delta| {
