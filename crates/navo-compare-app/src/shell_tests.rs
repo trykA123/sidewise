@@ -1,10 +1,12 @@
 //! View tests of the shell: tab rules (NS11), keys, focus and closing the last tab.
 
+use gpui_kit::base::test_support::snapshots;
 use gpui_kit::component::theme::{Theme as KitTheme, ThemeMode};
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Entity, EntityId, Point, ReadGlobal,
-    TestAppContext, WindowAppearance, WindowBounds, WindowOptions, px, size,
+    AnyWindowHandle, App, AppContext as _, Bounds, Entity, EntityId, Modifiers, Point, ReadGlobal,
+    Role, TestAppContext, VisualTestContext, WindowAppearance, WindowBounds, WindowOptions, px,
+    size,
 };
 use navo_compare_profile::appearance::PaletteId;
 use navo_ui::tokens::{self, Mode};
@@ -310,4 +312,212 @@ fn shell_defaults_to_violet_without_prior_sidewise_global(cx: &mut TestAppContex
         Shell::apply_appearance(WindowAppearance::Dark, cx);
         assert_theme_projection(cx, PaletteId::Violet, Mode::Dark);
     });
+}
+
+/// Opens a sized, themed `Shell` window in Light or Dark mode and renders one frame.
+fn shell_at(cx: &mut TestAppContext, width: f32, mode: Mode) -> (AnyWindowHandle, Entity<Shell>) {
+    let (window, view) = cx.update(|cx| {
+        gpui_kit::init(cx);
+        tokens::apply(mode, cx);
+        bind_keys(cx);
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: Point::default(),
+                size: size(px(width), px(600.)),
+            })),
+            ..Default::default()
+        };
+        gpui_kit::open_window(options, cx, |window, cx| {
+            cx.new(|cx| Shell::new(window, cx))
+        })
+        .expect("open test window")
+    });
+    if mode.is_dark() {
+        cx.update(|cx| Shell::apply_appearance(WindowAppearance::Dark, cx));
+    }
+    cx.update_window(window, |_, window, cx| window.render_frame(cx))
+        .expect("window");
+    (window, view)
+}
+
+/// Clicks the center of an element by id and advances the test executor.
+fn click_id(cx: &mut TestAppContext, window: AnyWindowHandle, id: &'static str) {
+    let center = cx
+        .update_window(window, |_, window, _| window.find(id).bounds().center())
+        .expect("window");
+    VisualTestContext::from_window(window, cx).simulate_click(center, Modifiers::none());
+    cx.run_until_parked();
+    cx.update_window(window, |_, window, cx| window.render_frame(cx))
+        .expect("window");
+}
+
+/// Start-mode Topbar shows only disabled right-side pills, hides Search/Sync, and renders cleanly
+/// at 780 and 1200 px in Light and Dark without fake placeholder dialogs.
+#[gpui_kit::test]
+fn topbar_in_start_mode_mounts_disabled_pills_without_search_or_sync(cx: &mut TestAppContext) {
+    for mode in [Mode::Light, Mode::Dark] {
+        for width in [780., 1200.] {
+            let (window, view) = shell_at(cx, width, mode);
+            cx.update_window(window, |_, window, _| {
+                assert!(window.try_find("top-search").is_none());
+                assert!(window.try_find("top-sync").is_none());
+                for id in ["top-theme", "top-accounts", "top-view", "top-keys"] {
+                    let pill = window.find(id);
+                    assert!(pill.visible(), "{id} visible at {width}px {mode:?}");
+                    assert_eq!(
+                        pill.disabled(),
+                        Some(true),
+                        "{id} disabled at {width}px {mode:?}"
+                    );
+                    let b = pill.bounds();
+                    assert!(
+                        b.origin.x >= px(0.) && b.origin.x + b.size.width <= px(width),
+                        "{id} fits {width}px"
+                    );
+                }
+                for snap in snapshots(window) {
+                    if let Some(label) = snap.label() {
+                        assert!(!label.contains("Coming soon"), "no placeholder dialogs");
+                    }
+                }
+            })
+            .expect("window");
+
+            for id in ["top-theme", "top-accounts", "top-view", "top-keys"] {
+                click_id(cx, window, id);
+                assert_eq!(
+                    state(cx, &view),
+                    (1, 0),
+                    "clicking disabled {id} is a no-op"
+                );
+            }
+        }
+    }
+}
+
+/// StatusBar renders `Role::Status`, derived singular/plural summary, and only the two Shell hints.
+#[gpui_kit::test]
+fn status_bar_tracks_derived_summary_singular_plural_and_two_hints(cx: &mut TestAppContext) {
+    for mode in [Mode::Light, Mode::Dark] {
+        for width in [780., 1200.] {
+            let s = shell_at(cx, width, mode);
+            cx.update_window(s.0, |_, window, _| {
+                let bar = window.find("status-bar");
+                assert_eq!(bar.role(), Some(Role::Status));
+                assert!(bar.bounds().origin.x + bar.bounds().size.width <= px(width));
+                assert_eq!(
+                    window.find("status-summary").label(),
+                    Some("New compare · 1 open tab")
+                );
+                for id in ["hint-new", "hint-close"] {
+                    assert!(window.find(id).path().starts_with(bar.path()));
+                }
+                assert!(window.try_find("hint-sidebar").is_none());
+            })
+            .expect("window");
+
+            act(cx, &s, |shell, window, cx| shell.new_tab(window, cx));
+            cx.update_window(s.0, |_, window, _| {
+                assert_eq!(
+                    window.find("status-summary").label(),
+                    Some("New compare · 2 open tabs")
+                );
+            })
+            .expect("window");
+
+            act(cx, &s, |shell, window, cx| shell.close_tab(1, window, cx));
+            cx.update_window(s.0, |_, window, _| {
+                assert_eq!(
+                    window.find("status-summary").label(),
+                    Some("New compare · 1 open tab")
+                );
+            })
+            .expect("window");
+        }
+    }
+}
+
+/// Closing an inactive tab updates the status summary count while keeping `Side::Right` focus.
+#[gpui_kit::test]
+fn closing_inactive_tab_updates_status_summary_while_keeping_right_focus(cx: &mut TestAppContext) {
+    let s = shell(cx);
+    act(cx, &s, |shell, window, cx| shell.new_tab(window, cx));
+    cx.simulate_keystrokes(s.0, "tab");
+    cx.update_window(s.0, |_, window, cx| {
+        assert_eq!(
+            window.find("status-summary").label(),
+            Some("New compare · 2 open tabs")
+        );
+        let side =
+            s.1.read(cx)
+                .active_screen()
+                .and_then(|screen| screen.read(cx).focused_side(window, cx));
+        assert_eq!(side, Some(Side::Right));
+    })
+    .expect("window");
+
+    act(cx, &s, |shell, window, cx| shell.close_tab(0, window, cx));
+    cx.update_window(s.0, |_, window, cx| {
+        assert_eq!(
+            window.find("status-summary").label(),
+            Some("New compare · 1 open tab")
+        );
+        let side =
+            s.1.read(cx)
+                .active_screen()
+                .and_then(|screen| screen.read(cx).focused_side(window, cx));
+        assert_eq!(side, Some(Side::Right));
+    })
+    .expect("window");
+}
+
+/// Bottom-right toast overlay sits above the status bar without intercepting clicks on Start inputs.
+#[gpui_kit::test]
+fn toast_slot_mounts_bottom_right_without_blocking_start_fields(cx: &mut TestAppContext) {
+    for mode in [Mode::Light, Mode::Dark] {
+        for width in [780., 1200.] {
+            let (window, view) = shell_at(cx, width, mode);
+            cx.update_window(window, |_, window, _| {
+                let slot = window.find("toast-slot").bounds();
+                let status = window.find("status-bar").bounds();
+                let left = window.find("start-left").bounds();
+                let right = window.find("start-right").bounds();
+                assert!(slot.origin.x > px(width / 2.), "bottom-right slot x");
+                assert!(
+                    slot.origin.y + slot.size.height <= status.origin.y,
+                    "above status bar"
+                );
+                assert!(
+                    slot.size.width < px(width / 2.) && slot.origin.y > left.bottom(),
+                    "toast slot does not cover Start inputs"
+                );
+                assert!(right.size.width > px(0.));
+            })
+            .expect("window");
+
+            click_id(cx, window, "start-right");
+            cx.update_window(window, |_, window, cx| {
+                let side = view
+                    .read(cx)
+                    .active_screen()
+                    .and_then(|screen| screen.read(cx).focused_side(window, cx));
+                assert_eq!(
+                    side,
+                    Some(Side::Right),
+                    "clicking Right input must focus it"
+                );
+            })
+            .expect("window");
+
+            click_id(cx, window, "start-left");
+            cx.update_window(window, |_, window, cx| {
+                let side = view
+                    .read(cx)
+                    .active_screen()
+                    .and_then(|screen| screen.read(cx).focused_side(window, cx));
+                assert_eq!(side, Some(Side::Left), "clicking Left input must focus it");
+            })
+            .expect("window");
+        }
+    }
 }

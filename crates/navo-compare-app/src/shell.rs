@@ -1,18 +1,23 @@
-//! The window's shell: a title bar, a row of tabs, the active tab's body and a status line.
+//! The window's shell: the title bar, tabs, topbar, active stage, toast host, and status bar.
 //! It owns the tab list and the browser-style tab keys (NS11, NS15, NS16).
 
 use gpui_kit::assets::IconName;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{App, FocusHandle, KeyBinding, Subscription, WindowAppearance};
 use navo_compare_profile::appearance::PaletteId;
 use navo_compare_profile::brand;
 use navo_compare_profile::recent::StartRows;
 use navo_ui::NavoTitleBar;
 use navo_ui::prelude::*;
-use navo_ui::primitives::{IconButton, Kbd, Tab, Tabs};
+use navo_ui::primitives::{IconButton, Tab, Tabs};
 use navo_ui::tokens;
 
+use crate::chrome::status_bar::{StatusBar, StatusHint};
+use crate::chrome::topbar_status::{Action as TopbarAction, Crumbs, Topbar, TopbarMode};
+use crate::layers::toast::ToastHost;
 use crate::start::{self, StartScreen};
 use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
+use crate::theme_data::palettes::DIMS;
 
 gpui_kit::actions!(shell, [NewTab, CloseTab, NextTab, PrevTab]);
 
@@ -34,10 +39,12 @@ pub struct ShellTab {
     pub kind: TabKind,
 }
 
-/// The shell view: the tab list, the active index and the focus handle.
+/// The shell view: the tab list, active index, topbar, toast host, and focus handle.
 pub struct Shell {
     tabs: Vec<ShellTab>,
     active: usize,
+    topbar: Entity<Topbar>,
+    toasts: Entity<ToastHost>,
     handle: FocusHandle,
     _appearance: Subscription,
 }
@@ -82,9 +89,13 @@ impl Shell {
             Self::apply_appearance(window.appearance(), cx);
             cx.notify();
         });
+        let topbar = start_topbar(window, cx);
+        let toasts = cx.new(|_| ToastHost::new());
         let shell = Self {
             tabs: vec![start_tab(window, cx)],
             active: 0,
+            topbar,
+            toasts,
             handle: cx.focus_handle(),
             _appearance: appearance,
         };
@@ -223,51 +234,75 @@ impl Shell {
             .child(tabs)
     }
 
-    /// The active tab's body: the start screen of a start tab.
+    /// The active stage and bottom-right toast overlay slot; empty toasts do not cover inputs.
     fn body(&self, cx: &App) -> impl IntoElement {
         let background = tokens::current(cx).colors.background;
+        let toasts = div()
+            .id("toast-slot")
+            .test_support()
+            .absolute()
+            .bottom(DIMS.inset_y)
+            .right(DIMS.inset_x)
+            .child(self.toasts.clone());
         div()
+            .relative()
             .flex_1()
             .w_full()
             .min_h_0()
             .bg(background)
             .children(self.active_screen().cloned())
+            .child(toasts)
     }
 
-    /// The status line: the key hints; a hint whose key does not parse is left out.
-    fn status_line(&self, cx: &App) -> impl IntoElement {
-        let t = tokens::current(cx);
+    /// Derives the status bar from active tab title, open-tab count, and working shortcuts.
+    fn status_bar(&self) -> StatusBar {
+        let count = self.tabs.len();
+        let noun = if count == 1 { "open tab" } else { "open tabs" };
+        let title = self
+            .tabs
+            .get(self.active)
+            .map_or("", |tab| tab.title.as_ref());
+        let summary = format!("{title} · {count} {noun}");
         let hints = [
-            ("hint-new", "ctrl-t", "New tab"),
-            ("hint-close", "ctrl-w", "Close tab"),
+            StatusHint {
+                id: "hint-new".into(),
+                keys: "ctrl-t".into(),
+                label: "New tab".into(),
+            },
+            StatusHint {
+                id: "hint-close".into(),
+                keys: "ctrl-w".into(),
+                label: "Close tab".into(),
+            },
         ];
-        div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap(t.spacing.lg)
-            .w_full()
-            .h(t.spacing.status_height)
-            .px(t.spacing.lg)
-            .border_t_1()
-            .border_color(t.colors.line)
-            .text_size(t.typography.small)
-            .text_color(t.colors.muted)
-            .children(hints.into_iter().filter_map(|(id, keys, label)| {
-                Kbd::new(id, keys).map(|kbd| {
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(t.spacing.sm)
-                        .child(kbd)
-                        .child(label)
-                })
-            }))
+        StatusBar::new(summary, hints)
     }
 }
 
+/// Builds the start-mode topbar with all shown actions disabled until wired in later cuts.
+fn start_topbar(window: &mut Window, cx: &mut Context<Shell>) -> Entity<Topbar> {
+    let crumbs = Crumbs {
+        title: "New compare".into(),
+        detail: "Folder · File · Git".into(),
+    };
+    cx.new(|cx| {
+        let mut bar = Topbar::new(crumbs, |_, _| {}, window, cx);
+        bar.set_mode(TopbarMode::Start, cx);
+        for action in [
+            TopbarAction::Theme,
+            TopbarAction::Accounts,
+            TopbarAction::View,
+            TopbarAction::Keys,
+            TopbarAction::Sync,
+        ] {
+            bar.set_available(action, false, cx);
+        }
+        bar
+    })
+}
+
 impl Render for Shell {
-    /// Draws the title bar, the tab row, the body and the status line inside the `Shell` context.
+    /// Draws the title bar, tab row, topbar, active stage with toast overlay, and status bar.
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = tokens::current(cx);
         let (background, text) = (t.colors.background, t.colors.text);
@@ -290,7 +325,8 @@ impl Render for Shell {
             .text_size(size)
             .child(NavoTitleBar::new(brand::NAME))
             .child(self.tab_row(cx))
+            .child(self.topbar.clone())
             .child(self.body(cx))
-            .child(self.status_line(cx))
+            .child(self.status_bar())
     }
 }
