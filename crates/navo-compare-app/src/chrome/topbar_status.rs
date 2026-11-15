@@ -3,7 +3,8 @@
 
 use std::rc::Rc;
 
-use gpui_kit::base::TestSupportExt;
+use gpui_kit::component::Sizable as _;
+use gpui_kit::component::button::Button;
 use gpui_kit::{FocusHandle, KeyBinding, ReadGlobal};
 use navo_ui::prelude::*;
 
@@ -121,22 +122,18 @@ impl Topbar {
             .child(div().text_color(m.muted).child(self.detail.clone()))
     }
 
-    /// The inline `/` search filter pill.
+    /// The inline `/` search filter pill as an accessible, keyboard-focusable button.
     fn search_view(&self, m: &ModeTokens, cx: &mut Context<Self>) -> AnyElement {
-        div()
-            .id("top-search")
-            .test_support()
-            .flex()
-            .items_center()
-            .gap_1()
+        Button::new("top-search")
+            .small()
+            .accessibility_label("Search files")
+            .flex_shrink(1.0)
             .min_w_0()
             .overflow_hidden()
             .px_2()
             .h(px(PILL_H))
             .rounded(DIMS.btn_r)
             .bg(m.surface)
-            .border_1()
-            .border_color(m.sep)
             .text_color(m.muted)
             .on_click(cx.listener(|this, _, _, cx| this.fire(Action::Search, cx)))
             .child("/")
@@ -144,29 +141,21 @@ impl Topbar {
             .into_any_element()
     }
 
-    /// One action pill, styled from the Sidewise tokens rather than a kit default.
+    /// One action pill as a kit button backed by the Sidewise theme tokens.
     fn pill_view(&self, pill: &Pill, m: &ModeTokens, cx: &mut Context<Self>) -> AnyElement {
         let action = pill.action;
-        let mut row = div()
-            .id(pill.id)
-            .test_support()
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap_1()
+        Button::new(pill.id)
+            .small()
+            .accessibility_label(pill.label)
             .px_2()
             .h(px(PILL_H))
             .rounded(DIMS.btn_r)
-            .bg(m.card)
-            .border_1()
-            .border_color(m.sep)
-            .text_color(m.text)
             .on_click(cx.listener(move |this, _, _, cx| this.fire(action, cx)))
-            .child(pill.label);
-        if let Some(hint) = pill.hint {
-            row = row.child(div().text_color(m.faint).child(hint));
-        }
-        row.into_any_element()
+            .child(pill.label)
+            .when_some(pill.hint, |row, hint| {
+                row.child(div().text_color(m.faint).child(hint))
+            })
+            .into_any_element()
     }
 }
 
@@ -188,6 +177,7 @@ impl Render for Topbar {
             .collect();
         div()
             .key_context(CONTEXT)
+            .tab_group()
             .track_focus(&self.handle)
             .on_action(cx.listener(|this, _: &ViewMenu, _, cx| this.fire(Action::View, cx)))
             .on_action(cx.listener(|this, _: &SyncPlan, _, cx| this.fire(Action::Sync, cx)))

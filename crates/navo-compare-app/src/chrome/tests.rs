@@ -5,10 +5,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui_kit::base::test_support::{find, snapshots};
-use gpui_kit::test::TestWindowExt;
+use gpui_kit::test::{TestQueryExt, TestWindowExt};
 use gpui_kit::{
-    AnyWindowHandle, AppContext as _, Bounds, ElementId, Entity, Modifiers, Point, SharedString,
-    TestAppContext, VisualTestContext, WindowBounds, WindowOptions, point, px, size,
+    AnyWindowHandle, AppContext as _, Bounds, ElementId, Entity, Modifiers, Point, Role,
+    SharedString, TestAppContext, VisualTestContext, WindowBounds, WindowOptions, point, px, size,
 };
 use navo_compare_profile::appearance::PaletteId;
 use navo_ui::tokens::Mode;
@@ -183,4 +183,151 @@ fn the_filter_text_round_trips(cx: &mut TestAppContext) {
         view.update(cx, |bar, cx| bar.set_filter("main.rs", cx));
         assert_eq!(view.read(cx).filter(), &SharedString::from("main.rs"));
     });
+}
+
+/// Pressing Tab reaches Accounts without mouse input, and Enter/Space activates it.
+#[gpui_kit::test]
+fn tab_reaches_accounts_and_activates_without_mouse(cx: &mut TestAppContext) {
+    let (window, _view, fired) = topbar(cx, 1024.);
+    cx.update_window(window, |_, window, cx| {
+        let initial = window.find("top-accounts");
+        assert_eq!(
+            initial.role(),
+            Some(Role::Button),
+            "Accounts control must expose Role::Button"
+        );
+        let accounts = window
+            .try_find_by_label("Accounts")
+            .expect("Accounts control must expose accessible label \"Accounts\"");
+        assert_eq!(accounts.focused(), Some(false), "Accounts starts unfocused");
+
+        let mut reached = false;
+        for _ in 0..=IDS.len() {
+            window.press("tab", cx);
+            if window.find_by_label("Accounts").focused() == Some(true) {
+                reached = true;
+                break;
+            }
+        }
+        assert!(reached, "Tab must reach Accounts without a mouse");
+
+        window.press("enter", cx);
+        window.press("space", cx);
+    })
+    .expect("window");
+
+    assert_eq!(
+        fired.borrow().as_slice(),
+        [Action::Accounts, Action::Accounts],
+        "Enter and Space on focused Accounts must each fire Action::Accounts once"
+    );
+}
+
+/// Every topbar control has button semantics, an accessible label, Tab/Shift-Tab focus, and
+/// Enter/Space keyboard activation.
+#[gpui_kit::test]
+fn every_control_has_button_semantics_tab_focus_and_keyboard_activation(cx: &mut TestAppContext) {
+    const CONTROLS: [(&str, &str, Action); 6] = [
+        ("top-search", "Search files", Action::Search),
+        ("top-theme", "Theme", Action::Theme),
+        ("top-accounts", "Accounts", Action::Accounts),
+        ("top-view", "View", Action::View),
+        ("top-keys", "Keys", Action::Keys),
+        ("top-sync", "Sync", Action::Sync),
+    ];
+
+    let (window, _view, fired) = topbar(cx, 1024.);
+    cx.update_window(window, |_, window, cx| {
+        for (idx, (id, label, action)) in CONTROLS.iter().enumerate() {
+            window.press("tab", cx);
+            let by_id = window.find(*id);
+            let by_label = window.find_by_label(label);
+            assert_eq!(by_id.path(), by_label.path(), "{id} label mismatch");
+            assert_eq!(
+                by_label.role(),
+                Some(Role::Button),
+                "{id} needs button role"
+            );
+            assert_eq!(by_label.focused(), Some(true), "Tab #{idx} must focus {id}");
+            let key = if idx % 2 == 0 { "enter" } else { "space" };
+            window.press(key, cx);
+            assert_eq!(
+                fired.borrow().last(),
+                Some(action),
+                "{key} on {id} must fire {action:?}"
+            );
+        }
+
+        window.press("shift-tab", cx);
+        assert_eq!(
+            window.find_by_label("Keys").focused(),
+            Some(true),
+            "Shift-Tab from Sync must move focus back to Keys"
+        );
+        window.press("space", cx);
+    })
+    .expect("window");
+
+    assert_eq!(fired.borrow().len(), CONTROLS.len() + 1);
+    assert_eq!(fired.borrow().last(), Some(&Action::Keys));
+}
+
+/// Shortcuts still fire when a pill holds focus, and Escape does not fire stale actions or trap focus.
+#[gpui_kit::test]
+fn shortcuts_work_from_focused_button_and_escape_does_not_trap(cx: &mut TestAppContext) {
+    let (window, _view, fired) = topbar(cx, 1024.);
+    cx.update_window(window, |_, window, cx| {
+        window.press("tab", cx);
+        window.press("tab", cx);
+        assert_eq!(window.find_by_label("Theme").focused(), Some(true));
+
+        window.press("escape", cx);
+        assert!(
+            fired.borrow().is_empty(),
+            "Escape on a resting topbar button must not fire any action"
+        );
+        window.press("tab", cx);
+        assert_eq!(
+            window.find_by_label("Accounts").focused(),
+            Some(true),
+            "focus must still advance after Escape"
+        );
+    })
+    .expect("window");
+
+    for (keys, action) in [
+        ("alt-v", Action::View),
+        ("alt-s", Action::Sync),
+        ("/", Action::Search),
+    ] {
+        cx.simulate_keystrokes(window, keys);
+        assert_eq!(
+            fired.borrow().last(),
+            Some(&action),
+            "{keys} must still fire {action:?} when a pill is focused"
+        );
+    }
+}
+
+/// In Dark mode at the 780 px minimum width, Tab reaches Accounts and Enter activates it without clipping.
+#[gpui_kit::test]
+fn dark_mode_minimum_width_reaches_accounts_by_keyboard(cx: &mut TestAppContext) {
+    let (window, _view, fired) = topbar(cx, MIN_W);
+    cx.update_window(window, |_, window, cx| {
+        apply_sidewise(PaletteId::Violet, Mode::Dark, cx);
+        window.render_frame(cx);
+        for _ in 0..3 {
+            window.press("tab", cx);
+        }
+        let accounts = window.find_by_label("Accounts");
+        assert_eq!(accounts.focused(), Some(true));
+        assert!(
+            accounts.visible(),
+            "Accounts must stay visible at {MIN_W}px"
+        );
+        window.press("enter", cx);
+    })
+    .expect("window");
+
+    assert_eq!(fired.borrow().as_slice(), [Action::Accounts]);
 }
