@@ -3,7 +3,7 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{AnimationExt, EventEmitter, FocusHandle, KeyBinding, ReadGlobal, img};
+use gpui_kit::{AnimationExt, EventEmitter, FocusHandle, KeyBinding, ReadGlobal, Role, img};
 use navo_compare_profile::recent::{StartRow, StartRows};
 use navo_ui::prelude::*;
 use navo_ui::primitives::icon;
@@ -29,6 +29,8 @@ const MARK_PX: f32 = MARK as f32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SidebarEvent {
     NewCompare,
+    SelectTab(usize),
+    CloseTab(usize),
     RailToggled(bool),
 }
 
@@ -227,23 +229,33 @@ impl Sidebar {
             .into_any_element()
     }
 
-    /// One headed list; the rail drops the heading along with the labels.
-    fn group_view(&self, section: &Section, m: &ModeTokens, cx: &mut Context<Self>) -> Div {
+    /// One headed list; open tabs expose `Role::TabList` and drop headings along with labels in rail mode.
+    fn group_view(&self, section: &Section, m: &ModeTokens, cx: &mut Context<Self>) -> AnyElement {
         let mut group = div().flex().flex_col().gap_1();
         if !section.heading.is_empty() && !self.rail {
             group = group.child(div().text_color(m.muted).child(section.heading));
         }
-        group.children(section.entries.iter().enumerate().map(|(i, entry)| {
-            if section.kind == SectionKind::Primary && i == 0 {
-                self.primary_row(entry, m, cx)
-            } else {
-                Self::static_row(
+        let group = group.children(section.entries.iter().enumerate().map(|(i, entry)| {
+            match (section.kind, i) {
+                (SectionKind::Primary, 0) => self.primary_row(entry, m, cx),
+                (SectionKind::OpenTabs, i) => self.tab_row(actions::TabRow::new(i, entry), m, cx),
+                _ => Self::static_row(
                     (section.heading, i).into(),
                     entry.label.clone(),
                     self.row_view(entry, m, cx),
-                )
+                ),
             }
-        }))
+        }));
+        if section.kind == SectionKind::OpenTabs {
+            group
+                .id("tabs")
+                .role(Role::TabList)
+                .aria_label(section.heading)
+                .test_support()
+                .into_any_element()
+        } else {
+            group.into_any_element()
+        }
     }
 
     /// The footer actions, pushed to the bottom and icon-only in the rail.

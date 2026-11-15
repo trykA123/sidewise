@@ -5,11 +5,12 @@ use std::rc::Rc;
 
 use gpui_kit::test::{TestQueryExt, TestWindowExt};
 use gpui_kit::{
-    AnyWindowHandle, Bounds, FocusHandle, Point, Render, Role, Subscription, TestAppContext,
-    WindowBounds, WindowOptions, div, px, size,
+    AnyWindowHandle, Bounds, FocusHandle, Focusable as _, Point, Render, Role, Subscription,
+    TestAppContext, WindowBounds, WindowOptions, div, px, size,
 };
 use navo_compare_profile::appearance::PaletteId;
 use navo_compare_profile::recent::RowKind;
+use navo_ui::primitives::{TextField, TextFieldState, text_field_state};
 use navo_ui::tokens::Mode;
 
 use super::*;
@@ -171,10 +172,11 @@ struct ToggleHost {
     parent_toggled: Rc<Cell<bool>>,
     parent_keys: Rc<Cell<usize>>,
     outside: FocusHandle,
+    input: Entity<TextFieldState>,
     _sub: Subscription,
 }
 
-/// Opened host test rig exposing `Sidebar` state, events, escaped parent counters, and outside focus.
+/// Opened host test rig exposing `Sidebar` state, events, escaped parent counters, and focus targets.
 struct HostRig {
     window: AnyWindowHandle,
     view: Entity<Sidebar>,
@@ -182,11 +184,17 @@ struct HostRig {
     parent_toggled: Rc<Cell<bool>>,
     parent_keys: Rc<Cell<usize>>,
     outside: FocusHandle,
+    input: Entity<TextFieldState>,
 }
 
 impl ToggleHost {
     /// Subscribes to `sidebar` events into `events` and allocates escaped-action and focus state.
-    fn new(sidebar: Entity<Sidebar>, events: EventLog, cx: &mut Context<Self>) -> Self {
+    fn new(
+        sidebar: Entity<Sidebar>,
+        events: EventLog,
+        window: &mut gpui_kit::Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let _sub = cx.subscribe(&sidebar, move |_, _, event: &SidebarEvent, _| {
             events.borrow_mut().push(*event);
         });
@@ -195,6 +203,7 @@ impl ToggleHost {
             parent_toggled: Rc::new(Cell::new(false)),
             parent_keys: Rc::new(Cell::new(0)),
             outside: cx.focus_handle(),
+            input: text_field_state("", window, cx),
             _sub,
         }
     }
@@ -210,7 +219,14 @@ impl Render for ToggleHost {
             .flex()
             .size_full()
             .child(self.sidebar.clone())
-            .child(div().id("host-outside").track_focus(&self.outside).flex_1())
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .child(TextField::new("host-input", &self.input, "Filter"))
+                    .child(div().id("host-outside").track_focus(&self.outside).flex_1()),
+            )
     }
 }
 
@@ -232,20 +248,21 @@ fn open_host_with_outside(cx: &mut TestAppContext) -> HostRig {
     };
     let ((window, host), view) = cx.update(|cx| {
         let mut out = None;
-        let win = gpui_kit::open_window(options, cx, |_, cx| {
+        let win = gpui_kit::open_window(options, cx, |window, cx| {
             let sidebar = cx.new(|cx| Sidebar::new(rows(), vec!["tab".into()], cx));
             out = Some(sidebar.clone());
-            cx.new(|cx| ToggleHost::new(sidebar, sink, cx))
+            cx.new(|cx| ToggleHost::new(sidebar, sink, window, cx))
         })
         .expect("open host window");
         (win, out.unwrap())
     });
-    let (parent_toggled, parent_keys, outside) = cx.update(|cx| {
+    let (parent_toggled, parent_keys, outside, input) = cx.update(|cx| {
         let h = host.read(cx);
         (
             h.parent_toggled.clone(),
             h.parent_keys.clone(),
             h.outside.clone(),
+            h.input.clone(),
         )
     });
     cx.update_window(window, |_, window, cx| {
@@ -260,6 +277,7 @@ fn open_host_with_outside(cx: &mut TestAppContext) -> HostRig {
         parent_toggled,
         parent_keys,
         outside,
+        input,
     }
 }
 
@@ -345,9 +363,15 @@ fn set_tabs_updates_labels_clamps_active_and_reuses_handles(cx: &mut TestAppCont
     });
 }
 
-/// Verifies non-primary rows remain non-button/non-focused and keep accessible labels in rail mode.
+/// Verifies non-tab/non-primary rows stay non-button/non-focused while open tabs expose `TabList`/`Tab`.
 fn assert_static_rows_and_rail_labels(rig: &HostRig, cx: &mut TestAppContext) {
     cx.update_window(rig.window, |_, window, cx| {
+        let tabs = window.find("tabs");
+        assert_eq!(tabs.role(), Some(Role::TabList));
+        assert_eq!(tabs.label(), Some("Open tabs"));
+        let tab0 = window.find(("open-tab", 0usize));
+        assert_eq!(tab0.role(), Some(Role::Tab));
+        assert_eq!(tab0.selected(), Some(true));
         for label in [
             "Git compare",
             "left ↔ right",
@@ -357,15 +381,18 @@ fn assert_static_rows_and_rail_labels(rig: &HostRig, cx: &mut TestAppContext) {
         ] {
             let snap = window.find_by_label(label);
             assert_ne!(snap.role(), Some(Role::Button));
+            assert_ne!(snap.role(), Some(Role::Tab));
             assert_ne!(snap.focused(), Some(true));
         }
         assert!(rig.view.read(cx).sections()[0].entries[1].hint.is_none());
 
         rig.view.update(cx, |sb, cx| sb.toggle_rail(cx));
         window.render_frame(cx);
+        assert_eq!(window.find("tabs").role(), Some(Role::TabList));
         for label in [
             "New comparison",
             "Git compare",
+            "tab",
             "left ↔ right",
             "Saved",
             "Accounts",
@@ -418,4 +445,101 @@ fn primary_row_mounts_focus_emits_new_compare_and_keeps_static_rows_static(
     .expect("window");
     assert_eq!(*rig.events.borrow(), vec![SidebarEvent::NewCompare; 3]);
     assert_static_rows_and_rail_labels(&rig, cx);
+}
+
+/// Asserts `TabList`/`Tab` roles, `selected` flags, and visible labels match `expected` and `active`.
+fn assert_tab_selection(window: &gpui_kit::Window, expected: &[&str], active: usize) {
+    let list = window.find("tabs");
+    assert_eq!(list.role(), Some(Role::TabList));
+    assert_eq!(list.label(), Some("Open tabs"));
+    for (i, label) in expected.iter().enumerate() {
+        let tab = window.find(("open-tab", i));
+        assert_eq!(tab.role(), Some(Role::Tab));
+        assert_eq!(tab.label(), Some(*label));
+        assert_eq!(tab.selected(), Some(i == active), "tab {i} selected");
+    }
+}
+
+/// Open tabs expose `TabList`/`Tab`, emit `SelectTab` without mutating `active`, and hide close in rail.
+#[gpui_kit::test]
+fn tab_row_emits_select_tab_once_preserves_external_active_and_renders_selection(
+    cx: &mut TestAppContext,
+) {
+    let rig = open_host_with_outside(cx);
+    cx.update_window(rig.window, |_, window, cx| {
+        rig.view.update(cx, |sb, cx| {
+            sb.set_tabs(vec!["A".into(), "B".into(), "C".into()], 1, cx)
+        });
+        window.render_frame(cx);
+        assert_tab_selection(window, &["A", "B", "C"], 1);
+
+        window.click(("open-tab", 0usize), cx);
+        window.render_frame(cx);
+        assert_eq!(window.find(("open-tab", 0usize)).focused(), Some(true));
+        assert_tab_selection(window, &["A", "B", "C"], 1);
+
+        let before = rig.parent_keys.get();
+        window.press("enter", cx);
+        window.press("space", cx);
+        assert_eq!(rig.parent_keys.get(), before, "Enter/Space must consume");
+        window.press("ctrl-enter", cx);
+        window.press("shift-space", cx);
+        window.press("a", cx);
+        assert_eq!(rig.parent_keys.get(), before + 3);
+    })
+    .expect("tab select");
+    assert_eq!(*rig.events.borrow(), vec![SidebarEvent::SelectTab(0); 3]);
+
+    cx.update_window(rig.window, |_, window, cx| {
+        rig.view.update(cx, |sb, cx| {
+            sb.set_tabs(vec!["X".into(), "Y".into()], 9, cx)
+        });
+        window.render_frame(cx);
+        assert_tab_selection(window, &["X", "Y"], 1);
+
+        rig.view.update(cx, |sb, cx| sb.toggle_rail(cx));
+        window.render_frame(cx);
+        assert!(
+            window.try_find(("tab-close", 0usize)).is_none(),
+            "rail hides close"
+        );
+        assert_tab_selection(window, &["X", "Y"], 1);
+
+        rig.view.update(cx, |sb, cx| sb.set_tabs(vec![], 4, cx));
+        window.render_frame(cx);
+        assert_eq!(window.find("tabs").role(), Some(Role::TabList));
+        assert!(window.try_find(("open-tab", 0usize)).is_none());
+    })
+    .expect("clamped and empty tabs");
+}
+
+/// Close child meets >=24px hit size and emits only `CloseTab` while preserving focused `TextField`.
+#[gpui_kit::test]
+fn tab_close_emits_close_tab_only_with_size_and_keeps_textfield_focus(cx: &mut TestAppContext) {
+    let rig = open_host_with_outside(cx);
+    cx.update_window(rig.window, |_, window, cx| {
+        rig.view.update(cx, |sb, cx| {
+            sb.set_tabs(vec!["First".into(), "Second".into()], 0, cx)
+        });
+        window.render_frame(cx);
+
+        let close = window.find(("tab-close", 1usize));
+        assert_eq!(close.role(), Some(Role::Button));
+        assert_eq!(close.label(), Some("Close tab"));
+        assert_ne!(close.focused(), Some(true));
+        let bounds = close.bounds();
+        assert!(bounds.size.width >= px(24.) && bounds.size.height >= px(24.));
+
+        rig.input.update(cx, |input, cx| input.focus(window, cx));
+        window.render_frame(cx);
+        assert!(rig.input.read(cx).focus_handle(cx).is_focused(window));
+        assert!(!rig.view.read(cx).contains_focus(window, cx));
+
+        window.click(("tab-close", 1usize), cx);
+        window.render_frame(cx);
+        assert!(rig.input.read(cx).focus_handle(cx).is_focused(window));
+        assert!(!rig.view.read(cx).contains_focus(window, cx));
+    })
+    .expect("close tab");
+    assert_eq!(*rig.events.borrow(), vec![SidebarEvent::CloseTab(1)]);
 }
