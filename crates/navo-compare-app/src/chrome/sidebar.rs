@@ -2,7 +2,7 @@
 //! Ctrl+\. The width lerps over the side token through the U12b reduced-motion gate.
 
 use gpui_kit::assets::IconName;
-use gpui_kit::{AnimationExt, FocusHandle, KeyBinding, ReadGlobal, img};
+use gpui_kit::{AnimationExt, EventEmitter, FocusHandle, KeyBinding, ReadGlobal, img};
 use navo_compare_profile::recent::{StartRow, StartRows};
 use navo_ui::prelude::*;
 use navo_ui::primitives::icon;
@@ -20,6 +20,12 @@ const CONTEXT: &str = "Sidebar";
 const MARK: u32 = 16;
 /// The mark side as a length.
 const MARK_PX: f32 = MARK as f32;
+
+/// Typed events emitted by [`Sidebar`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SidebarEvent {
+    RailToggled(bool),
+}
 
 /// Binds Ctrl+\ in the `Sidebar` context; the shell calls it from its own `bind_keys`.
 pub fn bind_keys(cx: &mut App) {
@@ -52,18 +58,27 @@ pub struct Sidebar {
     from: Pixels,
     rows: StartRows,
     tabs: Vec<SharedString>,
+    active: usize,
     handle: FocusHandle,
+    tab_focuses: Vec<FocusHandle>,
 }
+
+impl EventEmitter<SidebarEvent> for Sidebar {}
 
 impl Sidebar {
     /// An expanded sidebar over the stored rows and the open tab titles.
     pub fn new(rows: StartRows, tabs: Vec<SharedString>, cx: &mut Context<Self>) -> Self {
+        let tab_focuses = (0..tabs.len())
+            .map(|_| cx.focus_handle().tab_stop(true))
+            .collect();
         Self {
             rail: false,
             from: DIMS.sidebar_w,
             rows,
             tabs,
+            active: 0,
             handle: cx.focus_handle(),
+            tab_focuses,
         }
     }
 
@@ -81,10 +96,26 @@ impl Sidebar {
         }
     }
 
-    /// Ctrl+\: swap rail and sidebar, animating from the width being left.
-    fn toggle(&mut self, cx: &mut Context<Self>) {
+    /// Ctrl+\: swap rail and sidebar, animating from the width being left, and emit `RailToggled`.
+    pub fn toggle_rail(&mut self, cx: &mut Context<Self>) {
         self.from = self.width();
         self.rail = !self.rail;
+        cx.emit(SidebarEvent::RailToggled(self.rail));
+        cx.notify();
+    }
+
+    /// Replaces the open tab labels and clamps `active`, keeping handles for unchanged indices.
+    pub fn set_tabs(&mut self, tabs: Vec<SharedString>, active: usize, cx: &mut Context<Self>) {
+        self.tabs = tabs;
+        self.active = if self.tabs.is_empty() {
+            0
+        } else {
+            active.min(self.tabs.len() - 1)
+        };
+        self.tab_focuses.truncate(self.tabs.len());
+        while self.tab_focuses.len() < self.tabs.len() {
+            self.tab_focuses.push(cx.focus_handle().tab_stop(true));
+        }
         cx.notify();
     }
 
@@ -247,7 +278,10 @@ impl Render for Sidebar {
         let body = div()
             .key_context(CONTEXT)
             .track_focus(&self.handle)
-            .on_action(cx.listener(|this, _: &ToggleRail, _, cx| this.toggle(cx)))
+            .on_action(cx.listener(|this, _: &ToggleRail, _, cx| {
+                cx.stop_propagation();
+                this.toggle_rail(cx);
+            }))
             .flex()
             .flex_col()
             .flex_none()
