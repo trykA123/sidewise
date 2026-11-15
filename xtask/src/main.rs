@@ -17,6 +17,10 @@ mod bench_git_fixture_tests;
 mod bench_git_payload;
 #[cfg(test)]
 mod bench_git_payload_tests;
+#[cfg(test)]
+mod bench_git_stream;
+#[cfg(test)]
+mod bench_git_stream_tests;
 mod bench_rng;
 mod lock_drift;
 #[cfg(test)]
