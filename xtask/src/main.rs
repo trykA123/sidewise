@@ -5,6 +5,10 @@ mod bench_data;
 mod bench_data_large;
 #[cfg(test)]
 mod bench_data_tests;
+#[cfg(test)]
+mod bench_git_fixture;
+#[cfg(test)]
+mod bench_git_fixture_tests;
 mod bench_rng;
 mod lock_drift;
 #[cfg(test)]
