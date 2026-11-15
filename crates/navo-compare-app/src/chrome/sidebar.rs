@@ -2,6 +2,7 @@
 //! Ctrl+\. The width lerps over the side token through the U12b reduced-motion gate.
 
 use gpui_kit::assets::IconName;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{AnimationExt, EventEmitter, FocusHandle, KeyBinding, ReadGlobal, img};
 use navo_compare_profile::recent::{StartRow, StartRows};
 use navo_ui::prelude::*;
@@ -11,6 +12,9 @@ use crate::icons::{MaterialIcon, cache::IconCache, icon_id};
 use crate::motion;
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::{DIMS, ModeTokens};
+
+#[path = "sidebar_actions.rs"]
+mod actions;
 
 gpui_kit::actions!(sidebar, [ToggleRail]);
 
@@ -24,6 +28,7 @@ const MARK_PX: f32 = MARK as f32;
 /// Typed events emitted by [`Sidebar`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SidebarEvent {
+    NewCompare,
     RailToggled(bool),
 }
 
@@ -46,8 +51,18 @@ struct Entry {
     hint: Option<&'static str>,
 }
 
-/// One headed list of entries; an empty heading is the unheaded primary block.
+/// Typed identity of each sidebar section so rendering branches without matching labels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SectionKind {
+    Primary,
+    OpenTabs,
+    Recent,
+    Named,
+}
+
+/// One headed list of entries; `Primary` is unheaded.
 struct Section {
+    kind: SectionKind,
     heading: &'static str,
     entries: Vec<Entry>,
 }
@@ -60,6 +75,7 @@ pub struct Sidebar {
     tabs: Vec<SharedString>,
     active: usize,
     handle: FocusHandle,
+    new_compare_focus: FocusHandle,
     tab_focuses: Vec<FocusHandle>,
 }
 
@@ -78,6 +94,7 @@ impl Sidebar {
             tabs,
             active: 0,
             handle: cx.focus_handle(),
+            new_compare_focus: cx.focus_handle().tab_stop(true),
             tab_focuses,
         }
     }
@@ -119,6 +136,16 @@ impl Sidebar {
         cx.notify();
     }
 
+    /// Moves focus onto the mounted `New comparison` button.
+    pub fn focus_primary(&self, window: &mut Window, cx: &mut App) {
+        self.new_compare_focus.focus(window, cx);
+    }
+
+    /// Whether keyboard focus currently sits on the sidebar or any mounted child inside it.
+    pub fn contains_focus(&self, window: &Window, cx: &App) -> bool {
+        self.handle.contains_focused(window, cx)
+    }
+
     /// The primary actions, then the three lists, in prototype order.
     fn sections(&self) -> Vec<Section> {
         let recent = self
@@ -139,18 +166,22 @@ impl Sidebar {
             .collect();
         vec![
             Section {
+                kind: SectionKind::Primary,
                 heading: "",
                 entries: primary(),
             },
             Section {
+                kind: SectionKind::OpenTabs,
                 heading: "Open tabs",
                 entries: tabs,
             },
             Section {
+                kind: SectionKind::Recent,
                 heading: "Recent",
                 entries: recent,
             },
             Section {
+                kind: SectionKind::Named,
                 heading: "Named",
                 entries: named,
             },
@@ -188,18 +219,31 @@ impl Sidebar {
         row
     }
 
+    /// One non-focusable, non-clickable row retaining its full accessible label in rail mode.
+    fn static_row(id: ElementId, label: SharedString, row: Div) -> AnyElement {
+        row.id(id)
+            .aria_label(label)
+            .test_support()
+            .into_any_element()
+    }
+
     /// One headed list; the rail drops the heading along with the labels.
     fn group_view(&self, section: &Section, m: &ModeTokens, cx: &mut Context<Self>) -> Div {
         let mut group = div().flex().flex_col().gap_1();
         if !section.heading.is_empty() && !self.rail {
             group = group.child(div().text_color(m.muted).child(section.heading));
         }
-        group.children(
-            section
-                .entries
-                .iter()
-                .map(|entry| self.row_view(entry, m, cx)),
-        )
+        group.children(section.entries.iter().enumerate().map(|(i, entry)| {
+            if section.kind == SectionKind::Primary && i == 0 {
+                self.primary_row(entry, m, cx)
+            } else {
+                Self::static_row(
+                    (section.heading, i).into(),
+                    entry.label.clone(),
+                    self.row_view(entry, m, cx),
+                )
+            }
+        }))
     }
 
     /// The footer actions, pushed to the bottom and icon-only in the rail.
@@ -219,17 +263,25 @@ impl Sidebar {
             .flex()
             .flex_col()
             .gap_1()
-            .child(self.row_view(&accounts, m, cx))
-            .child(self.row_view(&appearance, m, cx))
+            .child(Self::static_row(
+                "footer-accounts".into(),
+                accounts.label.clone(),
+                self.row_view(&accounts, m, cx),
+            ))
+            .child(Self::static_row(
+                "footer-appearance".into(),
+                appearance.label.clone(),
+                self.row_view(&appearance, m, cx),
+            ))
     }
 }
 
-/// The two primary actions of the prototype, with their key hints.
+/// The two primary actions of the prototype; future actions drop unimplemented key hints.
 #[rustfmt::skip]
 fn primary() -> Vec<Entry> {
     vec![
         Entry { mark: Mark::Chrome(IconName::Plus), label: "New comparison".into(), hint: Some("Ctrl+T") },
-        Entry { mark: Mark::File(MaterialIcon::Git), label: "Git compare".into(), hint: Some("6") },
+        Entry { mark: Mark::File(MaterialIcon::Git), label: "Git compare".into(), hint: None },
     ]
 }
 

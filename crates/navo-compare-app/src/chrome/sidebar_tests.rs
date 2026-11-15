@@ -3,10 +3,10 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gpui_kit::test::TestWindowExt;
+use gpui_kit::test::{TestQueryExt, TestWindowExt};
 use gpui_kit::{
-    AnyWindowHandle, Bounds, Point, Render, Subscription, TestAppContext, WindowBounds,
-    WindowOptions, div, px, size,
+    AnyWindowHandle, Bounds, FocusHandle, Point, Render, Role, Subscription, TestAppContext,
+    WindowBounds, WindowOptions, div, px, size,
 };
 use navo_compare_profile::appearance::PaletteId;
 use navo_compare_profile::recent::RowKind;
@@ -165,27 +165,36 @@ fn the_rail_icon_fits_and_the_text_insets_hold() {
 /// Shared log of events emitted by `Sidebar`.
 type EventLog = Rc<RefCell<Vec<SidebarEvent>>>;
 
-/// Host container catching any unconsumed `ToggleRail` action that escapes `Sidebar`.
+/// Host container catching any unconsumed `ToggleRail` action or keystroke escaping `Sidebar`.
 struct ToggleHost {
     sidebar: Entity<Sidebar>,
     parent_toggled: Rc<Cell<bool>>,
+    parent_keys: Rc<Cell<usize>>,
+    outside: FocusHandle,
     _sub: Subscription,
 }
 
+/// Opened host test rig exposing `Sidebar` state, events, escaped parent counters, and outside focus.
+struct HostRig {
+    window: AnyWindowHandle,
+    view: Entity<Sidebar>,
+    events: EventLog,
+    parent_toggled: Rc<Cell<bool>>,
+    parent_keys: Rc<Cell<usize>>,
+    outside: FocusHandle,
+}
+
 impl ToggleHost {
-    /// Subscribes to `sidebar` events into `events` and stores the host wrapper state.
-    fn new(
-        sidebar: Entity<Sidebar>,
-        events: EventLog,
-        parent_toggled: Rc<Cell<bool>>,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    /// Subscribes to `sidebar` events into `events` and allocates escaped-action and focus state.
+    fn new(sidebar: Entity<Sidebar>, events: EventLog, cx: &mut Context<Self>) -> Self {
         let _sub = cx.subscribe(&sidebar, move |_, _, event: &SidebarEvent, _| {
             events.borrow_mut().push(*event);
         });
         Self {
             sidebar,
-            parent_toggled,
+            parent_toggled: Rc::new(Cell::new(false)),
+            parent_keys: Rc::new(Cell::new(0)),
+            outside: cx.focus_handle(),
             _sub,
         }
     }
@@ -194,20 +203,21 @@ impl ToggleHost {
 impl Render for ToggleHost {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let parent_toggled = self.parent_toggled.clone();
+        let parent_keys = self.parent_keys.clone();
         div()
             .on_action(move |_: &ToggleRail, _, _| parent_toggled.set(true))
+            .on_key_down(move |_, _, _| parent_keys.set(parent_keys.get() + 1))
             .flex()
             .size_full()
             .child(self.sidebar.clone())
+            .child(div().id("host-outside").track_focus(&self.outside).flex_1())
     }
 }
 
 /// Opens a themed host window with `Sidebar` subscribed to `events`.
-fn host(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Sidebar>, EventLog, Rc<Cell<bool>>) {
+fn open_host_with_outside(cx: &mut TestAppContext) -> HostRig {
     let events = Rc::new(RefCell::new(Vec::new()));
-    let parent_toggled = Rc::new(Cell::new(false));
     let sink = events.clone();
-    let escaped = parent_toggled.clone();
     cx.update(|cx| {
         gpui_kit::init(cx);
         apply_sidewise(PaletteId::Violet, Mode::Light, cx);
@@ -220,22 +230,43 @@ fn host(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Sidebar>, EventLog,
         })),
         ..Default::default()
     };
-    let ((window, _host), sidebar) = cx.update(|cx| {
+    let ((window, host), view) = cx.update(|cx| {
         let mut out = None;
         let win = gpui_kit::open_window(options, cx, |_, cx| {
             let sidebar = cx.new(|cx| Sidebar::new(rows(), vec!["tab".into()], cx));
             out = Some(sidebar.clone());
-            cx.new(|cx| ToggleHost::new(sidebar, sink, escaped, cx))
+            cx.new(|cx| ToggleHost::new(sidebar, sink, cx))
         })
         .expect("open host window");
         (win, out.unwrap())
     });
+    let (parent_toggled, parent_keys, outside) = cx.update(|cx| {
+        let h = host.read(cx);
+        (
+            h.parent_toggled.clone(),
+            h.parent_keys.clone(),
+            h.outside.clone(),
+        )
+    });
     cx.update_window(window, |_, window, cx| {
-        sidebar.read(cx).handle.clone().focus(window, cx);
+        view.read(cx).handle.clone().focus(window, cx);
         window.render_frame(cx);
     })
     .expect("render");
-    (window, sidebar, events, parent_toggled)
+    HostRig {
+        window,
+        view,
+        events,
+        parent_toggled,
+        parent_keys,
+        outside,
+    }
+}
+
+/// Opens a themed host window with `Sidebar` subscribed to `events`.
+fn host(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Sidebar>, EventLog, Rc<Cell<bool>>) {
+    let rig = open_host_with_outside(cx);
+    (rig.window, rig.view, rig.events, rig.parent_toggled)
 }
 
 /// Toggling emits `RailToggled(bool)` for both transitions and consumes `ToggleRail` propagation.
@@ -312,4 +343,79 @@ fn set_tabs_updates_labels_clamps_active_and_reuses_handles(cx: &mut TestAppCont
         assert!(sb.tab_focuses.is_empty());
         assert!(sb.sections()[1].entries.is_empty());
     });
+}
+
+/// Verifies non-primary rows remain non-button/non-focused and keep accessible labels in rail mode.
+fn assert_static_rows_and_rail_labels(rig: &HostRig, cx: &mut TestAppContext) {
+    cx.update_window(rig.window, |_, window, cx| {
+        for label in [
+            "Git compare",
+            "left ↔ right",
+            "Saved",
+            "Accounts",
+            "Appearance",
+        ] {
+            let snap = window.find_by_label(label);
+            assert_ne!(snap.role(), Some(Role::Button));
+            assert_ne!(snap.focused(), Some(true));
+        }
+        assert!(rig.view.read(cx).sections()[0].entries[1].hint.is_none());
+
+        rig.view.update(cx, |sb, cx| sb.toggle_rail(cx));
+        window.render_frame(cx);
+        for label in [
+            "New comparison",
+            "Git compare",
+            "left ↔ right",
+            "Saved",
+            "Accounts",
+            "Appearance",
+        ] {
+            assert!(window.try_find_by_label(label).is_some(), "{label} in rail");
+        }
+    })
+    .expect("static check");
+}
+
+/// Mounted `New comparison` row focuses on mousedown and `focus_primary`, emits `NewCompare`
+/// once on click or unmodified Enter/Space, propagates modified/unrelated keys, and leaves static rows non-button.
+#[gpui_kit::test]
+fn primary_row_mounts_focus_emits_new_compare_and_keeps_static_rows_static(
+    cx: &mut TestAppContext,
+) {
+    let rig = open_host_with_outside(cx);
+    cx.update_window(rig.window, |_, window, cx| {
+        rig.outside.focus(window, cx);
+        window.render_frame(cx);
+        assert!(!rig.view.read(cx).contains_focus(window, cx));
+
+        rig.view.update(cx, |sb, cx| sb.focus_primary(window, cx));
+        window.render_frame(cx);
+        assert!(rig.view.read(cx).contains_focus(window, cx));
+        let btn = window.find("new-compare");
+        assert_eq!(btn.role(), Some(Role::Button));
+        assert_eq!(btn.label(), Some("New comparison"));
+        assert_eq!(btn.focused(), Some(true));
+
+        rig.outside.focus(window, cx);
+        window.render_frame(cx);
+        assert!(!rig.view.read(cx).contains_focus(window, cx));
+        window.click("new-compare", cx);
+        window.render_frame(cx);
+        assert!(rig.view.read(cx).contains_focus(window, cx));
+        assert_eq!(window.find("new-compare").focused(), Some(true));
+
+        let before = rig.parent_keys.get();
+        window.press("enter", cx);
+        window.press("space", cx);
+        assert_eq!(rig.parent_keys.get(), before, "Enter/Space must consume");
+
+        window.press("ctrl-enter", cx);
+        window.press("shift-space", cx);
+        window.press("a", cx);
+        assert_eq!(rig.parent_keys.get(), before + 3);
+    })
+    .expect("window");
+    assert_eq!(*rig.events.borrow(), vec![SidebarEvent::NewCompare; 3]);
+    assert_static_rows_and_rail_labels(&rig, cx);
 }
