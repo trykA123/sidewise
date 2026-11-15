@@ -13,7 +13,7 @@ use gpui_kit::{
 use navo_compare_profile::appearance::PaletteId;
 use navo_ui::tokens::Mode;
 
-use super::topbar_status::{Action, Crumbs, MIN_W, Topbar, bind_keys};
+use super::topbar_status::{AccountConnection, Action, Crumbs, MIN_W, Topbar, bind_keys};
 use crate::theme::apply_sidewise;
 use crate::theme_data::palettes::DIMS;
 
@@ -323,10 +323,32 @@ fn shortcuts_work_from_focused_button_and_escape_does_not_trap(cx: &mut TestAppC
     }
 }
 
-/// In Dark mode at the 780 px minimum width, Tab reaches Accounts and Enter activates it without clipping.
+/// Reads the non-empty `Role::Status` accessible label of the Accounts child indicator.
+fn accounts_status_label(
+    window: &gpui_kit::Window,
+    accounts: &gpui_kit::test::ElementSnapshot,
+) -> String {
+    let status = window.find("top-accounts-status");
+    assert!(
+        status.path().starts_with(accounts.path()),
+        "status indicator must remain inside the Accounts button"
+    );
+    assert_eq!(status.role(), Some(Role::Status));
+    let label = status
+        .label()
+        .expect("Accounts status indicator must expose an accessible label");
+    assert!(
+        !label.is_empty(),
+        "status accessible label must be nonempty"
+    );
+    label.to_owned()
+}
+
+/// In Dark mode at the 780 px minimum width, Accounts keeps a stable accessible name and
+/// keyboard activation while its child `Role::Status` label changes across connection states.
 #[gpui_kit::test]
 fn dark_mode_minimum_width_reaches_accounts_by_keyboard(cx: &mut TestAppContext) {
-    let (window, _view, fired) = topbar(cx, MIN_W);
+    let (window, view, fired) = topbar(cx, MIN_W);
     cx.update_window(window, |_, window, cx| {
         apply_sidewise(PaletteId::Violet, Mode::Dark, cx);
         window.render_frame(cx);
@@ -339,11 +361,32 @@ fn dark_mode_minimum_width_reaches_accounts_by_keyboard(cx: &mut TestAppContext)
             accounts.visible(),
             "Accounts must stay visible at {MIN_W}px"
         );
+        let disconnected_label = accounts_status_label(window, &accounts);
         window.press("enter", cx);
+
+        view.update(cx, |bar, cx| {
+            bar.set_connection(AccountConnection::Connected, cx);
+        });
+        window.render_frame(cx);
+        let accounts = window.find_by_label("Accounts");
+        assert_eq!(accounts.focused(), Some(true));
+        assert!(
+            accounts.visible(),
+            "Accounts must stay visible at {MIN_W}px"
+        );
+        let connected_label = accounts_status_label(window, &accounts);
+        assert_ne!(
+            connected_label, disconnected_label,
+            "AccountConnection transition must change child status accessible label"
+        );
+        window.press("space", cx);
     })
     .expect("window");
 
-    assert_eq!(fired.borrow().as_slice(), [Action::Accounts]);
+    assert_eq!(
+        fired.borrow().as_slice(),
+        [Action::Accounts, Action::Accounts]
+    );
 }
 
 /// Asserts that the visible TextField value, `Topbar::filter`, and change callback all agree.

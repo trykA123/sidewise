@@ -3,10 +3,11 @@
 
 use std::rc::Rc;
 
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::Sizable as _;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::input::InputEvent;
-use gpui_kit::{FocusHandle, KeyBinding, ReadGlobal, Subscription};
+use gpui_kit::{FocusHandle, KeyBinding, ReadGlobal, Role, Subscription};
 use navo_ui::prelude::*;
 use navo_ui::primitives::{TextField, TextFieldState, text_field_state};
 
@@ -76,6 +77,14 @@ pub struct Crumbs {
     pub detail: SharedString,
 }
 
+/// Connection state shown by the Accounts indicator from caller state.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AccountConnection {
+    #[default]
+    Disconnected,
+    Connected,
+}
+
 /// The topbar: its crumbs, its filter text and the callback its actions fire.
 pub struct Topbar {
     title: SharedString,
@@ -83,6 +92,7 @@ pub struct Topbar {
     filter: SharedString,
     filter_input: Entity<TextFieldState>,
     _filter_sub: Subscription,
+    connection: AccountConnection,
     on_action: OnAction,
     on_filter_change: Option<OnFilterChange>,
     handle: FocusHandle,
@@ -114,10 +124,17 @@ impl Topbar {
             filter: SharedString::default(),
             filter_input,
             _filter_sub,
+            connection: AccountConnection::Disconnected,
             on_action: Rc::new(on_action),
             on_filter_change: None,
             handle: cx.focus_handle(),
         }
+    }
+
+    /// Updates the Accounts connection indicator state from the caller.
+    pub fn set_connection(&mut self, state: AccountConnection, cx: &mut Context<Self>) {
+        self.connection = state;
+        cx.notify();
     }
 
     /// Registers the callback invoked whenever user editing changes the filter text.
@@ -215,6 +232,45 @@ impl Topbar {
             .into_any_element()
     }
 
+    /// The optional leading swatch or status dot for the Theme and Accounts buttons.
+    fn pill_indicator(&self, action: Action, m: &ModeTokens) -> Option<AnyElement> {
+        match action {
+            Action::Theme => Some(
+                div()
+                    .id("top-theme-swatch")
+                    .w(px(8.))
+                    .h(px(8.))
+                    .rounded_full()
+                    .flex_none()
+                    .bg(m.accent)
+                    .border_1()
+                    .border_color(m.sep_strong)
+                    .into_any_element(),
+            ),
+            Action::Accounts => {
+                let (color, status) = match self.connection {
+                    AccountConnection::Connected => (m.accent, "Account connected"),
+                    AccountConnection::Disconnected => (m.faint, "Account disconnected"),
+                };
+                Some(
+                    div()
+                        .id("top-accounts-status")
+                        .role(Role::Status)
+                        .aria_label(status)
+                        .aria_description(status)
+                        .w(px(8.))
+                        .h(px(8.))
+                        .rounded_full()
+                        .flex_none()
+                        .bg(color)
+                        .test_support()
+                        .into_any_element(),
+                )
+            }
+            _ => None,
+        }
+    }
+
     /// One action pill as a kit button backed by the Sidewise theme tokens.
     fn pill_view(&self, pill: &Pill, m: &ModeTokens, cx: &mut Context<Self>) -> AnyElement {
         let action = pill.action;
@@ -225,6 +281,9 @@ impl Topbar {
             .h(px(PILL_H))
             .rounded(DIMS.btn_r)
             .on_click(cx.listener(move |this, _, _, cx| this.fire(action, cx)))
+            .when_some(self.pill_indicator(action, m), |row, indicator| {
+                row.child(indicator)
+            })
             .child(pill.label)
             .when_some(pill.hint, |row, hint| {
                 row.child(div().text_color(m.faint).child(hint))
