@@ -30,6 +30,10 @@ too_many_lines = "deny"
 unimplemented = "deny"
 unwrap_used = "deny"
 
+[workspace.dependencies]
+navo-shell = { git = "https://github.com/trykA123/navo", rev = "4900194ca5cdabf358020319f79172e941491cb5" }
+rustix = { version = "1.1.6", features = ["process"] }
+
 [profile.dev]
 debug = "line-tables-only"
 
