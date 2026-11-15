@@ -1,11 +1,19 @@
 //! View tests of the shell: tab rules (NS11), keys, focus and closing the last tab.
 
+use gpui_kit::component::theme::{Theme as KitTheme, ThemeMode};
 use gpui_kit::test::TestWindowExt;
-use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, EntityId, TestAppContext};
+use gpui_kit::{
+    AnyWindowHandle, App, AppContext as _, Bounds, Entity, EntityId, Point, ReadGlobal,
+    TestAppContext, WindowAppearance, WindowBounds, WindowOptions, px, size,
+};
+use navo_compare_profile::appearance::PaletteId;
+use navo_ui::tokens::{self, Mode};
 
-use crate::shell::Shell;
+use crate::shell::{Shell, bind_keys};
 use crate::start::Side;
 use crate::test_window::open;
+use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
+use crate::theme_data::palettes::{PALETTES, PaletteSpec};
 
 /// Opens a shell in a test window and renders one frame.
 fn shell(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Shell>) {
@@ -213,4 +221,93 @@ fn closing_the_only_tab_closes_the_window(cx: &mut TestAppContext) {
     act(cx, &s, |shell, window, cx| shell.close_tab(0, window, cx));
     cx.run_until_parked();
     assert_eq!(cx.windows().len(), 0);
+}
+
+/// Finds the static specification for `palette` by id.
+fn palette_spec(palette: PaletteId) -> PaletteSpec {
+    PALETTES
+        .iter()
+        .find(|(id, _)| *id == palette)
+        .map(|(_, spec)| *spec)
+        .expect("palette spec")
+}
+
+/// Asserts that `SidewiseTheme`, navo tokens, and `KitTheme` all reflect `palette` and `mode`.
+fn assert_theme_projection(cx: &App, palette: PaletteId, mode: Mode) {
+    let side = SidewiseTheme::global(cx);
+    assert_eq!(side.palette, palette, "Sidewise palette");
+    assert_eq!(side.mode, mode, "Sidewise mode");
+    let spec = palette_spec(palette);
+    let m = if mode.is_dark() {
+        spec.dark
+    } else {
+        spec.light
+    };
+    let navo = tokens::current(cx);
+    assert_eq!(navo.mode, mode, "navo mode");
+    assert_eq!(navo.colors.background, m.surface, "navo background");
+    assert_eq!(navo.colors.surface, m.card, "navo surface");
+    assert_eq!(navo.colors.text, m.text, "navo text");
+    assert_eq!(navo.colors.accent, m.accent, "navo accent");
+    let kit_mode = if mode.is_dark() {
+        ThemeMode::Dark
+    } else {
+        ThemeMode::Light
+    };
+    let kit = KitTheme::global(cx);
+    assert_eq!(kit.mode, kit_mode, "kit mode");
+    assert_eq!(kit.colors.background, m.surface, "kit background");
+    assert_eq!(kit.colors.foreground, m.text, "kit foreground");
+    assert_eq!(kit.colors.primary, m.accent, "kit primary");
+    assert_eq!(
+        kit.tokens.background.color, m.surface,
+        "kit token background"
+    );
+    assert_eq!(kit.tokens.accent.color, m.accent_tint, "kit token accent");
+}
+
+/// Opening `Shell` after `apply_sidewise(Ocean)` retains Ocean and keeps projections coherent
+/// across direct `Shell::apply_appearance` calls for Dark and Light appearances.
+#[gpui_kit::test]
+fn shell_retains_ocean_palette_on_open_and_appearance_updates(cx: &mut TestAppContext) {
+    let (window, _) = cx.update(|cx| {
+        gpui_kit::init(cx);
+        apply_sidewise(PaletteId::Ocean, Mode::Light, cx);
+        bind_keys(cx);
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: Point::default(),
+                size: size(px(800.), px(600.)),
+            })),
+            ..Default::default()
+        };
+        gpui_kit::open_window(options, cx, |window, cx| {
+            cx.new(|cx| Shell::new(window, cx))
+        })
+        .expect("open test window")
+    });
+    let open_mode = cx
+        .update_window(window, |_, window, _| mode_of(window.appearance()))
+        .expect("window");
+    cx.update(|cx| {
+        assert_theme_projection(cx, PaletteId::Ocean, open_mode);
+        Shell::apply_appearance(WindowAppearance::Dark, cx);
+        assert_theme_projection(cx, PaletteId::Ocean, Mode::Dark);
+        Shell::apply_appearance(WindowAppearance::Light, cx);
+        assert_theme_projection(cx, PaletteId::Ocean, Mode::Light);
+    });
+}
+
+/// Opening `Shell` with no prior `SidewiseTheme` global defaults to `PaletteId::Violet`.
+#[gpui_kit::test]
+fn shell_defaults_to_violet_without_prior_sidewise_global(cx: &mut TestAppContext) {
+    let (window, _) = shell(cx);
+    let open_mode = cx
+        .update_window(window, |_, window, _| mode_of(window.appearance()))
+        .expect("window");
+    cx.update(|cx| {
+        assert_theme_projection(cx, PaletteId::Violet, open_mode);
+        Shell::apply_appearance(WindowAppearance::Dark, cx);
+        assert_theme_projection(cx, PaletteId::Violet, Mode::Dark);
+    });
 }

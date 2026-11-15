@@ -2,7 +2,8 @@
 //! It owns the tab list and the browser-style tab keys (NS11, NS15, NS16).
 
 use gpui_kit::assets::IconName;
-use gpui_kit::{FocusHandle, KeyBinding, Subscription};
+use gpui_kit::{App, FocusHandle, KeyBinding, Subscription, WindowAppearance};
+use navo_compare_profile::appearance::PaletteId;
 use navo_compare_profile::brand;
 use navo_compare_profile::recent::StartRows;
 use navo_ui::NavoTitleBar;
@@ -11,7 +12,7 @@ use navo_ui::primitives::{IconButton, Kbd, Tab, Tabs};
 use navo_ui::tokens;
 
 use crate::start::{self, StartScreen};
-use crate::theme::mode_of;
+use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
 
 gpui_kit::actions!(shell, [NewTab, CloseTab, NextTab, PrevTab]);
 
@@ -64,12 +65,21 @@ fn start_tab(window: &mut Window, cx: &mut Context<Shell>) -> ShellTab {
 }
 
 impl Shell {
+    /// Applies the active Sidewise palette (defaulting to Violet) in the appearance's mode.
+    pub(crate) fn apply_appearance(appearance: WindowAppearance, cx: &mut App) {
+        let palette = cx
+            .try_global::<SidewiseTheme>()
+            .map(|theme| theme.palette)
+            .unwrap_or(PaletteId::Violet);
+        apply_sidewise(palette, mode_of(appearance), cx);
+    }
+
     /// Makes a shell with one start tab and focuses that tab's left field.
-    /// It applies the token mode of the window's appearance and follows later changes (NS19).
+    /// It applies the active Sidewise palette in the window's mode and follows later changes (NS19).
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        tokens::apply(mode_of(window.appearance()), cx);
+        Self::apply_appearance(window.appearance(), cx);
         let appearance = cx.observe_window_appearance(window, |_, window, cx| {
-            tokens::apply(mode_of(window.appearance()), cx);
+            Self::apply_appearance(window.appearance(), cx);
             cx.notify();
         });
         let shell = Self {
