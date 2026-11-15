@@ -5,8 +5,10 @@ use std::rc::Rc;
 
 use gpui_kit::component::Sizable as _;
 use gpui_kit::component::button::Button;
-use gpui_kit::{FocusHandle, KeyBinding, ReadGlobal};
+use gpui_kit::component::input::InputEvent;
+use gpui_kit::{FocusHandle, KeyBinding, ReadGlobal, Subscription};
 use navo_ui::prelude::*;
+use navo_ui::primitives::{TextField, TextFieldState, text_field_state};
 
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::{DIMS, ModeTokens};
@@ -27,7 +29,8 @@ pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("alt-v", ViewMenu, Some(CONTEXT)),
         KeyBinding::new("alt-s", SyncPlan, Some(CONTEXT)),
-        KeyBinding::new("/", FocusSearch, Some(CONTEXT)),
+        // Skip `/` while an `Input` owns focus so users can type path separators in filters.
+        KeyBinding::new("/", FocusSearch, Some("Topbar && !Input")),
     ]);
 }
 
@@ -63,30 +66,63 @@ const PILLS: [Pill; 5] = [
 /// The callback every topbar action fires, on the UI thread.
 type OnAction = Rc<dyn Fn(Action, &mut App)>;
 
+/// The callback fired whenever user typing or clearing edits the filter text.
+type OnFilterChange = Rc<dyn Fn(SharedString, &mut App)>;
+
+/// Breadcrumb strings shown on the left side of the topbar.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Crumbs {
+    pub title: SharedString,
+    pub detail: SharedString,
+}
+
 /// The topbar: its crumbs, its filter text and the callback its actions fire.
 pub struct Topbar {
     title: SharedString,
     detail: SharedString,
     filter: SharedString,
+    filter_input: Entity<TextFieldState>,
+    _filter_sub: Subscription,
     on_action: OnAction,
+    on_filter_change: Option<OnFilterChange>,
     handle: FocusHandle,
 }
 
 impl Topbar {
     /// A topbar over one crumb pair, firing `on_action` for every pill and action key.
     pub fn new(
-        title: impl Into<SharedString>,
-        detail: impl Into<SharedString>,
+        crumbs: Crumbs,
         on_action: impl Fn(Action, &mut App) + 'static,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let filter_input = text_field_state("", window, cx);
+        let _filter_sub = cx.subscribe_in(
+            &filter_input,
+            window,
+            |this, input, event: &InputEvent, _, cx| {
+                if !matches!(event, InputEvent::Change) {
+                    return;
+                }
+                let text = input.read(cx).value();
+                this.on_filter_input(text, cx);
+            },
+        );
         Self {
-            title: title.into(),
-            detail: detail.into(),
+            title: crumbs.title,
+            detail: crumbs.detail,
             filter: SharedString::default(),
+            filter_input,
+            _filter_sub,
             on_action: Rc::new(on_action),
+            on_filter_change: None,
             handle: cx.focus_handle(),
         }
+    }
+
+    /// Registers the callback invoked whenever user editing changes the filter text.
+    pub fn set_on_filter_change(&mut self, callback: impl Fn(SharedString, &mut App) + 'static) {
+        self.on_filter_change = Some(Rc::new(callback));
     }
 
     /// The current search filter text.
@@ -99,10 +135,34 @@ impl Topbar {
         self.handle.clone()
     }
 
-    /// Replaces the search filter text.
-    pub fn set_filter(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.filter = text.into();
+    /// Replaces the search filter text and syncs the editable field.
+    pub fn set_filter(
+        &mut self,
+        text: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let text = text.into();
+        self.filter = text.clone();
+        self.filter_input
+            .update(cx, |input, cx| input.set_value(text, window, cx));
         cx.notify();
+    }
+
+    /// Syncs `filter` from user input edits and notifies any registered change listener.
+    fn on_filter_input(&mut self, text: SharedString, cx: &mut Context<Self>) {
+        self.filter = text.clone();
+        if let Some(callback) = &self.on_filter_change {
+            callback(text, cx);
+        }
+        cx.notify();
+    }
+
+    /// Focuses the inline search field and notifies the caller that Search was activated.
+    fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.filter_input
+            .update(cx, |input, cx| input.focus(window, cx));
+        self.fire(Action::Search, cx);
     }
 
     /// Runs the registered callback for one action.
@@ -122,22 +182,36 @@ impl Topbar {
             .child(div().text_color(m.muted).child(self.detail.clone()))
     }
 
-    /// The inline `/` search filter pill as an accessible, keyboard-focusable button.
+    /// The inline `/` search filter backed by the kit `TextField` primitive.
     fn search_view(&self, m: &ModeTokens, cx: &mut Context<Self>) -> AnyElement {
-        Button::new("top-search")
-            .small()
-            .accessibility_label("Search files")
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .flex_initial()
             .flex_shrink(1.0)
-            .min_w_0()
-            .overflow_hidden()
-            .px_2()
+            .w(px(250.))
+            .min_w(px(80.))
             .h(px(PILL_H))
+            .pl_2()
             .rounded(DIMS.btn_r)
             .bg(m.surface)
-            .text_color(m.muted)
-            .on_click(cx.listener(|this, _, _, cx| this.fire(Action::Search, cx)))
-            .child("/")
-            .child(div().min_w_0().overflow_hidden().child(self.filter.clone()))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| this.focus_search(window, cx)),
+            )
+            .child(div().text_color(m.muted).child("/"))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .child(TextField::new(
+                        "top-search",
+                        &self.filter_input,
+                        "Search files",
+                    )),
+            )
             .into_any_element()
     }
 
@@ -181,7 +255,9 @@ impl Render for Topbar {
             .track_focus(&self.handle)
             .on_action(cx.listener(|this, _: &ViewMenu, _, cx| this.fire(Action::View, cx)))
             .on_action(cx.listener(|this, _: &SyncPlan, _, cx| this.fire(Action::Sync, cx)))
-            .on_action(cx.listener(|this, _: &FocusSearch, _, cx| this.fire(Action::Search, cx)))
+            .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
+                this.focus_search(window, cx);
+            }))
             .flex()
             .flex_none()
             .items_center()

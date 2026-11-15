@@ -13,7 +13,7 @@ use gpui_kit::{
 use navo_compare_profile::appearance::PaletteId;
 use navo_ui::tokens::Mode;
 
-use super::topbar_status::{Action, MIN_W, Topbar, bind_keys};
+use super::topbar_status::{Action, Crumbs, MIN_W, Topbar, bind_keys};
 use crate::theme::apply_sidewise;
 use crate::theme_data::palettes::DIMS;
 
@@ -27,15 +27,24 @@ const IDS: [(&str, Action); 6] = [
     ("top-sync", Action::Sync),
 ];
 
-/// Opens a focused, drawn topbar in a themed window of `width`, recording every action fired.
+/// Opens a focused, drawn topbar in a Light-themed window of `width`, recording every action fired.
 fn topbar(
     cx: &mut TestAppContext,
     width: f32,
 ) -> (AnyWindowHandle, Entity<Topbar>, Rc<RefCell<Vec<Action>>>) {
+    topbar_in(cx, width, Mode::Light)
+}
+
+/// Opens a focused, drawn topbar in `mode` at `width`, recording every action fired.
+fn topbar_in(
+    cx: &mut TestAppContext,
+    width: f32,
+    mode: Mode,
+) -> (AnyWindowHandle, Entity<Topbar>, Rc<RefCell<Vec<Action>>>) {
     let fired = Rc::new(RefCell::new(Vec::new()));
     cx.update(|cx| {
         gpui_kit::init(cx);
-        apply_sidewise(PaletteId::Violet, Mode::Light, cx);
+        apply_sidewise(PaletteId::Violet, mode, cx);
         bind_keys(cx);
     });
     let log = Rc::clone(&fired);
@@ -47,12 +56,15 @@ fn topbar(
         ..Default::default()
     };
     let (window, view) = cx.update(|cx| {
-        gpui_kit::open_window(options, cx, |_, cx| {
+        gpui_kit::open_window(options, cx, |window, cx| {
             cx.new(|cx| {
                 Topbar::new(
-                    "New comparison",
-                    "Folder · File · Git",
+                    Crumbs {
+                        title: "New comparison".into(),
+                        detail: "Folder · File · Git".into(),
+                    },
                     move |action, _| log.borrow_mut().push(action),
+                    window,
                     cx,
                 )
             })
@@ -170,19 +182,22 @@ fn the_text_keeps_the_side_insets(cx: &mut TestAppContext) {
     .expect("window");
 }
 
-/// The filter text is readable and replaceable.
+/// The filter text round-trips through `set_filter`, `filter()` and the rendered text field.
 #[gpui_kit::test]
 fn the_filter_text_round_trips(cx: &mut TestAppContext) {
-    let (_window, view, _fired) = topbar(cx, 1024.);
-    cx.update(|cx| {
+    let (window, view, _fired) = topbar(cx, 1024.);
+    cx.update_window(window, |_, window, cx| {
         assert_eq!(
             view.read(cx).filter(),
             &SharedString::default(),
             "starts empty"
         );
-        view.update(cx, |bar, cx| bar.set_filter("main.rs", cx));
+        view.update(cx, |bar, cx| bar.set_filter("main.rs", window, cx));
+        window.render_frame(cx);
         assert_eq!(view.read(cx).filter(), &SharedString::from("main.rs"));
-    });
+        assert_eq!(window.find("top-search").value(), Some("main.rs"));
+    })
+    .expect("window");
 }
 
 /// Pressing Tab reaches Accounts without mouse input, and Enter/Space activates it.
@@ -223,12 +238,24 @@ fn tab_reaches_accounts_and_activates_without_mouse(cx: &mut TestAppContext) {
     );
 }
 
-/// Every topbar control has button semantics, an accessible label, Tab/Shift-Tab focus, and
-/// Enter/Space keyboard activation.
+/// Verifies `top-search` owns the labeled text input and receives Tab focus.
+fn assert_search_tab_focus(window: &mut gpui_kit::Window, cx: &mut gpui_kit::App) {
+    window.press("tab", cx);
+    let search_by_id = window.find("top-search");
+    let search_by_label = window.find_by_label("Search files");
+    assert!(
+        search_by_label.path().starts_with(search_by_id.path()),
+        "top-search must own the Search files input"
+    );
+    assert_eq!(search_by_label.role(), Some(Role::TextInput));
+    assert_eq!(search_by_label.focused(), Some(true));
+}
+
+/// Search has text-input semantics, and the five action pills have button semantics, accessible
+/// labels, Tab/Shift-Tab focus, and Enter/Space keyboard activation.
 #[gpui_kit::test]
 fn every_control_has_button_semantics_tab_focus_and_keyboard_activation(cx: &mut TestAppContext) {
-    const CONTROLS: [(&str, &str, Action); 6] = [
-        ("top-search", "Search files", Action::Search),
+    const BUTTONS: [(&str, &str, Action); 5] = [
         ("top-theme", "Theme", Action::Theme),
         ("top-accounts", "Accounts", Action::Accounts),
         ("top-view", "View", Action::View),
@@ -238,37 +265,24 @@ fn every_control_has_button_semantics_tab_focus_and_keyboard_activation(cx: &mut
 
     let (window, _view, fired) = topbar(cx, 1024.);
     cx.update_window(window, |_, window, cx| {
-        for (idx, (id, label, action)) in CONTROLS.iter().enumerate() {
+        assert_search_tab_focus(window, cx);
+        for (idx, (id, label, action)) in BUTTONS.iter().enumerate() {
             window.press("tab", cx);
-            let by_id = window.find(*id);
             let by_label = window.find_by_label(label);
-            assert_eq!(by_id.path(), by_label.path(), "{id} label mismatch");
-            assert_eq!(
-                by_label.role(),
-                Some(Role::Button),
-                "{id} needs button role"
-            );
-            assert_eq!(by_label.focused(), Some(true), "Tab #{idx} must focus {id}");
+            assert_eq!(window.find(*id).path(), by_label.path(), "{id} mismatch");
+            assert_eq!(by_label.role(), Some(Role::Button), "{id} role");
+            assert_eq!(by_label.focused(), Some(true), "Tab #{} {id}", idx + 1);
             let key = if idx % 2 == 0 { "enter" } else { "space" };
             window.press(key, cx);
-            assert_eq!(
-                fired.borrow().last(),
-                Some(action),
-                "{key} on {id} must fire {action:?}"
-            );
+            assert_eq!(fired.borrow().last(), Some(action), "{key} on {id}");
         }
-
         window.press("shift-tab", cx);
-        assert_eq!(
-            window.find_by_label("Keys").focused(),
-            Some(true),
-            "Shift-Tab from Sync must move focus back to Keys"
-        );
+        assert_eq!(window.find_by_label("Keys").focused(), Some(true));
         window.press("space", cx);
     })
     .expect("window");
 
-    assert_eq!(fired.borrow().len(), CONTROLS.len() + 1);
+    assert_eq!(fired.borrow().len(), BUTTONS.len() + 1);
     assert_eq!(fired.borrow().last(), Some(&Action::Keys));
 }
 
@@ -330,4 +344,117 @@ fn dark_mode_minimum_width_reaches_accounts_by_keyboard(cx: &mut TestAppContext)
     .expect("window");
 
     assert_eq!(fired.borrow().as_slice(), [Action::Accounts]);
+}
+
+/// Asserts that the visible TextField value, `Topbar::filter`, and change callback all agree.
+fn assert_filter_synced(
+    window: &gpui_kit::Window,
+    bar: &Topbar,
+    changes: &[SharedString],
+    expected: &str,
+) {
+    assert_eq!(window.find("top-search").value(), Some(expected));
+    assert_eq!(bar.filter().as_str(), expected);
+    assert_eq!(changes.last().map(SharedString::as_str), Some(expected));
+}
+
+/// Pressing `/` focuses the inline filter input, real typing and Ctrl+A/Backspace clearing update
+/// both `Topbar::filter` and the registered change callback, and Tab still reaches Accounts.
+#[gpui_kit::test]
+fn slash_focuses_filter_real_typing_and_clearing_sync_callback_and_tab_navigates(
+    cx: &mut TestAppContext,
+) {
+    let (window, view, fired) = topbar(cx, 1024.);
+    let changes = Rc::new(RefCell::new(Vec::<SharedString>::new()));
+    let sink = Rc::clone(&changes);
+    cx.update(|cx| {
+        view.update(cx, |bar, _| {
+            bar.set_on_filter_change(move |text, _| sink.borrow_mut().push(text));
+        });
+    });
+
+    cx.simulate_keystrokes(window, "/");
+    cx.run_until_parked();
+    cx.update_window(window, |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(fired.borrow().as_slice(), [Action::Search]);
+        assert_eq!(window.find("top-search").focused(), Some(true));
+        window.input("foo.rs", cx);
+        window.render_frame(cx);
+    })
+    .expect("window");
+    cx.run_until_parked();
+
+    cx.update_window(window, |_, window, cx| {
+        assert_filter_synced(window, view.read(cx), &changes.borrow(), "foo.rs");
+        window.press("ctrl-a", cx);
+        window.press("backspace", cx);
+        window.render_frame(cx);
+    })
+    .expect("window");
+    cx.run_until_parked();
+
+    cx.update_window(window, |_, window, cx| {
+        assert_filter_synced(window, view.read(cx), &changes.borrow(), "");
+        window.press("tab", cx);
+        window.press("tab", cx);
+        assert_eq!(window.find_by_label("Accounts").focused(), Some(true));
+        window.press("enter", cx);
+    })
+    .expect("window");
+
+    assert_eq!(
+        fired.borrow().as_slice(),
+        [Action::Search, Action::Accounts]
+    );
+}
+
+/// At the 780 px minimum width in both Light and Dark modes, typing a long path into the inline
+/// filter stays clipped cleanly inside the bar while keeping action buttons visible and reachable.
+#[gpui_kit::test]
+fn editable_filter_fits_light_and_dark_minimum_width_without_clipping(cx: &mut TestAppContext) {
+    for mode in [Mode::Light, Mode::Dark] {
+        let (window, view, _fired) = topbar_in(cx, MIN_W, mode);
+        cx.simulate_keystrokes(window, "/");
+        cx.run_until_parked();
+        cx.update_window(window, |_, window, cx| {
+            window.input("crates/navo-compare-app/src/chrome/topbar_status.rs", cx);
+            window.render_frame(cx);
+        })
+        .expect("window");
+        cx.run_until_parked();
+
+        cx.update_window(window, |_, window, cx| {
+            assert_eq!(
+                view.read(cx).filter(),
+                &SharedString::from("crates/navo-compare-app/src/chrome/topbar_status.rs"),
+                "{mode:?}: long filter must update Topbar::filter"
+            );
+
+            let viewport = window.viewport_size();
+            let search = find(window, &[], &ElementId::Name("top-search".into()))
+                .expect("top-search")
+                .bounds();
+            let sync = find(window, &[], &ElementId::Name("top-sync".into()))
+                .expect("top-sync")
+                .bounds();
+            assert!(
+                search.origin.x >= DIMS.inset_x && search.size.width > px(0.),
+                "{mode:?}: editable filter must keep side inset and non-zero width"
+            );
+            assert!(
+                sync.origin.x + sync.size.width <= viewport.width - DIMS.inset_x,
+                "{mode:?}: right-most pill must stay within {MIN_W}px inset"
+            );
+
+            window.press("tab", cx);
+            window.press("tab", cx);
+            assert_eq!(
+                window.find_by_label("Accounts").focused(),
+                Some(true),
+                "{mode:?}: Tab from filter must reach Accounts at {MIN_W}px"
+            );
+        })
+        .expect("window");
+    }
 }
