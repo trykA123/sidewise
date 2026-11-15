@@ -4,12 +4,13 @@
 use std::rc::Rc;
 
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::component::Sizable as _;
 use gpui_kit::component::button::Button;
-use gpui_kit::component::input::InputEvent;
+use gpui_kit::component::input::{Input, InputEvent};
+use gpui_kit::component::{Disableable as _, Sizable as _};
 use gpui_kit::{FocusHandle, KeyBinding, ReadGlobal, Role, Subscription};
 use navo_ui::prelude::*;
-use navo_ui::primitives::{TextField, TextFieldState, text_field_state};
+use navo_ui::primitives::{TextFieldState, text_field_state};
+use navo_ui::tokens;
 
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::{DIMS, ModeTokens};
@@ -38,7 +39,7 @@ pub fn bind_keys(cx: &mut App) {
 #[path = "topbar_mode.rs"]
 mod mode;
 
-pub use mode::Action;
+pub use mode::{Action, TopbarMode};
 use mode::{PILLS, Pill};
 
 /// The callback every topbar action fires, on the UI thread.
@@ -62,8 +63,10 @@ pub enum AccountConnection {
     Connected,
 }
 
-/// The topbar: its crumbs, its filter text and the callback its actions fire.
+/// The topbar: its mode, crumbs, filter text, availability, and callback.
 pub struct Topbar {
+    mode: TopbarMode,
+    enabled: [bool; 6],
     title: SharedString,
     detail: SharedString,
     filter: SharedString,
@@ -96,6 +99,8 @@ impl Topbar {
             },
         );
         Self {
+            mode: TopbarMode::default(),
+            enabled: [true; 6],
             title: crumbs.title,
             detail: crumbs.detail,
             filter: SharedString::default(),
@@ -106,6 +111,30 @@ impl Topbar {
             on_filter_change: None,
             handle: cx.focus_handle(),
         }
+    }
+
+    /// Switches which screen controls the topbar mounts.
+    pub fn set_mode(&mut self, mode: TopbarMode, cx: &mut Context<Self>) {
+        self.mode = mode;
+        cx.notify();
+    }
+
+    /// Enables or disables one action across pills, shortcut handlers, and search focus.
+    pub fn set_available(&mut self, action: Action, available: bool, cx: &mut Context<Self>) {
+        self.enabled[action as usize] = available;
+        cx.notify();
+    }
+
+    /// Updates the displayed breadcrumb title and detail strings.
+    pub fn set_crumbs(&mut self, crumbs: Crumbs, cx: &mut Context<Self>) {
+        self.title = crumbs.title;
+        self.detail = crumbs.detail;
+        cx.notify();
+    }
+
+    /// Returns whether `action` is both mounted in the current mode and enabled.
+    pub fn is_available(&self, action: Action) -> bool {
+        self.mode.shows(action) && self.enabled[action as usize]
     }
 
     /// Updates the Accounts connection indicator state from the caller.
@@ -152,15 +181,21 @@ impl Topbar {
         cx.notify();
     }
 
-    /// Focuses the inline search field and notifies the caller that Search was activated.
+    /// Focuses the inline search field and notifies the caller when Search is available.
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.is_available(Action::Search) {
+            return;
+        }
         self.filter_input
             .update(cx, |input, cx| input.focus(window, cx));
         self.fire(Action::Search, cx);
     }
 
-    /// Runs the registered callback for one action.
+    /// Runs the registered callback for one action when it is shown and enabled.
     fn fire(&self, action: Action, cx: &mut App) {
+        if !self.is_available(action) {
+            return;
+        }
         (self.on_action)(action, cx);
     }
 
@@ -176,8 +211,16 @@ impl Topbar {
             .child(div().text_color(m.muted).child(self.detail.clone()))
     }
 
-    /// The inline `/` search filter backed by the kit `TextField` primitive.
+    /// The inline `/` search filter backed by the kit `Input` primitive with disabled support.
     fn search_view(&self, m: &ModeTokens, cx: &mut Context<Self>) -> AnyElement {
+        let tokens = tokens::current(cx);
+        let input = Input::new(&self.filter_input)
+            .id("top-search")
+            .aria_label("Search files")
+            .small()
+            .font_family(tokens.typography.mono_font.clone())
+            .text_size(tokens.typography.small)
+            .disabled(!self.is_available(Action::Search));
         div()
             .flex()
             .items_center()
@@ -195,17 +238,7 @@ impl Topbar {
                 cx.listener(|this, _, window, cx| this.focus_search(window, cx)),
             )
             .child(div().text_color(m.muted).child("/"))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .child(TextField::new(
-                        "top-search",
-                        &self.filter_input,
-                        "Search files",
-                    )),
-            )
+            .child(div().flex_1().min_w_0().overflow_hidden().child(input))
             .into_any_element()
     }
 
@@ -251,8 +284,10 @@ impl Topbar {
     /// One action pill as a kit button backed by the Sidewise theme tokens.
     fn pill_view(&self, pill: &Pill, m: &ModeTokens, cx: &mut Context<Self>) -> AnyElement {
         let action = pill.action;
+        let enabled = self.is_available(action);
         Button::new(pill.id)
             .small()
+            .disabled(!enabled)
             .accessibility_label(pill.label)
             .px_2()
             .h(px(PILL_H))
@@ -262,7 +297,7 @@ impl Topbar {
                 row.child(indicator)
             })
             .child(pill.label)
-            .when_some(pill.hint, |row, hint| {
+            .when_some(pill.hint.filter(|_| enabled), |row, hint| {
                 row.child(div().text_color(m.faint).child(hint))
             })
             .into_any_element()
@@ -280,9 +315,13 @@ impl Render for Topbar {
             side.spec.light
         };
         let crumb = self.crumb_view(&m);
-        let search = self.search_view(&m, cx);
+        let search = self
+            .mode
+            .shows(Action::Search)
+            .then(|| self.search_view(&m, cx));
         let pills: Vec<AnyElement> = PILLS
             .iter()
+            .filter(|pill| self.mode.shows(pill.action))
             .map(|pill| self.pill_view(pill, &m, cx))
             .collect();
         div()
@@ -308,7 +347,7 @@ impl Render for Topbar {
             .px(DIMS.inset_x)
             .child(crumb)
             .child(div().flex_1().min_w_0())
-            .child(search)
+            .when_some(search, |bar, search| bar.child(search))
             .children(pills)
     }
 }

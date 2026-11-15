@@ -1,4 +1,16 @@
-//! Action variants and prototype pill definitions shared inside the topbar module.
+//! Topbar mode visibility rules, action variants, and prototype pill definitions.
+
+/// Which comparison screen owns the topbar; determines which controls are mounted.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TopbarMode {
+    Start,
+    #[default]
+    Folders,
+    File,
+    Git,
+    Stream,
+    Large,
+}
 
 /// Which topbar action fired; the shell registers one callback for all of them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -9,6 +21,23 @@ pub enum Action {
     View,
     Keys,
     Sync,
+}
+
+impl TopbarMode {
+    /// Returns whether `action` is mounted in this screen mode.
+    pub const fn shows(self, action: Action) -> bool {
+        match action {
+            Action::Search => matches!(self, Self::Folders),
+            Action::View => !matches!(self, Self::Git),
+            Action::Sync => {
+                matches!(
+                    self,
+                    Self::Folders | Self::File | Self::Stream | Self::Large
+                )
+            }
+            Action::Theme | Action::Accounts | Action::Keys => true,
+        }
+    }
 }
 
 /// One action pill: its element id, its label, its key hint and the action it fires.

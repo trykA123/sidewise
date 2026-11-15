@@ -13,7 +13,9 @@ use gpui_kit::{
 use navo_compare_profile::appearance::PaletteId;
 use navo_ui::tokens::Mode;
 
-use super::topbar_status::{AccountConnection, Action, Crumbs, MIN_W, Topbar, bind_keys};
+use super::topbar_status::{
+    AccountConnection, Action, Crumbs, MIN_W, Topbar, TopbarMode, bind_keys,
+};
 use crate::theme::apply_sidewise;
 use crate::theme_data::palettes::DIMS;
 
@@ -500,4 +502,206 @@ fn editable_filter_fits_light_and_dark_minimum_width_without_clipping(cx: &mut T
         })
         .expect("window");
     }
+}
+
+/// Checks the mode default, all-six enabled defaults, crumb update, and visibility matrix.
+#[gpui_kit::test]
+fn mode_visibility_matrix_defaults_and_crumbs(cx: &mut TestAppContext) {
+    assert_eq!(TopbarMode::default(), TopbarMode::Folders);
+    let expected = [
+        (TopbarMode::Start, [false, true, true, true, true, false]),
+        (TopbarMode::Folders, [true, true, true, true, true, true]),
+        (TopbarMode::File, [false, true, true, true, true, true]),
+        (TopbarMode::Git, [false, true, true, false, true, false]),
+        (TopbarMode::Stream, [false, true, true, true, true, true]),
+        (TopbarMode::Large, [false, true, true, true, true, true]),
+    ];
+    let actions = [
+        Action::Search,
+        Action::Theme,
+        Action::Accounts,
+        Action::View,
+        Action::Keys,
+        Action::Sync,
+    ];
+    for (mode, flags) in expected {
+        for (action, want) in actions.into_iter().zip(flags) {
+            assert_eq!(mode.shows(action), want, "{mode:?}::shows({action:?})");
+        }
+    }
+
+    let (window, view, _fired) = topbar(cx, 1024.);
+    cx.update_window(window, |_, window, cx| {
+        for action in actions {
+            assert!(
+                view.read(cx).is_available(action),
+                "{action:?} must be available by default"
+            );
+        }
+        view.update(cx, |bar, cx| {
+            bar.set_crumbs(
+                Crumbs {
+                    title: "Left vs Right".into(),
+                    detail: "12 files".into(),
+                },
+                cx,
+            );
+        });
+        window.render_frame(cx);
+    })
+    .expect("window");
+}
+
+/// Returns the drawn width of element `id`.
+fn width_of(window: &gpui_kit::Window, id: &str) -> gpui_kit::Pixels {
+    find(window, &[], &ElementId::Name(id.into()))
+        .unwrap_or_else(|| panic!("missing {id}"))
+        .bounds()
+        .size
+        .width
+}
+
+/// Asserts which element ids are mounted vs absent.
+fn assert_mounted(window: &gpui_kit::Window, present: &[&str], hidden: &[&str]) {
+    for id in present {
+        assert!(
+            find(window, &[], &ElementId::Name((*id).into())).is_some(),
+            "{id} mounted"
+        );
+    }
+    for id in hidden {
+        assert!(
+            find(window, &[], &ElementId::Name((*id).into())).is_none(),
+            "{id} hidden"
+        );
+    }
+}
+
+/// Start mode hides Search and Sync; disabled pills omit hints and ignore clicks/shortcuts.
+#[gpui_kit::test]
+fn start_mode_hides_search_sync_and_disabled_pills_drop_hints_and_ignore_actions(
+    cx: &mut TestAppContext,
+) {
+    let (window, view, fired) = topbar(cx, 1024.);
+    let (vw, tw) = cx
+        .update_window(window, |_, window, cx| {
+            view.update(cx, |bar, cx| bar.set_mode(TopbarMode::Start, cx));
+            window.render_frame(cx);
+            assert_mounted(
+                window,
+                &["top-theme", "top-accounts", "top-view", "top-keys"],
+                &["top-search", "top-sync"],
+            );
+            let widths = (width_of(window, "top-view"), width_of(window, "top-theme"));
+            view.update(cx, |bar, cx| {
+                bar.set_available(Action::View, false, cx);
+                bar.set_available(Action::Theme, false, cx);
+            });
+            window.render_frame(cx);
+            assert!(width_of(window, "top-view") < widths.0, "View hint omitted");
+            assert!(
+                width_of(window, "top-theme") < widths.1,
+                "Theme hint omitted"
+            );
+            widths
+        })
+        .expect("window");
+    let _ = (vw, tw);
+
+    click(cx, window, "top-view");
+    click(cx, window, "top-theme");
+    for key in ["alt-v", "alt-s", "/"] {
+        cx.simulate_keystrokes(window, key);
+    }
+    cx.run_until_parked();
+    assert!(
+        fired.borrow().is_empty(),
+        "hidden/disabled actions must not fire"
+    );
+}
+
+/// Git hides View/Sync/Search while File shows Sync and View and honors Alt+S availability.
+#[gpui_kit::test]
+fn git_and_file_modes_gate_sync_and_view_availability(cx: &mut TestAppContext) {
+    let (window, view, fired) = topbar(cx, 1024.);
+    cx.update_window(window, |_, window, cx| {
+        view.update(cx, |bar, cx| bar.set_mode(TopbarMode::Git, cx));
+        window.render_frame(cx);
+        assert_mounted(
+            window,
+            &["top-theme", "top-accounts", "top-keys"],
+            &["top-search", "top-view", "top-sync"],
+        );
+        view.update(cx, |bar, cx| {
+            bar.set_mode(TopbarMode::File, cx);
+            bar.set_available(Action::Sync, false, cx);
+        });
+        window.render_frame(cx);
+        assert_mounted(window, &["top-sync", "top-view"], &["top-search"]);
+    })
+    .expect("window");
+    cx.simulate_keystrokes(window, "alt-s");
+    click(cx, window, "top-sync");
+    cx.run_until_parked();
+    assert!(
+        fired.borrow().is_empty(),
+        "disabled Sync must ignore Alt+S and clicks"
+    );
+}
+
+/// Mounted disabled Search in Folders ignores `/`, wrapper click, inner Input click+typing,
+/// keeping root focus and filter text until re-enabled.
+#[gpui_kit::test]
+fn folders_disabled_search_blocks_slash_wrapper_and_inner_input_then_reenable_works(
+    cx: &mut TestAppContext,
+) {
+    let (window, view, fired) = topbar(cx, 1024.);
+    let wrapper_pt = cx
+        .update_window(window, |_, window, cx| {
+            view.update(cx, |bar, cx| bar.set_available(Action::Search, false, cx));
+            window.render_frame(cx);
+            assert!(view.read(cx).focus_handle().is_focused(window));
+            let b = find(window, &[], &ElementId::Name("top-search".into()))
+                .expect("search")
+                .bounds();
+            point(b.origin.x - px(6.), b.origin.y + b.size.height / 2.0)
+        })
+        .expect("window");
+
+    cx.simulate_keystrokes(window, "/");
+    VisualTestContext::from_window(window, cx).simulate_click(wrapper_pt, Modifiers::none());
+    click(cx, window, "top-search");
+    cx.run_until_parked();
+    cx.update_window(window, |_, window, cx| {
+        window.input("abc", cx);
+        window.render_frame(cx);
+    })
+    .expect("window");
+    cx.run_until_parked();
+    cx.update_window(window, |_, window, cx| {
+        assert!(fired.borrow().is_empty(), "disabled Search must not fire");
+        assert_eq!(view.read(cx).filter().as_str(), "");
+        assert_eq!(window.find("top-search").value(), Some(""));
+        assert_ne!(window.find("top-search").focused(), Some(true));
+        assert!(view.read(cx).focus_handle().is_focused(window));
+        view.update(cx, |bar, cx| bar.set_available(Action::Search, true, cx));
+        window.render_frame(cx);
+    })
+    .expect("window");
+
+    cx.simulate_keystrokes(window, "/");
+    cx.run_until_parked();
+    cx.update_window(window, |_, window, cx| {
+        assert_eq!(fired.borrow().as_slice(), [Action::Search]);
+        assert_eq!(window.find("top-search").focused(), Some(true));
+        window.input("abc", cx);
+        window.render_frame(cx);
+    })
+    .expect("window");
+    cx.run_until_parked();
+    cx.update_window(window, |_, window, cx| {
+        assert_eq!(view.read(cx).filter().as_str(), "abc");
+        assert_eq!(window.find("top-search").value(), Some("abc"));
+    })
+    .expect("window");
 }
