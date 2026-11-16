@@ -33,6 +33,13 @@ mod launch;
     )
 )]
 mod layers;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "CM2a and CM5a open the menus from their views")
+)]
+mod menu_host;
+#[cfg(test)]
+mod menu_host_tests;
 #[cfg_attr(not(test), expect(dead_code, reason = "the U13 chrome reads it"))]
 mod motion;
 #[cfg(test)]

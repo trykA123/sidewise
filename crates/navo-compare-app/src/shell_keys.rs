@@ -25,6 +25,7 @@ pub fn bind_keys(cx: &mut App) {
     sidebar::bind_keys(cx);
     topbar_status::bind_keys(cx);
     keys_sheet::bind_keys(cx);
+    crate::menu_host::bind_menu_keys(cx);
     cx.bind_keys([
         KeyBinding::new("ctrl-t", NewTab, Some(CONTEXT)),
         KeyBinding::new("1", NewTab, Some(OWN)),
