@@ -174,3 +174,30 @@ fn without_a_book_a_compare_still_opens(cx: &mut TestAppContext) {
     assert!(shell.read_with(cx, |shell, _| shell.active_screen().is_none()));
     assert_eq!(shell.read_with(cx, |shell, cx| shell.toast_count(cx)), 0);
 }
+
+#[gpui_kit::test]
+fn forget_then_undo_restores_the_row(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let mut book = SessionBook::open(Some(&fixture.profile()), 0).expect("book");
+    let visit = Visit {
+        left: fixture.left(),
+        right: fixture.right(),
+        respect_gitignore: false,
+    };
+    book.record(&visit, 1_000).expect("record");
+    let id = book.rows().recent[0].id.clone();
+    let opened = open_shell(cx, Some(&fixture.profile()));
+    let shell = &opened.1;
+    let sidebar = shell.read_with(cx, |shell, _| shell.sidebar().clone());
+    let rows =
+        |cx: &mut TestAppContext| sidebar.read_with(cx, |sidebar, _| sidebar.rows().recent.len());
+    assert_eq!(rows(cx), 1);
+    emit(cx, &opened, StartEvent::Forget { id });
+    assert_eq!(rows(cx), 0);
+    assert!(fixture.stored().is_empty());
+    assert_eq!(shell.read_with(cx, |shell, cx| shell.toast_count(cx)), 1);
+    let host = shell.read_with(cx, |shell, _| shell.toast_host());
+    host.update(cx, |host, cx| host.undo(cx));
+    assert_eq!(rows(cx), 1);
+    assert_eq!(fixture.stored().len(), 1);
+}

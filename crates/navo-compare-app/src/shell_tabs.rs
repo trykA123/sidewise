@@ -135,7 +135,8 @@ impl Shell {
                 right: SideSpec::Path(right),
                 choice,
             } => (left, right, choice),
-            StartEvent::Compare { .. } | StartEvent::Forget { .. } => return,
+            StartEvent::Forget { id } => return self.forget_row(id, cx),
+            StartEvent::Compare { .. } => return,
         };
         let request = CompareRequest {
             left: left.clone(),
@@ -183,6 +184,12 @@ impl Shell {
     /// Pushes one toast that expires on its own.
     pub(crate) fn toast(&self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.toasts.update(cx, |host, cx| host.push(text, cx));
+    }
+
+    /// The toast host, so a test can press Undo outside a shell update.
+    #[cfg(test)]
+    pub(crate) fn toast_host(&self) -> Entity<crate::layers::toast::ToastHost> {
+        self.toasts.clone()
     }
 
     /// How many toasts are on screen.

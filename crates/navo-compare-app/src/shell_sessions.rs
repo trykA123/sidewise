@@ -9,6 +9,7 @@ use navo_compare_profile::recent::StartRows;
 use navo_ui::prelude::*;
 
 use super::{Shell, TabKind};
+use crate::layers::toast;
 use crate::screens::compare_tab::CompareRequest;
 use crate::start_tabs::{StartChoice, StartMode};
 
@@ -53,6 +54,28 @@ impl Shell {
                 cx.notify();
             });
         }
+    }
+
+    /// Deletes unnamed recent session `id`, refreshes the rows and toasts "Removed from Recent" with an Undo
+    /// that saves it back. An error toasts its text and changes nothing.
+    pub(super) fn forget_row(&mut self, id: &str, cx: &mut Context<Self>) {
+        if !cx.has_global::<Sessions>() {
+            return;
+        }
+        let session = match cx.global_mut::<Sessions>().0.forget(id, now_s()) {
+            Ok(session) => session,
+            Err(text) => return self.toast(text, cx),
+        };
+        self.sync_rows(cx);
+        let shell = cx.weak_entity();
+        let undo = move |cx: &mut App| {
+            let restored = cx.global_mut::<Sessions>().0.restore(&session, now_s());
+            let _ = shell.update(cx, |shell, cx| match restored {
+                Ok(()) => shell.sync_rows(cx),
+                Err(text) => shell.toast(text, cx),
+            });
+        };
+        toast::notify_undo("Removed from Recent", undo, cx);
     }
 
     /// `open_compare`; when it returns Ok, remembers the request. An error already toasted.
