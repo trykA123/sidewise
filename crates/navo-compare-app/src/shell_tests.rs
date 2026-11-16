@@ -1,6 +1,6 @@
 //! View tests of the shell: tab rules (NS11), keys, focus and closing the last tab.
 
-use gpui_kit::base::test_support::snapshots;
+use gpui_kit::base::test_support::{snapshots, texts};
 use gpui_kit::component::theme::{Theme as KitTheme, ThemeMode};
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{
@@ -181,7 +181,7 @@ fn clicking_a_tab_selects_it_and_its_close_button_closes_it(cx: &mut TestAppCont
     let s = shell(cx);
     act(cx, &s, |shell, window, cx| shell.new_tab(window, cx));
     cx.update_window(s.0, |_, window, cx| {
-        window.within("tabs").click(0usize, cx);
+        window.within("tabs").click(("open-tab", 0usize), cx);
     })
     .expect("window");
     assert_eq!(state(cx, &s.1), (2, 0));
@@ -197,7 +197,12 @@ fn the_first_tab_has_a_width(cx: &mut TestAppContext) {
     let s = shell(cx);
     let width = cx
         .update_window(s.0, |_, window, _| {
-            window.within("tabs").find(0usize).bounds().size.width
+            window
+                .within("tabs")
+                .find(("open-tab", 0usize))
+                .bounds()
+                .size
+                .width
         })
         .expect("window");
     assert!(f32::from(width) > 0.);
@@ -519,5 +524,152 @@ fn toast_slot_mounts_bottom_right_without_blocking_start_fields(cx: &mut TestApp
             })
             .expect("window");
         }
+    }
+}
+
+/// Checks the sidebar/Main split and that Start controls and texts fit `Main` at `width` px.
+fn assert_split_geometry(window: &mut gpui_kit::Window, width: f32) {
+    let main = window.find("main-pane").bounds();
+    assert_eq!(main.origin.x, px(280.), "280 px expanded sidebar");
+    assert_eq!(
+        main.size.width,
+        px(width - 280.),
+        "Main column fills the rest"
+    );
+    assert!(window.find("title-bar-title").visible());
+    assert!(window.try_find("title-bar-arrow").is_none());
+    assert!(window.try_find("hint-sidebar").is_none());
+    let tab0 = window.within("tabs").find(("open-tab", 0usize)).bounds();
+    assert!(tab0.origin.x >= px(16.) && tab0.origin.x + tab0.size.width <= main.origin.x - px(16.));
+    for id in ["start-left", "start-swap", "start-right", "start-compare"] {
+        let b = window.find(id).bounds();
+        assert!(
+            b.size.width > px(0.) && b.size.height > px(0.),
+            "{id} collapsed in {width}px shell ({b:?} inside {main:?})"
+        );
+        assert!(
+            b.origin.x >= main.origin.x
+                && b.origin.x + b.size.width <= main.origin.x + main.size.width,
+            "{id} ({b:?}) escapes main ({main:?})"
+        );
+    }
+    for id in ["start-left", "start-right"] {
+        let w = window.find(id).bounds().size.width;
+        assert!(w >= px(80.), "{id} unusable at {width}px: {w:?}");
+    }
+    let main_right = main.origin.x + main.size.width;
+    for text in texts(window) {
+        let b = text.bounds();
+        if !text.visible() || b.size.width <= px(0.) || b.origin.y < main.origin.y {
+            continue;
+        }
+        let (left, right) = (b.origin.x, b.origin.x + b.size.width);
+        let in_sidebar = right <= main.origin.x;
+        let in_main = left >= main.origin.x && right <= main_right;
+        assert!(
+            in_sidebar || in_main,
+            "{:?} ({b:?}) straddles the split",
+            text.text()
+        );
+    }
+}
+
+/// Sidebar clicks create, select, and close tabs while retaining real `StartScreen` identities.
+#[gpui_kit::test]
+fn sidebar_clicks_create_select_and_close_tabs_keeping_screen_identities(cx: &mut TestAppContext) {
+    let s = shell(cx);
+    let id0 = active_id(cx, &s.1);
+    click_id(cx, s.0, "new-compare");
+    let id1 = active_id(cx, &s.1);
+    assert_ne!(id1, id0);
+    assert_eq!(state(cx, &s.1), (2, 1));
+    assert_eq!(ids(cx, &s.1), [id0, id1]);
+
+    cx.update_window(s.0, |_, window, cx| {
+        assert_eq!(
+            window.within("tabs").find(("open-tab", 1usize)).selected(),
+            Some(true)
+        );
+        window.within("tabs").click(("open-tab", 0usize), cx);
+    })
+    .expect("window");
+    assert_eq!(state(cx, &s.1), (2, 0));
+    assert_eq!(active_id(cx, &s.1), id0);
+
+    cx.update_window(s.0, |_, window, cx| {
+        window.within("tabs").click(("tab-close", 0usize), cx);
+    })
+    .expect("window");
+    assert_eq!(state(cx, &s.1), (1, 0));
+    assert_eq!(ids(cx, &s.1), [id1]);
+}
+
+/// Closing an inactive tab left of active shifts sidebar selection and preserves `Side::Right` focus.
+#[gpui_kit::test]
+fn inactive_sidebar_close_shifts_indices_and_keeps_right_input_focus(cx: &mut TestAppContext) {
+    let s = shell(cx);
+    act(cx, &s, |shell, window, cx| {
+        shell.new_tab(window, cx);
+        shell.new_tab(window, cx);
+    });
+    let before = ids(cx, &s.1);
+    cx.simulate_keystrokes(s.0, "tab");
+    cx.update_window(s.0, |_, window, cx| {
+        window.within("tabs").click(("tab-close", 0usize), cx);
+    })
+    .expect("window");
+    assert_eq!(state(cx, &s.1), (2, 1));
+    assert_eq!(ids(cx, &s.1), [before[1], before[2]]);
+    cx.update_window(s.0, |_, window, cx| {
+        assert_eq!(
+            window.within("tabs").find(("open-tab", 1usize)).selected(),
+            Some(true)
+        );
+        let side =
+            s.1.read(cx)
+                .active_screen()
+                .and_then(|sc| sc.read(cx).focused_side(window, cx));
+        assert_eq!(side, Some(Side::Right));
+    })
+    .expect("window");
+}
+
+/// Clicking the sole open tab's close button removes the window.
+#[gpui_kit::test]
+fn clicking_last_sidebar_tab_close_removes_window(cx: &mut TestAppContext) {
+    let s = shell(cx);
+    cx.update_window(s.0, |_, window, cx| {
+        window.within("tabs").click(("tab-close", 0usize), cx);
+    })
+    .expect("window");
+    cx.run_until_parked();
+    assert_eq!(cx.windows().len(), 0);
+}
+
+/// At 780 and 1200 px in Light and Dark, the title bar hides its menu arrow and a 280 px Sidebar
+/// leaves Main 500 px and 920 px wide, with both Start inputs usable.
+#[gpui_kit::test]
+fn titlebar_hides_arrow_and_sidebar_split_keeps_start_inputs_usable_light_and_dark(
+    cx: &mut TestAppContext,
+) {
+    for (mode, width) in [
+        (Mode::Light, 780.),
+        (Mode::Dark, 780.),
+        (Mode::Light, 1200.),
+        (Mode::Dark, 1200.),
+    ] {
+        let (window, view) = shell_at(cx, width, mode);
+        cx.update_window(window, |_, window, cx| {
+            let screen = view.read(cx).active_screen().expect("start").clone();
+            screen.update(cx, |sc, cx| sc.set_sides("no/a", "no/b", window, cx));
+        })
+        .expect("window");
+        cx.run_until_parked();
+        cx.update_window(window, |_, window, cx| window.render_frame(cx))
+            .expect("window");
+        cx.update_window(window, |_, window, _| {
+            assert_split_geometry(window, width);
+        })
+        .expect("window");
     }
 }

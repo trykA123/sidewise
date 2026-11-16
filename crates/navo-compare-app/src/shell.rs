@@ -1,7 +1,6 @@
-//! The window's shell: the title bar, tabs, topbar, active stage, toast host, and status bar.
-//! It owns the tab list and the browser-style tab keys (NS11, NS15, NS16).
+//! The window's shell: the title bar, sidebar, topbar, active stage, toast host, and status bar.
+//! It owns the tab list, syncs the sidebar, and handles browser-style tab keys (NS11, NS15, NS16).
 
-use gpui_kit::assets::IconName;
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{App, FocusHandle, KeyBinding, Subscription, WindowAppearance};
 use navo_compare_profile::appearance::PaletteId;
@@ -9,11 +8,11 @@ use navo_compare_profile::brand;
 use navo_compare_profile::recent::StartRows;
 use navo_ui::NavoTitleBar;
 use navo_ui::prelude::*;
-use navo_ui::primitives::{IconButton, Tab, Tabs};
 use navo_ui::tokens;
 
+use crate::chrome::sidebar::{self, Sidebar, SidebarEvent};
 use crate::chrome::status_bar::{StatusBar, StatusHint};
-use crate::chrome::topbar_status::{Action as TopbarAction, Crumbs, Topbar, TopbarMode};
+use crate::chrome::topbar_status::{self, Action as TopbarAction, Crumbs, Topbar, TopbarMode};
 use crate::layers::toast::ToastHost;
 use crate::start::{self, StartScreen};
 use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
@@ -23,9 +22,6 @@ gpui_kit::actions!(shell, [NewTab, CloseTab, NextTab, PrevTab]);
 
 /// Key context of the shell's root element; the tab keys are bound inside it.
 const CONTEXT: &str = "Shell";
-
-/// Width of the "+" button at the end of the tab row (NS15).
-const PLUS_WIDTH: f32 = 28.;
 
 /// What a tab shows. Only the start screen exists so far; each start tab owns its screen.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -39,26 +35,34 @@ pub struct ShellTab {
     pub kind: TabKind,
 }
 
-/// The shell view: the tab list, active index, topbar, toast host, and focus handle.
+/// The shell view: the tab list, active index, sidebar, topbar, toast host, and focus handle.
 pub struct Shell {
     tabs: Vec<ShellTab>,
     active: usize,
+    sidebar: Entity<Sidebar>,
+    _sidebar: Subscription,
     topbar: Entity<Topbar>,
     toasts: Entity<ToastHost>,
     handle: FocusHandle,
     _appearance: Subscription,
 }
 
-/// Binds the tab keys in the `Shell` context and the start screen's keys;
-/// call once after `navo_ui::init`.
+/// Binds the shell, start screen, sidebar, and topbar keys; call once after `navo_ui::init`.
 pub fn bind_keys(cx: &mut App) {
     start::bind_keys(cx);
+    sidebar::bind_keys(cx);
+    topbar_status::bind_keys(cx);
     cx.bind_keys([
         KeyBinding::new("ctrl-t", NewTab, Some(CONTEXT)),
         KeyBinding::new("ctrl-w", CloseTab, Some(CONTEXT)),
         KeyBinding::new("ctrl-tab", NextTab, Some(CONTEXT)),
         KeyBinding::new("ctrl-shift-tab", PrevTab, Some(CONTEXT)),
     ]);
+}
+
+/// Extracts open tab titles in display order for initializing and syncing [`Sidebar`].
+fn tab_titles(tabs: &[ShellTab]) -> Vec<SharedString> {
+    tabs.iter().map(|tab| tab.title.clone()).collect()
 }
 
 /// A fresh start tab titled "New compare", with its own start screen over no stored rows yet.
@@ -89,11 +93,19 @@ impl Shell {
             Self::apply_appearance(window.appearance(), cx);
             cx.notify();
         });
+        let tabs = vec![start_tab(window, cx)];
+        let titles = tab_titles(&tabs);
+        let sidebar = cx.new(|cx| Sidebar::new(StartRows::default(), titles, cx));
+        let sidebar_sub = cx.subscribe_in(&sidebar, window, |this, _, event, window, cx| {
+            this.on_sidebar(*event, window, cx);
+        });
         let topbar = start_topbar(window, cx);
         let toasts = cx.new(|_| ToastHost::new());
         let shell = Self {
-            tabs: vec![start_tab(window, cx)],
+            tabs,
             active: 0,
+            sidebar,
+            _sidebar: sidebar_sub,
             topbar,
             toasts,
             handle: cx.focus_handle(),
@@ -151,6 +163,7 @@ impl Shell {
         let tab = start_tab(window, cx);
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
+        self.sync_chrome(cx);
         self.activated(window, cx);
     }
 
@@ -172,6 +185,7 @@ impl Shell {
             self.active -= 1;
         }
         self.active = self.active.min(self.tabs.len() - 1);
+        self.sync_chrome(cx);
         if was_active {
             self.activated(window, cx);
         } else {
@@ -183,6 +197,7 @@ impl Shell {
     pub fn select_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
             self.active = index;
+            self.sync_chrome(cx);
             self.activated(window, cx);
         }
     }
@@ -207,31 +222,36 @@ impl Shell {
         cx.notify();
     }
 
-    /// The tab strip with the "+" button at its end.
-    fn tab_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = tokens::current(cx);
-        let plus = IconButton::new("new-tab", IconName::Plus, "New tab")
-            .on_click(cx.listener(|this, _, window, cx| this.new_tab(window, cx)));
-        let tabs = Tabs::new(
-            "tabs",
-            self.tabs.iter().map(|tab| Tab::new(tab.title.clone())),
-        )
-        .selected(self.active)
-        .trailing(plus, px(PLUS_WIDTH))
-        .on_select(cx.listener(|this, index: &usize, window, cx| {
-            this.select_tab(*index, window, cx);
-        }))
-        .on_close(cx.listener(|this, index: &usize, window, cx| {
-            this.close_tab(*index, window, cx);
-        }));
+    /// Pushes open tab titles and active index into the sidebar without touching focus.
+    fn sync_chrome(&self, cx: &mut Context<Self>) {
+        let titles = tab_titles(&self.tabs);
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.set_tabs(titles, self.active, cx));
+    }
+
+    /// Routes typed sidebar actions to tab mutations or redraws on rail transitions.
+    fn on_sidebar(&mut self, event: SidebarEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            SidebarEvent::NewCompare => self.new_tab(window, cx),
+            SidebarEvent::SelectTab(index) => self.select_tab(index, window, cx),
+            SidebarEvent::CloseTab(index) => self.close_tab(index, window, cx),
+            SidebarEvent::RailToggled(_) => cx.notify(),
+        }
+    }
+
+    /// Right-hand workspace column stacking the topbar, active stage, and status bar.
+    fn main_pane(&self, cx: &App) -> impl IntoElement {
         div()
-            .w_full()
-            .flex_none()
-            .px(t.spacing.sm)
-            .py(t.spacing.xs)
-            .border_b_1()
-            .border_color(t.colors.line)
-            .child(tabs)
+            .id("main-pane")
+            .test_support()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .child(self.topbar.clone())
+            .child(self.body(cx))
+            .child(self.status_bar())
     }
 
     /// The active stage and bottom-right toast overlay slot; empty toasts do not cover inputs.
@@ -302,7 +322,7 @@ fn start_topbar(window: &mut Window, cx: &mut Context<Shell>) -> Entity<Topbar> 
 }
 
 impl Render for Shell {
-    /// Draws the title bar, tab row, topbar, active stage with toast overlay, and status bar.
+    /// Draws the full-width title bar above the sidebar and main workspace column.
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = tokens::current(cx);
         let (background, text) = (t.colors.background, t.colors.text);
@@ -323,10 +343,15 @@ impl Render for Shell {
             .text_color(text)
             .font_family(font)
             .text_size(size)
-            .child(NavoTitleBar::new(brand::NAME))
-            .child(self.tab_row(cx))
-            .child(self.topbar.clone())
-            .child(self.body(cx))
-            .child(self.status_bar())
+            .child(NavoTitleBar::new(brand::NAME).menu_arrow(false))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .w_full()
+                    .child(self.sidebar.clone())
+                    .child(self.main_pane(cx)),
+            )
     }
 }
