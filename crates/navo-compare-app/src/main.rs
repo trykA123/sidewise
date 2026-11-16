@@ -11,6 +11,8 @@ mod chrome;
 #[cfg(test)]
 mod compare_tab_keys_tests;
 #[cfg(test)]
+mod compare_tab_layout_tests;
+#[cfg(test)]
 mod compare_tab_large_tests;
 #[cfg(test)]
 mod compare_tab_pair_tests;
