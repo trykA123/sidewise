@@ -55,12 +55,24 @@ pub(super) fn view(
     Entity<FoldersView>,
     Rc<RefCell<Vec<FoldersEvent>>>,
 ) {
+    view_with(cx, FoldersView::new)
+}
+
+/// Like `view`, with `make` building the view (for example with roots).
+pub(super) fn view_with(
+    cx: &mut TestAppContext,
+    make: impl FnOnce(&mut gpui_kit::Context<FoldersView>) -> FoldersView + 'static,
+) -> (
+    AnyWindowHandle,
+    Entity<FoldersView>,
+    Rc<RefCell<Vec<FoldersEvent>>>,
+) {
     cx.update(|cx| {
         gpui_kit::init(cx);
         apply_sidewise(PaletteId::Violet, Mode::Light, cx);
         bind_keys(cx);
     });
-    let (window, view) = open(cx, |_, cx| FoldersView::new(cx));
+    let (window, view) = open(cx, |_, cx| make(cx));
     let events = Rc::new(RefCell::new(Vec::new()));
     let seen = events.clone();
     cx.update(|cx| {

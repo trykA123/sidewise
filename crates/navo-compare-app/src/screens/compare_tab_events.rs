@@ -54,7 +54,9 @@ impl CompareTab {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let FoldersEvent::OpenPair(id) = event;
+        let FoldersEvent::OpenPair(id) = event else {
+            return;
+        };
         let asked = self.run.session().and_then(|session| session.pair_of(*id));
         if let Some(asked) = asked {
             self.show_pair(pair_request(asked), window, cx);

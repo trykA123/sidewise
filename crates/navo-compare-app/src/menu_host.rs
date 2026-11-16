@@ -20,7 +20,6 @@ pub enum MenuLine {
         enabled: bool,
     },
     /// A separator between groups.
-    #[cfg_attr(not(test), expect(dead_code, reason = "CM2a groups its lines with it"))]
     Break,
 }
 

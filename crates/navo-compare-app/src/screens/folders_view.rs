@@ -1,6 +1,7 @@
 //! The Folders view of the compare tab: a summary bar and a tree of folders and files over the
 //! `FolderTree` model. The cursor moves with the arrow keys; Enter opens a pair of files.
 
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -12,10 +13,12 @@ use gpui_kit::{
 use navo_ui::browser::{CompareFilter, CompareRow};
 use navo_ui::compare_diff::map::{ChangeMap, MapEvent};
 
+use self::menu::{CopyLeftPath, ExpandAll, OpenStream, ShowMenu, menu_actions};
 use super::folders_head::head_view;
 use super::folders_model::{FolderTree, TreeLine, map_hunks};
 use super::folders_row::{LineCtx, line_view, summary_bar};
 use super::folders_text::Meta;
+use crate::menu_host::{MenuSlot, menu_view};
 use crate::theme::SidewiseTheme;
 
 gpui_kit::actions!(folders, [CursorUp, CursorDown, StepIn, StepOut, Activate]);
@@ -28,6 +31,8 @@ const CONTEXT: &str = "Folders";
 pub enum FoldersEvent {
     /// Enter on a file line: its row id.
     OpenPair(u64),
+    /// Open in Stream on a file line: its row id.
+    OpenStream(u64),
 }
 
 /// Binds the cursor keys inside the `Folders` context; the shell calls this once at start.
@@ -38,6 +43,10 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("right", StepIn, Some(CONTEXT)),
         KeyBinding::new("left", StepOut, Some(CONTEXT)),
         KeyBinding::new("enter", Activate, Some(CONTEXT)),
+        KeyBinding::new("shift-enter", OpenStream, Some(CONTEXT)),
+        KeyBinding::new("ctrl-shift-c", CopyLeftPath, Some(CONTEXT)),
+        KeyBinding::new("shift-right", ExpandAll, Some(CONTEXT)),
+        KeyBinding::new("shift-f10", ShowMenu, Some(CONTEXT)),
     ]);
 }
 
@@ -53,6 +62,9 @@ pub struct FoldersView {
     map: Entity<ChangeMap>,
     meta: Meta,
     roots: Option<[PathBuf; 2]>,
+    pub(super) menu: MenuSlot,
+    /// Where the cursor line was last drawn; `Shift+F10` anchors the menu to it.
+    pub(super) cursor_bounds: Rc<Cell<Option<gpui_kit::Bounds<Pixels>>>>,
 }
 
 impl EventEmitter<FoldersEvent> for FoldersView {}
@@ -84,6 +96,8 @@ impl FoldersView {
             map,
             meta: Meta::Size,
             roots: None,
+            menu: None,
+            cursor_bounds: Rc::default(),
         }
     }
 
@@ -206,8 +220,22 @@ impl FoldersView {
         }
     }
 
+    /// The two folder roots, when the compare gave them.
+    pub(super) fn roots(&self) -> Option<&[PathBuf; 2]> {
+        self.roots.as_ref()
+    }
+
+    /// Opens the folder under the cursor and every folder below it.
+    pub(super) fn expand_all(&mut self, cx: &mut Context<Self>) {
+        if let Some(path) = self.cursor_path.clone() {
+            self.tree.expand_all_under(&path);
+            self.sync_cursor(cx);
+            cx.notify();
+        }
+    }
+
     /// The lines and the line under the cursor; `None` while the tree is empty.
-    fn current(&self) -> Option<(Vec<TreeLine>, TreeLine)> {
+    pub(super) fn current(&self) -> Option<(Vec<TreeLine>, TreeLine)> {
         let lines = self.tree.lines();
         let line = lines.get(self.cursor)?.clone();
         Some((lines, line))
@@ -287,6 +315,7 @@ impl FoldersView {
             fade: self.fade.clone(),
             filter: self.tree.filter(),
             view: cx.entity(),
+            cursor_bounds: self.cursor_bounds.clone(),
             meta: self.meta,
             mono: navo_ui::tokens::current(cx).typography.mono_font.clone(),
         }
@@ -310,7 +339,7 @@ impl Render for FoldersView {
         })
         .track_scroll(&self.scroll)
         .flex_1();
-        div()
+        let root = div()
             .key_context(CONTEXT)
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &CursorUp, _, cx| this.step(-1, cx)))
@@ -318,6 +347,7 @@ impl Render for FoldersView {
             .on_action(cx.listener(|this, _: &StepIn, _, cx| this.step_in(cx)))
             .on_action(cx.listener(|this, _: &StepOut, _, cx| this.step_out(cx)))
             .on_action(cx.listener(|this, _: &Activate, _, cx| this.activate(cx)))
+            .on_action(cx.listener(|this, _: &ExpandAll, _, cx| this.expand_all(cx)))
             .flex()
             .size_full()
             .child(
@@ -333,9 +363,16 @@ impl Render for FoldersView {
                     .child(self.width_probe(cx)),
             )
             .child(self.map.clone())
+            .children(menu_view(&self.menu));
+        menu_actions(root, cx)
     }
 }
 
+#[path = "folders_menu.rs"]
+mod menu;
+#[cfg(test)]
+#[path = "folders_menu_tests.rs"]
+mod menu_tests;
 #[cfg(test)]
 #[path = "folders_mouse_tests.rs"]
 mod mouse_tests;

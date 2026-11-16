@@ -1,11 +1,15 @@
 //! Row drawing of the Folders view: tree lines, the folder mix bar and the summary chips.
 //! Split from `folders_view` to keep both files short; the view owns the state.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnimationExt, AnyElement, App, ElementId, Entity, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, div, img, px,
+    AnimationExt, AnyElement, App, Bounds, ClickEvent, ElementId, Entity, InteractiveElement,
+    IntoElement, ParentElement, Pixels, SharedString, StatefulInteractiveElement, Styled, canvas,
+    div, img, px,
 };
 use navo_ui::browser::CompareFilter;
 
@@ -30,6 +34,7 @@ pub(super) struct LineCtx {
     pub fade: Option<(String, u64)>,
     pub filter: CompareFilter,
     pub view: Entity<FoldersView>,
+    pub cursor_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     pub meta: Meta,
     pub mono: SharedString,
 }
@@ -102,21 +107,49 @@ pub(super) fn line_view(line: &TreeLine, index: usize, ctx: &LineCtx, cx: &mut A
                 false => this.click_line(index, cx),
             })
         })
+        .on_aux_click(menu_click(ctx.view.clone(), index))
         .child(cell_view(at, true, ctx, cx))
         .child(gutter_view(at, ctx))
         .child(cell_view(at, false, ctx, cx))
-        .when(selected, |row| {
-            row.child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .top_0()
-                    .h_full()
-                    .w(px(3.))
-                    .bg(ctx.m.accent),
-            )
-        });
+        .when(selected, |row| row.child(cursor_marks(ctx)));
     fade_in(row, (line, index), ctx, cx)
+}
+
+/// The right-click handler of line `index`: select it, then open its menu at the pointer.
+fn menu_click(
+    view: Entity<FoldersView>,
+    index: usize,
+) -> impl Fn(&ClickEvent, &mut gpui_kit::Window, &mut App) + 'static {
+    move |event, window, cx| {
+        if event.is_secondary() {
+            let pointer = window.mouse_position();
+            view.update(cx, |this, cx| {
+                this.menu_at_pointer((index, pointer), window, cx)
+            });
+        }
+    }
+}
+
+/// The cursor line's accent bar, with a probe that records where the line is drawn.
+fn cursor_marks(ctx: &LineCtx) -> impl IntoElement {
+    let cell = ctx.cursor_bounds.clone();
+    div()
+        .absolute()
+        .size_full()
+        .child(
+            canvas(move |bounds, _, _| cell.set(Some(bounds)), |_, (), _, _| {})
+                .absolute()
+                .size_full(),
+        )
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top_0()
+                .h_full()
+                .w(px(3.))
+                .bg(ctx.m.accent),
+        )
 }
 
 /// Wraps `row` in the opacity fade when it sits in the subtree that just opened.
