@@ -9,7 +9,3 @@ license.workspace = true
 
 [lints]
 workspace = true
-
-[target.'cfg(windows)'.dependencies]
-
-[target.'cfg(unix)'.dependencies]
