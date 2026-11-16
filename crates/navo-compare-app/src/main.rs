@@ -26,6 +26,7 @@ mod start;
 mod start_rows;
 #[cfg(test)]
 mod start_rows_tests;
+mod start_tabs;
 #[cfg(test)]
 mod start_tests;
 mod start_view;

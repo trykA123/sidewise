@@ -11,7 +11,8 @@ use crate::start::{
     CONTEXT, EnterList, OpenSelected, OtherField, SelectNext, SelectPrev, Side, SideHint,
     StartScreen,
 };
-use crate::start_rows::rows_view;
+use crate::start_rows::{row_count, rows_view};
+use crate::start_tabs::{StartMode, hero, mode_tabs, rule_chip, tabs_state};
 use crate::theme_data::palettes::DIMS;
 
 /// The chip beside a field: "Path", "Git ref" or "Not found" (in the warning colour).
@@ -39,12 +40,13 @@ fn chip(hint: &SideHint, cx: &App) -> Option<Div> {
 
 impl StartScreen {
     /// One side: its label, the text field and the chip.
-    fn field_view(&self, side: Side, cx: &App) -> impl IntoElement {
+    fn field_view(&self, side: Side, mode: StartMode, cx: &App) -> impl IntoElement {
         let t = tokens::current(cx);
-        let (id, label) = match side {
-            Side::Left => ("start-left", "Left"),
-            Side::Right => ("start-right", "Right"),
+        let id = match side {
+            Side::Left => "start-left",
+            Side::Right => "start-right",
         };
+        let label = mode.field_label(side);
         let i = side.index();
         div()
             .flex()
@@ -69,7 +71,7 @@ impl StartScreen {
     }
 
     /// The row of both fields with the swap and Compare buttons.
-    fn fields_row(&self, cx: &Context<Self>) -> impl IntoElement {
+    fn fields_row(&self, mode: StartMode, cx: &Context<Self>) -> impl IntoElement {
         let t = tokens::current(cx);
         let swap = IconButton::new("start-swap", IconName::Replace, "Swap sides")
             .on_click(cx.listener(|this, _, window, cx| this.swap(window, cx)));
@@ -82,9 +84,9 @@ impl StartScreen {
             .items_center()
             .gap(t.spacing.md)
             .w_full()
-            .child(self.field_view(Side::Left, cx))
+            .child(self.field_view(Side::Left, mode, cx))
             .child(swap)
-            .child(self.field_view(Side::Right, cx))
+            .child(self.field_view(Side::Right, mode, cx))
             .child(compare)
     }
 
@@ -117,11 +119,13 @@ impl StartScreen {
 }
 
 impl Render for StartScreen {
-    /// Draws the fields, the hint line and the rows inside the `Start` context.
+    /// Draws the tabs, the fields, the rule chip, the hint line, the hero and the rows inside the `Start` context.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let tabs = tabs_state(window, cx);
         let t = tokens::current(cx);
         let selected = self.selected.filter(|_| self.list_focus.is_focused(window));
         let rows = rows_view(&self.rows, selected, &self.list_focus, cx);
+        let choice = tabs.read(cx).choice();
         div()
             .key_context(CONTEXT)
             .on_action(cx.listener(|this, _: &OtherField, window, cx| this.other_field(window, cx)))
@@ -135,8 +139,11 @@ impl Render for StartScreen {
             .gap(t.spacing.sm)
             .px(t.spacing.xxl * 4.)
             .pt(t.spacing.xxl * 4.)
-            .child(self.fields_row(cx))
+            .child(mode_tabs(&tabs, choice.mode, cx))
+            .child(self.fields_row(choice.mode, cx))
+            .child(rule_chip(&tabs, choice.respect_gitignore, cx))
             .child(self.hint_line(cx))
+            .when(row_count(&self.rows) == 0, |col| col.child(hero(cx)))
             .child(rows)
     }
 }
