@@ -9,6 +9,8 @@ use navo_compare_profile::appearance::PaletteId;
 use navo_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
 use navo_ui::tokens::Mode;
 
+use navo_ui::compare_diff::map::MapEvent;
+
 use super::{FoldersEvent, FoldersView, bind_keys};
 use crate::test_window::open;
 use crate::theme::apply_sidewise;
@@ -135,4 +137,14 @@ fn select_path_opens_ancestors(cx: &mut TestAppContext) {
     );
     cx.update(|cx| assert_eq!(view.read(cx).selected_path().as_deref(), Some("a/b/y.txt")));
     assert!(!cx.update(|cx| view.update(cx, |this, cx| this.select_path("nope", cx))));
+}
+
+/// With `a` open, a `Jump(2)` from the change map puts the cursor on `a/b`.
+#[gpui_kit::test]
+fn map_jump_moves_the_cursor(cx: &mut TestAppContext) {
+    let (window, view, _) = view(cx);
+    cx.simulate_keystrokes(window, "right");
+    let map = cx.update(|cx| view.read(cx).map.clone());
+    cx.update(|cx| map.update(cx, |_, cx| cx.emit(MapEvent::Jump(2))));
+    cx.update(|cx| assert_eq!(view.read(cx).selected_path().as_deref(), Some("a/b")));
 }
