@@ -13,6 +13,7 @@ use navo_ui::compare_diff::map::{ChangeMap, MapEvent};
 
 use super::folders_model::{FolderTree, TreeLine, map_hunks};
 use super::folders_row::{LineCtx, line_view, summary_bar};
+use super::folders_text::Meta;
 use crate::theme::SidewiseTheme;
 
 gpui_kit::actions!(folders, [CursorUp, CursorDown, StepIn, StepOut, Activate]);
@@ -48,6 +49,7 @@ pub struct FoldersView {
     scroll: UniformListScrollHandle,
     focus: FocusHandle,
     map: Entity<ChangeMap>,
+    meta: Meta,
 }
 
 impl EventEmitter<FoldersEvent> for FoldersView {}
@@ -77,6 +79,7 @@ impl FoldersView {
             scroll: UniformListScrollHandle::new(),
             focus: cx.focus_handle(),
             map,
+            meta: Meta::Size,
         }
     }
 
@@ -238,6 +241,8 @@ impl Render for FoldersView {
             fade,
             filter,
             view: cx.entity(),
+            meta: self.meta,
+            mono: navo_ui::tokens::current(cx).typography.mono_font.clone(),
         };
         let lines = Rc::new(self.tree.lines());
         let bar = summary_bar(self.tree.totals(), &ctx);

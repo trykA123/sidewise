@@ -148,3 +148,64 @@ fn map_jump_moves_the_cursor(cx: &mut TestAppContext) {
     cx.update(|cx| map.update(cx, |_, cx| cx.emit(MapEvent::Jump(2))));
     cx.update(|cx| assert_eq!(view.read(cx).selected_path().as_deref(), Some("a/b")));
 }
+
+/// The label of the element `id` after a render.
+fn label_of(
+    window: AnyWindowHandle,
+    id: (&'static str, usize),
+    cx: &mut TestAppContext,
+) -> Option<String> {
+    cx.update_window(window, |_, window, _| {
+        window.find(id).label().map(String::from)
+    })
+    .expect("window")
+}
+
+/// Line 2 (`z.txt`) shows its name and size on the left; line 0 (`a`) shows its items and the
+/// `2 inside` gutter.
+#[gpui_kit::test]
+fn a_row_shows_both_cells_and_its_gutter(cx: &mut TestAppContext) {
+    let (window, _, _) = view(cx);
+    assert_eq!(
+        label_of(window, ("cell-l", 2), cx).as_deref(),
+        Some("z.txt · 1 B")
+    );
+    assert_eq!(label_of(window, ("gut", 2), cx), None);
+    assert_eq!(
+        label_of(window, ("cell-l", 0), cx).as_deref(),
+        Some("a · 2 items")
+    );
+    assert_eq!(
+        label_of(window, ("gut", 0), cx).as_deref(),
+        Some("2 inside")
+    );
+}
+
+/// A file only on the left reads `not in right` on the right and `Only left` in the gutter.
+#[gpui_kit::test]
+fn a_missing_side_reads_not_in(cx: &mut TestAppContext) {
+    let (window, view, _) = view(cx);
+    cx.update_window(window, |_, window, cx| {
+        view.update(cx, |this, cx| this.select_path("a/b/y.txt", cx));
+        window.render_frame(cx);
+    })
+    .expect("window");
+    assert_eq!(
+        label_of(window, ("cell-r", 3), cx).as_deref(),
+        Some("not in right")
+    );
+    assert_eq!(
+        label_of(window, ("gut", 3), cx).as_deref(),
+        Some("Only left")
+    );
+}
+
+/// The orphan chip is named `Orphans` and counts the one file only on the left.
+#[gpui_kit::test]
+fn the_chips_say_orphans(cx: &mut TestAppContext) {
+    let (window, _, _) = view(cx);
+    cx.update_window(window, |_, window, _| {
+        assert_eq!(window.find("chip-Orphans").label(), Some("Orphans 1"));
+    })
+    .expect("window");
+}

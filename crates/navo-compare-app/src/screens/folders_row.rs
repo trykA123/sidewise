@@ -9,7 +9,9 @@ use gpui_kit::{
 };
 use navo_ui::browser::CompareFilter;
 
+use super::folders_cells_view::{cell_view, gutter_view};
 use super::folders_model::{Mix, TreeLine};
+use super::folders_text::Meta;
 use super::folders_view::FoldersView;
 use crate::icons::{cache::IconCache, icon_id};
 use crate::motion;
@@ -17,7 +19,6 @@ use crate::theme::SidewiseTheme;
 use crate::theme_data::change_syntax::ChangeKind;
 use crate::theme_data::palettes::{DIMS, ModeTokens};
 
-const INDENT: f32 = 16.; // px per depth level
 const MARK: u32 = 16; // mark side, px
 const MIX_W: f32 = 56.; // folder mix bar width, px
 
@@ -29,10 +30,12 @@ pub(super) struct LineCtx {
     pub fade: Option<(String, u64)>,
     pub filter: CompareFilter,
     pub view: Entity<FoldersView>,
+    pub meta: Meta,
+    pub mono: SharedString,
 }
 
 /// The `ChangeKind` of each tone, in `SwTone` order (also the mix-bar order).
-const KINDS: [ChangeKind; 5] = [
+pub(super) const KINDS: [ChangeKind; 5] = [
     ChangeKind::Chg,
     ChangeKind::Ol,
     ChangeKind::Or,
@@ -41,7 +44,7 @@ const KINDS: [ChangeKind; 5] = [
 ];
 
 /// A 56 px bar of five segments, each as wide as its share of `mix`.
-fn mix_bar(mix: Mix, ctx: &LineCtx) -> impl IntoElement {
+pub(super) fn mix_bar(mix: Mix, ctx: &LineCtx) -> impl IntoElement {
     let total: u32 = mix.iter().sum();
     let bar = div()
         .flex()
@@ -65,7 +68,7 @@ fn mix_bar(mix: Mix, ctx: &LineCtx) -> impl IntoElement {
 }
 
 /// The folder or file mark of `line` at the 1x bucket; empty when the raster is missing.
-fn mark_of(line: &TreeLine, cx: &mut App) -> impl IntoElement {
+pub(super) fn mark_of(line: &TreeLine, cx: &mut App) -> impl IntoElement {
     let image = IconCache::image(icon_id(&line.name, line.folder, line.expanded), MARK, cx);
     let side = px(MARK as f32);
     div()
@@ -74,35 +77,40 @@ fn mark_of(line: &TreeLine, cx: &mut App) -> impl IntoElement {
         .children(image.map(|image| img(image).size(side)))
 }
 
-/// One 30 px line: indent, mark, name, and the mix bar of a closed folder.
+/// One 30 px line: left cell, centre gutter and right cell; the cursor line has an accent bar.
 pub(super) fn line_view(line: &TreeLine, index: usize, ctx: &LineCtx, cx: &mut App) -> AnyElement {
     let tone = line
         .tone
         .map(|tone| ctx.theme.change.tone(KINDS[tone as usize], ctx.theme.mode));
     let view = ctx.view.clone();
+    let selected = index == ctx.cursor;
+    let at = (line, index);
     let row = div()
         .id(("folder-line", index))
         .test_support()
+        .aria_selected(selected)
+        .relative()
         .flex()
         .items_center()
-        .gap_2()
         .h(DIMS.row_h)
-        .pl(px(8. + INDENT * f32::from(line.depth)))
         .text_size(DIMS.fs)
         .text_color(tone.map_or(ctx.m.text, |tone| tone.fg))
-        .when(index == ctx.cursor, |row| row.bg(ctx.m.selected))
+        .when(selected, |row| row.bg(ctx.m.selected))
         .on_click(move |_, _, cx| view.update(cx, |this, cx| this.click_line(index, cx)))
-        .child(mark_of(line, cx))
-        .child(
-            div()
-                .flex_1()
-                .truncate()
-                .child(SharedString::from(line.name.clone())),
-        );
-    let row = match line.folder && !line.expanded && line.mix.iter().any(|n| *n > 0) {
-        true => row.child(mix_bar(line.mix, ctx)),
-        false => row,
-    };
+        .child(cell_view(at, true, ctx, cx))
+        .child(gutter_view(at, ctx))
+        .child(cell_view(at, false, ctx, cx))
+        .when(selected, |row| {
+            row.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .h_full()
+                    .w(px(3.))
+                    .bg(ctx.m.accent),
+            )
+        });
     fade_in(row, (line, index), ctx, cx)
 }
 
@@ -149,11 +157,12 @@ fn chip_view(label: &str, count: u32, filter: CompareFilter, ctx: &LineCtx) -> A
         .text_color(fg)
         .bg(bg)
         .on_click(move |_, _, cx| view.update(cx, |this, cx| this.set_filter(filter, cx)))
+        .aria_label(SharedString::from(format!("{label} {count}")))
         .child(SharedString::from(format!("{label} {count}")))
         .into_any_element()
 }
 
-/// The summary bar: chips for All, Differences, Only left/right and Same, counted from `totals`.
+/// The summary bar: chips for All, Differences, Orphans and Same, counted from `totals`.
 pub(super) fn summary_bar(totals: Mix, ctx: &LineCtx) -> impl IntoElement + use<> {
     let [chg, ol, or, cfl, same] = totals;
     let chips = [
@@ -163,7 +172,7 @@ pub(super) fn summary_bar(totals: Mix, ctx: &LineCtx) -> impl IntoElement + use<
             chg + ol + or + cfl,
             CompareFilter::Differences,
         ),
-        ("Only left/right", ol + or, CompareFilter::Orphans),
+        ("Orphans", ol + or, CompareFilter::Orphans),
         ("Same", same, CompareFilter::Same),
     ];
     let chips = chips.map(|(label, count, filter)| chip_view(label, count, filter, ctx));
