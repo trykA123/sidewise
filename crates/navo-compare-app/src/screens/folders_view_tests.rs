@@ -48,7 +48,7 @@ fn rows() -> Vec<CompareRow> {
 }
 
 /// A focused view over the fixture, with the events it emits collected.
-fn view(
+pub(super) fn view(
     cx: &mut TestAppContext,
 ) -> (
     AnyWindowHandle,
@@ -79,7 +79,7 @@ fn view(
 }
 
 /// The paths of the lines shown now.
-fn shown(view: &Entity<FoldersView>, cx: &mut TestAppContext) -> Vec<String> {
+pub(super) fn shown(view: &Entity<FoldersView>, cx: &mut TestAppContext) -> Vec<String> {
     cx.update(|cx| {
         view.read(cx)
             .tree

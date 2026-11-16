@@ -175,12 +175,24 @@ impl FoldersView {
         cx.notify();
     }
 
-    /// A click on line `at`: the cursor goes there and a folder toggles.
+    /// A click on line `at`: the cursor goes there; nothing opens.
     pub(super) fn click_line(&mut self, at: usize, cx: &mut Context<Self>) {
         let lines = self.tree.lines();
-        let Some(line) = lines.get(at) else { return };
-        self.move_to(at, &lines, cx);
-        if line.folder {
+        if lines.get(at).is_some() {
+            self.move_to(at, &lines, cx);
+        }
+    }
+
+    /// A double click on line `at`: select it, then open the folder or the file pair.
+    pub(super) fn double_line(&mut self, at: usize, cx: &mut Context<Self>) {
+        self.click_line(at, cx);
+        self.activate(cx);
+    }
+
+    /// Toggles the folder on line `at` without moving the cursor; files are ignored.
+    pub(super) fn toggle_at(&mut self, at: usize, cx: &mut Context<Self>) {
+        let lines = self.tree.lines();
+        if let Some(line) = lines.get(at).filter(|line| line.folder) {
             self.set_open(&line.path, !line.expanded, cx);
         }
     }
@@ -324,6 +336,9 @@ impl Render for FoldersView {
     }
 }
 
+#[cfg(test)]
+#[path = "folders_mouse_tests.rs"]
+mod mouse_tests;
 #[cfg(test)]
 #[path = "folders_view_tests.rs"]
 mod tests;

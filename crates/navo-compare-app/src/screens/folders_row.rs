@@ -96,7 +96,12 @@ pub(super) fn line_view(line: &TreeLine, index: usize, ctx: &LineCtx, cx: &mut A
         .text_size(DIMS.fs)
         .text_color(tone.map_or(ctx.m.text, |tone| tone.fg))
         .when(selected, |row| row.bg(ctx.m.selected))
-        .on_click(move |_, _, cx| view.update(cx, |this, cx| this.click_line(index, cx)))
+        .on_click(move |event, _, cx| {
+            view.update(cx, |this, cx| match event.click_count() >= 2 {
+                true => this.double_line(index, cx),
+                false => this.click_line(index, cx),
+            })
+        })
         .child(cell_view(at, true, ctx, cx))
         .child(gutter_view(at, ctx))
         .child(cell_view(at, false, ctx, cx))

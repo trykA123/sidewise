@@ -55,6 +55,7 @@ fn meta_text(cell: &SideCell, newer: bool, meta: Meta) -> String {
 /// The chevron of a folder line: a 24 px hit area holding a 16 px glyph.
 pub(super) fn chevron_view(line: &TreeLine, index: usize, ctx: &LineCtx) -> AnyElement {
     let glyph = if line.expanded { "▾" } else { "▸" };
+    let view = ctx.view.clone();
     div()
         .id(("chevron", index))
         .test_support()
@@ -65,6 +66,10 @@ pub(super) fn chevron_view(line: &TreeLine, index: usize, ctx: &LineCtx) -> AnyE
         .size(px(CHEVRON))
         .text_size(px(16.))
         .text_color(ctx.m.muted)
+        .on_click(move |_, _, cx| {
+            cx.stop_propagation();
+            view.update(cx, |this, cx| this.toggle_at(index, cx));
+        })
         .child(glyph)
         .into_any_element()
 }
