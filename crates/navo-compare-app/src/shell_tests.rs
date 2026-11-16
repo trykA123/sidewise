@@ -359,13 +359,13 @@ fn click_id(cx: &mut TestAppContext, window: AnyWindowHandle, id: &'static str) 
         .expect("window");
 }
 
-/// Start-mode Topbar shows only disabled right-side pills, hides Search/Sync, and renders cleanly
+/// Start-mode Topbar shows the enabled View and Keys pills, hides Search/Sync, and renders cleanly
 /// at 780 and 1200 px in Light and Dark without fake placeholder dialogs.
 #[gpui_kit::test]
-fn topbar_in_start_mode_mounts_disabled_pills_without_search_or_sync(cx: &mut TestAppContext) {
+fn topbar_in_start_mode_mounts_view_and_keys_without_search_or_sync(cx: &mut TestAppContext) {
     for mode in [Mode::Light, Mode::Dark] {
         for width in [780., 1200.] {
-            let (window, view) = shell_at(cx, width, mode);
+            let (window, _view) = shell_at(cx, width, mode);
             cx.update_window(window, |_, window, _| {
                 assert!(window.try_find("top-search").is_none());
                 assert!(window.try_find("top-sync").is_none());
@@ -385,10 +385,10 @@ fn topbar_in_start_mode_mounts_disabled_pills_without_search_or_sync(cx: &mut Te
                 for id in ["top-view", "top-keys"] {
                     let pill = window.find(id);
                     assert!(pill.visible(), "{id} visible at {width}px {mode:?}");
-                    assert_eq!(
+                    assert_ne!(
                         pill.disabled(),
                         Some(true),
-                        "{id} disabled at {width}px {mode:?}"
+                        "{id} enabled at {width}px {mode:?}"
                     );
                     let b = pill.bounds();
                     assert!(
@@ -403,15 +403,6 @@ fn topbar_in_start_mode_mounts_disabled_pills_without_search_or_sync(cx: &mut Te
                 }
             })
             .expect("window");
-
-            for id in ["top-view", "top-keys"] {
-                click_id(cx, window, id);
-                assert_eq!(
-                    state(cx, &view),
-                    (1, 0),
-                    "clicking disabled {id} is a no-op"
-                );
-            }
         }
     }
 }

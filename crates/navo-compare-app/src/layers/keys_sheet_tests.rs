@@ -70,14 +70,16 @@ fn labels(query: &str) -> Vec<SharedString> {
         .collect()
 }
 
-/// The groups hold the Sidewise keys and the Compare keys, and none of the dropped ones.
+/// The groups hold the keys that exist now, and none of the dropped ones.
 #[gpui_kit::test]
-fn the_groups_come_from_the_compare_keymap_and_sidewise(_cx: &mut TestAppContext) {
+fn the_groups_list_the_keys_that_exist_now(_cx: &mut TestAppContext) {
     let groups = key_groups();
     let titles: Vec<_> = groups.iter().map(|group| group.title).collect();
     assert_eq!(titles[0], "Window", "Sidewise keys come first");
     assert!(
-        titles.contains(&"File diff") && titles.contains(&"Stream"),
+        ["Compare tab", "Folders", "Large"]
+            .iter()
+            .all(|title| titles.contains(title)),
         "{titles:?}"
     );
     let keys: Vec<&str> = groups
@@ -89,7 +91,7 @@ fn the_groups_come_from_the_compare_keymap_and_sidewise(_cx: &mut TestAppContext
                 .flat_map(|row| row.keys.iter().map(String::as_str))
         })
         .collect();
-    for want in ["?", "f1", "ctrl-t", "ctrl-b", "ctrl-i", "alt-down"] {
+    for want in ["?", "f1", "ctrl-t", "f6", "alt-v", "5", "enter", "left"] {
         assert!(keys.contains(&want), "missing {want}");
     }
     for dropped in ["t", "shift-t", "6"] {
@@ -100,9 +102,13 @@ fn the_groups_come_from_the_compare_keymap_and_sidewise(_cx: &mut TestAppContext
 /// The filter matches labels and shown keys, case-insensitively, and drops empty groups.
 #[gpui_kit::test]
 fn the_filter_matches_labels_and_keys(_cx: &mut TestAppContext) {
-    assert_eq!(labels("NEW TAB"), ["New tab"], "label, any case");
+    assert_eq!(
+        labels("NEW TAB"),
+        ["New tab", "New tab"],
+        "label, any case: Window and Compare tab"
+    );
     assert!(
-        labels("ctrl+b").iter().any(|label| label.contains("hange")),
+        labels("ctrl+w").iter().any(|label| label.contains("Close")),
         "shown key"
     );
     assert!(labels("no such command").is_empty());

@@ -13,17 +13,23 @@ use navo_ui::tokens;
 
 use crate::chrome::sidebar::{DismissTip, Sidebar, SidebarEvent, ToggleRail};
 use crate::chrome::status_bar::{StatusBar, StatusHint};
-use crate::chrome::topbar_status::{Action as TopbarAction, Crumbs, Topbar, TopbarMode};
+use crate::chrome::topbar_status::{
+    Action as TopbarAction, Crumbs, Topbar, TopbarMode, ViewMenu as ViewKey,
+};
+use crate::layers::keys_sheet;
 use crate::layers::toast::ToastHost;
 use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
 use crate::theme_data::palettes::DIMS;
 
 #[path = "shell_keys.rs"]
 mod shell_keys;
+#[path = "shell_layers.rs"]
+mod shell_layers;
 #[path = "shell_tabs.rs"]
 mod shell_tabs;
 pub use shell_keys::bind_keys;
 use shell_keys::{CONTEXT, CloseTab, CyclePane, NewTab, NextTab, PrevTab};
+use shell_layers::{Layers, topbar_router};
 pub use shell_tabs::ShellTab;
 use shell_tabs::{start_tab, tab_titles};
 
@@ -35,6 +41,7 @@ pub struct Shell {
     _sidebar: Subscription,
     topbar: Entity<Topbar>,
     toasts: Entity<ToastHost>,
+    layers: Layers,
     handle: FocusHandle,
     _appearance: Subscription,
 }
@@ -65,6 +72,7 @@ impl Shell {
         });
         let topbar = start_topbar(window, cx);
         let toasts = cx.new(|_| ToastHost::new());
+        let layers = Layers::new(window, cx);
         let shell = Self {
             tabs,
             active: 0,
@@ -72,6 +80,7 @@ impl Shell {
             _sidebar: sidebar_sub,
             topbar,
             toasts,
+            layers,
             handle: cx.focus_handle(),
             _appearance: appearance,
         };
@@ -96,7 +105,7 @@ impl Shell {
     }
 
     /// Right-hand workspace column stacking the topbar, active stage, and status bar.
-    fn main_pane(&self, cx: &App) -> impl IntoElement {
+    fn main_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("main-pane")
             .test_support()
@@ -111,7 +120,7 @@ impl Shell {
     }
 
     /// The active stage and bottom-right toast overlay slot; empty toasts do not cover inputs.
-    fn body(&self, cx: &App) -> impl IntoElement {
+    fn body(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let background = tokens::current(cx).colors.background;
         let toasts = div()
             .id("toast-slot")
@@ -128,6 +137,7 @@ impl Shell {
             .bg(background)
             .child(self.stage())
             .child(toasts)
+            .children(self.view_overlay(cx))
     }
 
     /// Derives the status bar from active tab title, open-tab count, and working shortcuts.
@@ -160,18 +170,17 @@ impl Shell {
     }
 }
 
-/// Builds the start-mode topbar with all shown actions disabled until wired in later cuts.
+/// Builds the start-mode topbar: View and Keys reach the shell's layers; Sync stays off (read-only).
 fn start_topbar(window: &mut Window, cx: &mut Context<Shell>) -> Entity<Topbar> {
     let crumbs = Crumbs {
         title: "New compare".into(),
         detail: "Folder · File".into(),
     };
+    let router = topbar_router(cx.weak_entity(), window);
     cx.new(|cx| {
-        let mut bar = Topbar::new(crumbs, |_, _| {}, window, cx);
+        let mut bar = Topbar::new(crumbs, router, window, cx);
         bar.set_mode(TopbarMode::Start, cx);
-        for action in [TopbarAction::View, TopbarAction::Keys, TopbarAction::Sync] {
-            bar.set_available(action, false, cx);
-        }
+        bar.set_available(TopbarAction::Sync, false, cx);
         bar
     })
 }
@@ -182,9 +191,10 @@ impl Render for Shell {
         let t = tokens::current(cx);
         let (background, text) = (t.colors.background, t.colors.text);
         let (font, size) = (t.typography.ui_font.clone(), t.typography.body);
-        div()
-            .key_context(CONTEXT)
-            .track_focus(&self.handle)
+        let root = div().key_context(CONTEXT).track_focus(&self.handle);
+        keys_sheet::wire(root, &self.layers.keys)
+            .relative()
+            .on_action(cx.listener(|this, _: &ViewKey, window, cx| this.view_key(window, cx)))
             .on_action(cx.listener(|this, _: &NewTab, window, cx| this.new_tab(window, cx)))
             .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
                 this.close_tab(this.active, window, cx);
@@ -214,5 +224,6 @@ impl Render for Shell {
                     .child(self.sidebar.clone())
                     .child(self.main_pane(cx)),
             )
+            .child(self.layers.keys.clone())
     }
 }

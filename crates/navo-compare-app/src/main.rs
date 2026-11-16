@@ -23,7 +23,10 @@ mod icons;
 mod launch;
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "U13c wires the layers into the shell")
+    expect(
+        dead_code,
+        reason = "the drawer host stays unmounted: Navo's CompareScreen owns the diff drawers (NC119)"
+    )
 )]
 mod layers;
 #[cfg_attr(not(test), expect(dead_code, reason = "the U13 chrome reads it"))]
@@ -33,6 +36,8 @@ mod motion_tests;
 #[cfg_attr(not(test), expect(dead_code, reason = "H2 mounts the compare tab"))]
 mod screens;
 mod shell;
+#[cfg(test)]
+mod shell_layers_tests;
 #[cfg(test)]
 mod shell_tests;
 mod start;

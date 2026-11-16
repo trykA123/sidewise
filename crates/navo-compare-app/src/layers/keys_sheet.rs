@@ -4,7 +4,7 @@
 use gpui_kit::base::TestTextExt as _;
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::{FocusHandle, KeyBinding, ReadGlobal, Subscription};
-use navo_ui::commands::{COMPARE_KEYMAP, Keymap, shown};
+use navo_ui::commands::shown;
 use navo_ui::prelude::*;
 use navo_ui::primitives::{Kbd, TextField, TextFieldState, text_field_state};
 
@@ -15,13 +15,51 @@ gpui_kit::actions!(layers, [ToggleKeys, CloseKeys]);
 
 /// Key context of the open sheet; Escape is bound inside it.
 const SHEET: &str = "KeysSheet";
-/// Sidewise's own keys, shown first; the Compare keys come from `COMPARE_KEYMAP`.
-const WINDOW_KEYS: [(&str, &[&str]); 5] = [
-    ("New tab", &["ctrl-t"]),
-    ("Close tab", &["ctrl-w"]),
-    ("Next tab", &["ctrl-tab"]),
-    ("Previous tab", &["ctrl-shift-tab"]),
-    ("Show keyboard shortcuts", &["?", "f1"]),
+/// One row of `GROUPS`: a label and its keys in gpui form.
+type Row = (&'static str, &'static [&'static str]);
+
+/// The keys that exist now, as `(group title, rows)`; a row is a label and its keys in gpui form.
+const GROUPS: [(&str, &[Row]); 5] = [
+    (
+        "Window",
+        &[
+            ("New tab", &["ctrl-t"]),
+            ("Close tab", &["ctrl-w"]),
+            ("Next tab", &["ctrl-tab"]),
+            ("Previous tab", &["ctrl-shift-tab"]),
+            ("Show or hide the sidebar", &["ctrl-\\"]),
+            ("Move between sidebar and tab", &["f6", "shift-f6"]),
+            ("View menu (Start, Folders, Large)", &["alt-v"]),
+            ("Show keyboard shortcuts", &["?", "f1"]),
+        ],
+    ),
+    (
+        "Compare tab",
+        &[
+            ("New tab", &["1"]),
+            ("Folders", &["2"]),
+            ("File", &["3"]),
+            ("Stream", &["4"]),
+            ("Large", &["5"]),
+            ("Back to Folders", &["escape"]),
+        ],
+    ),
+    (
+        "Folders",
+        &[
+            ("Move the cursor", &["up", "down"]),
+            ("Step out or in", &["left", "right"]),
+            ("Open the row", &["enter"]),
+        ],
+    ),
+    ("Large", &[("Show Folders", &["enter"])]),
+    (
+        "File and Stream",
+        &[(
+            "View menu, and Esc to go back (Navo's own keys)",
+            &["alt-v", "escape"],
+        )],
+    ),
 ];
 
 /// One line of the sheet: a command's label and its keys in gpui form.
@@ -55,44 +93,19 @@ pub fn wire(root: Div, keys: &Entity<KeysSheet>) -> Div {
     })
 }
 
-/// The group title of a keymap context.
-fn title_of(context: &str) -> &'static str {
-    match context {
-        "CompareView" => "File diff",
-        "CompareStream" => "Stream",
-        "CompareOutline" => "Outline",
-        _ => "Compare",
-    }
-}
-
-/// Sidewise's keys, then the Compare keys grouped by context.
+/// The keys that really exist now, grouped; File and Stream keep Navo's own keys on one row.
 pub fn key_groups() -> Vec<KeyGroup> {
-    let row = |label: &str, keys: &[&str]| KeyRow {
-        label: label.to_owned().into(),
+    let row = |(label, keys): &Row| KeyRow {
+        label: (*label).to_owned().into(),
         keys: keys.iter().map(|key| (*key).to_owned()).collect(),
     };
-    let window = WINDOW_KEYS.map(|(label, keys)| row(label, keys));
-    let mut groups = vec![KeyGroup {
-        title: "Window",
-        rows: window.to_vec(),
-    }];
-    let Ok(keymap) = Keymap::parse(COMPARE_KEYMAP) else {
-        return groups;
-    };
-    for bind in keymap.binds() {
-        let title = title_of(&bind.context);
-        let at = groups.iter().position(|group| group.title == title);
-        let at = at.unwrap_or_else(|| {
-            groups.push(KeyGroup {
-                title,
-                rows: Vec::new(),
-            });
-            groups.len() - 1
-        });
-        let keys: Vec<&str> = bind.keys.iter().map(String::as_str).collect();
-        groups[at].rows.push(row(bind.spec.label, &keys));
-    }
-    groups
+    GROUPS
+        .iter()
+        .map(|(title, rows)| KeyGroup {
+            title,
+            rows: rows.iter().map(row).collect(),
+        })
+        .collect()
 }
 
 /// The rows whose label or shown keys contain `query` (case-insensitive); empty groups drop out.

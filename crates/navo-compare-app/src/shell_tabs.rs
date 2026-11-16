@@ -4,7 +4,7 @@
 use navo_ui::prelude::*;
 
 use super::Shell;
-use crate::chrome::topbar_status::TopbarMode;
+use crate::chrome::topbar_status::{Action, TopbarMode};
 use crate::screens::compare_run::RunError;
 use crate::screens::compare_tab::{CompareRequest, CompareTab, TabView};
 use crate::start::{StartEvent, StartScreen};
@@ -31,6 +31,8 @@ pub(super) fn tab_titles(tabs: &[ShellTab]) -> Vec<SharedString> {
 #[path = "shell_sessions.rs"]
 mod shell_sessions;
 use shell_sessions::stored_rows;
+
+use super::shell_layers::view_available;
 
 /// A fresh start tab titled "New compare", with its own start screen over the stored rows.
 pub(super) fn start_tab(window: &mut Window, cx: &mut Context<Shell>) -> ShellTab {
@@ -283,7 +285,10 @@ impl Shell {
             },
             _ => TopbarMode::Start,
         };
-        self.topbar.update(cx, |bar, cx| bar.set_mode(mode, cx));
+        self.topbar.update(cx, |bar, cx| {
+            bar.set_mode(mode, cx);
+            bar.set_available(Action::View, view_available(mode), cx);
+        });
     }
 }
 
