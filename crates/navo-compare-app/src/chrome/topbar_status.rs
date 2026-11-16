@@ -3,11 +3,11 @@
 
 use std::rc::Rc;
 
-use gpui_kit::base::TestSupportExt as _;
+use gpui_kit::base::{TestSupportExt as _, TestTextExt as _};
 use gpui_kit::component::button::Button;
 use gpui_kit::component::input::{Input, InputEvent};
 use gpui_kit::component::{Disableable as _, Sizable as _};
-use gpui_kit::{FocusHandle, KeyBinding, ReadGlobal, Role, Subscription};
+use gpui_kit::{FocusHandle, Hsla, KeyBinding, ReadGlobal, Role, Subscription};
 use navo_ui::prelude::*;
 use navo_ui::primitives::{TextFieldState, text_field_state};
 use navo_ui::tokens;
@@ -23,6 +23,10 @@ const CONTEXT: &str = "Topbar";
 const TOP_H: f32 = 52.;
 /// The narrowest window the topbar must fit without horizontal clipping.
 pub const MIN_W: f32 = 780.;
+/// Width below which the topbar uses compact spacing and omits pill key hints.
+const COMPACT_W: f32 = 640.;
+/// Viewport width fallback used before the first prepaint measures the topbar directly.
+const COMPACT_VIEWPORT_W: f32 = 920.;
 /// The height of one action pill.
 const PILL_H: f32 = 28.;
 
@@ -67,6 +71,7 @@ pub enum AccountConnection {
 pub struct Topbar {
     mode: TopbarMode,
     enabled: [bool; 6],
+    compact: bool,
     title: SharedString,
     detail: SharedString,
     filter: SharedString,
@@ -101,6 +106,7 @@ impl Topbar {
         Self {
             mode: TopbarMode::default(),
             enabled: [true; 6],
+            compact: window.viewport_size().width < px(COMPACT_VIEWPORT_W),
             title: crumbs.title,
             detail: crumbs.detail,
             filter: SharedString::default(),
@@ -135,6 +141,15 @@ impl Topbar {
     /// Returns whether `action` is both mounted in the current mode and enabled.
     pub fn is_available(&self, action: Action) -> bool {
         self.mode.shows(action) && self.enabled[action as usize]
+    }
+
+    /// Updates compact mode from observed own width, notifying only on a transition.
+    fn record_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        let next = width < px(COMPACT_W);
+        if self.compact != next {
+            self.compact = next;
+            cx.notify();
+        }
     }
 
     /// Updates the Accounts connection indicator state from the caller.
@@ -199,16 +214,38 @@ impl Topbar {
         (self.on_action)(action, cx);
     }
 
-    /// The mode/screen crumbs: the bold title, then the muted detail.
-    fn crumb_view(&self, m: &ModeTokens) -> Div {
+    /// Builds one single-line ellipsized breadcrumb span bounded inside its flex column.
+    fn crumb_part(text: SharedString, color: Hsla) -> impl IntoElement {
         div()
+            .min_w_0()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .text_ellipsis()
+            .text_color(color)
+            .child(text.clone().test_text(text))
+    }
+
+    /// The mode/screen crumbs: single-line ellipsized title (plus detail at normal width).
+    fn crumb_view(&self, m: &ModeTokens) -> impl IntoElement {
+        let label: SharedString = if self.detail.is_empty() {
+            self.title.clone()
+        } else {
+            format!("{} {}", self.title, self.detail).into()
+        };
+        div()
+            .id("top-crumbs")
+            .role(Role::Label)
+            .aria_label(label)
+            .test_support()
             .flex()
             .items_center()
             .gap_1()
             .min_w_0()
             .overflow_hidden()
-            .child(div().text_color(m.text).child(self.title.clone()))
-            .child(div().text_color(m.muted).child(self.detail.clone()))
+            .child(Self::crumb_part(self.title.clone(), m.text))
+            .when(!self.compact && !self.detail.is_empty(), |crumbs| {
+                crumbs.child(Self::crumb_part(self.detail.clone(), m.muted))
+            })
     }
 
     /// The inline `/` search filter backed by the kit `Input` primitive with disabled support.
@@ -237,7 +274,7 @@ impl Topbar {
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| this.focus_search(window, cx)),
             )
-            .child(div().text_color(m.muted).child("/"))
+            .child(div().text_color(m.muted).child("/".test_text("/")))
             .child(div().flex_1().min_w_0().overflow_hidden().child(input))
             .into_any_element()
     }
@@ -255,6 +292,7 @@ impl Topbar {
                     .bg(m.accent)
                     .border_1()
                     .border_color(m.sep_strong)
+                    .test_support()
                     .into_any_element(),
             ),
             Action::Accounts => {
@@ -296,11 +334,24 @@ impl Topbar {
             .when_some(self.pill_indicator(action, m), |row, indicator| {
                 row.child(indicator)
             })
-            .child(pill.label)
-            .when_some(pill.hint.filter(|_| enabled), |row, hint| {
-                row.child(div().text_color(m.faint).child(hint))
-            })
+            .child(pill.label.test_text(pill.label))
+            .when_some(
+                pill.hint.filter(|_| enabled && !self.compact),
+                |row, hint| row.child(div().text_color(m.faint).child(hint.test_text(hint))),
+            )
             .into_any_element()
+    }
+    /// Returns a zero-hit overlay canvas that measures own bar width without taking flex space.
+    fn width_probe(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let this = cx.weak_entity();
+        gpui_kit::canvas(
+            move |bounds, _, cx| {
+                let _ = this.update(cx, |bar, cx| bar.record_width(bounds.size.width, cx));
+            },
+            |_, (), _, _| {},
+        )
+        .absolute()
+        .inset_0()
     }
 }
 
@@ -325,6 +376,7 @@ impl Render for Topbar {
             .map(|pill| self.pill_view(pill, &m, cx))
             .collect();
         div()
+            .relative()
             .key_context(CONTEXT)
             .tab_group()
             .track_focus(&self.handle)
@@ -336,7 +388,8 @@ impl Render for Topbar {
             .flex()
             .flex_none()
             .items_center()
-            .gap_3()
+            .when(!self.compact, |bar| bar.gap_3())
+            .when(self.compact, |bar| bar.gap_1())
             .h(px(TOP_H))
             .w_full()
             .min_w_0()
@@ -345,6 +398,7 @@ impl Render for Topbar {
             .border_b_1()
             .border_color(m.sep)
             .px(DIMS.inset_x)
+            .child(self.width_probe(cx))
             .child(crumb)
             .child(div().flex_1().min_w_0())
             .when_some(search, |bar, search| bar.child(search))

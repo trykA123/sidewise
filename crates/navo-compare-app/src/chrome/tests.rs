@@ -2,13 +2,15 @@
 //! the bar fits the 780 px minimum width without clipping or losing its side insets.
 
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::rc::Rc;
 
-use gpui_kit::base::test_support::{find, snapshots};
+use gpui_kit::base::test_support::{find, snapshots, texts};
 use gpui_kit::test::{TestQueryExt, TestWindowExt};
 use gpui_kit::{
-    AnyWindowHandle, AppContext as _, Bounds, ElementId, Entity, Modifiers, Point, Role,
-    SharedString, TestAppContext, VisualTestContext, WindowBounds, WindowOptions, point, px, size,
+    AnyWindowHandle, AppContext as _, Bounds, Context, ElementId, Entity, IntoElement, Modifiers,
+    ParentElement, Point, Render, Role, SharedString, Styled, TestAppContext, VisualTestContext,
+    Window, WindowBounds, WindowOptions, div, point, px, size,
 };
 use navo_compare_profile::appearance::PaletteId;
 use navo_ui::tokens::Mode;
@@ -702,6 +704,384 @@ fn folders_disabled_search_blocks_slash_wrapper_and_inner_input_then_reenable_wo
     cx.update_window(window, |_, window, cx| {
         assert_eq!(view.read(cx).filter().as_str(), "abc");
         assert_eq!(window.find("top-search").value(), Some("abc"));
+    })
+    .expect("window");
+}
+
+/// Hosts `Topbar` inside a fixed-width parent inside a wider window viewport.
+struct BoundedHost {
+    width: gpui_kit::Pixels,
+    bar: Entity<Topbar>,
+}
+
+impl Render for BoundedHost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().w(self.width).child(self.bar.clone())
+    }
+}
+
+/// Settles layout/prepaint frames until own-width compact transitions finish.
+fn settle(cx: &mut TestAppContext, window: AnyWindowHandle) {
+    for _ in 0..2 {
+        cx.update_window(window, |_, window, cx| window.render_frame(cx))
+            .expect("window");
+        cx.run_until_parked();
+    }
+}
+
+/// Verifies one observed element is visible, positive-sized, and inside `[min_x, max_x]`.
+fn assert_snap_in_bar(
+    window: &Window,
+    id: &str,
+    min_x: gpui_kit::Pixels,
+    max_x: gpui_kit::Pixels,
+) -> Bounds<gpui_kit::Pixels> {
+    let snap = find(window, &[], &ElementId::Name(id.into()))
+        .unwrap_or_else(|| panic!("missing {id} inside [{min_x:?}, {max_x:?}]"));
+    assert!(snap.visible(), "{id} must be visible");
+    let b = snap.bounds();
+    assert!(
+        b.size.width > px(0.) && b.size.height > px(0.),
+        "{id} must have positive bounds: {b:?}"
+    );
+    assert!(b.origin.x >= min_x, "{id} starts left of 16px inset: {b:?}");
+    assert!(
+        b.origin.x + b.size.width <= max_x,
+        "{id} clipped past {max_x:?}: {b:?}"
+    );
+    b
+}
+
+/// Asserts every expected ID and visible descendant stays within `[16, width - 16]`.
+fn assert_compact_fit(window: &Window, width: f32, expected: &[&str]) {
+    let min_x = DIMS.inset_x;
+    let max_x = px(width) - DIMS.inset_x;
+    for id in expected {
+        assert_snap_in_bar(window, id, min_x, max_x);
+    }
+    for (swatch, pill) in [
+        ("top-theme-swatch", "top-theme"),
+        ("top-accounts-status", "top-accounts"),
+    ] {
+        let sb = assert_snap_in_bar(window, swatch, min_x, max_x);
+        let pb = assert_snap_in_bar(window, pill, min_x, max_x);
+        assert!(
+            sb.origin.x >= pb.origin.x
+                && sb.origin.x + sb.size.width <= pb.origin.x + pb.size.width,
+            "{swatch} ({sb:?}) escapes parent {pill} ({pb:?})"
+        );
+    }
+    for snap in snapshots(window) {
+        let b = snap.bounds();
+        if !snap.visible() || b.size.width <= px(0.) {
+            continue;
+        }
+        assert!(
+            b.origin.x >= min_x,
+            "{:?} starts left of 16px inset: {b:?}",
+            snap.path()
+        );
+        assert!(
+            b.origin.x + b.size.width <= max_x,
+            "{:?} clipped past {max_x:?}: {b:?}",
+            snap.path()
+        );
+    }
+}
+
+/// Asserts each visible text string appears once, fits inside `[16, width - 16]`, and fits `parent`.
+fn assert_single_text(window: &Window, text: &str, parent: Option<&str>, width: f32) {
+    let min_x = DIMS.inset_x;
+    let max_x = px(width) - DIMS.inset_x;
+    let matches: Vec<_> = texts(window)
+        .into_iter()
+        .filter(|entry| entry.visible() && entry.text() == text)
+        .collect();
+    assert_eq!(
+        matches.len(),
+        1,
+        "expected {text:?} once as visible text, found {}",
+        matches.len()
+    );
+    let tb = matches[0].bounds();
+    assert!(
+        tb.size.width > px(0.) && tb.size.height > px(0.),
+        "{text:?} needs positive text bounds: {tb:?}"
+    );
+    assert!(tb.origin.x >= min_x, "{text:?} left of inset: {tb:?}");
+    assert!(
+        tb.origin.x + tb.size.width <= max_x,
+        "{text:?} exceeds bar right inset {max_x:?}: {tb:?}"
+    );
+    if let Some(pid) = parent {
+        let pb = assert_snap_in_bar(window, pid, min_x, max_x);
+        assert!(
+            tb.origin.x >= pb.origin.x
+                && tb.origin.x + tb.size.width <= pb.origin.x + pb.size.width,
+            "{text:?} ({tb:?}) escapes parent {pid} ({pb:?})"
+        );
+    }
+}
+
+/// Verifies breadcrumb Role::Label, full accessible text, and bounded single-line geometry.
+fn assert_crumb_contract(window: &Window, width: f32, compact: bool) {
+    let crumbs =
+        find(window, &[], &ElementId::Name("top-crumbs".into())).expect("top-crumbs must exist");
+    assert_eq!(crumbs.role(), Some(Role::Label));
+    assert_eq!(
+        crumbs.label(),
+        Some("New comparison Folder · File · Git"),
+        "crumb accessible label must always preserve complete title and detail"
+    );
+    assert_single_text(window, "New comparison", Some("top-crumbs"), width);
+    let detail_count = texts(window)
+        .iter()
+        .filter(|e| e.text() == "Folder · File · Git")
+        .count();
+    if compact {
+        assert_eq!(detail_count, 0, "compact mode hides secondary crumb detail");
+    } else {
+        assert_single_text(window, "Folder · File · Git", Some("top-crumbs"), width);
+    }
+}
+
+/// Asserts enabled pill labels, slash, hints, and breadcrumb contract against `texts(window)`.
+fn assert_owned_texts(window: &Window, width: f32, expect_search: bool, expected_hints: &[&str]) {
+    let labels = if expect_search {
+        FOLDER_LABELS
+    } else {
+        &FOLDER_LABELS[..4]
+    };
+    for (pid, label) in labels {
+        assert_single_text(window, label, Some(pid), width);
+    }
+    let slash_count = texts(window)
+        .iter()
+        .filter(|entry| entry.visible() && entry.text() == "/")
+        .count();
+    if expect_search {
+        assert_single_text(window, "/", None, width);
+    } else {
+        assert_eq!(slash_count, 0, "unexpected / slash without Search pill");
+    }
+    for hint in ALL_HINTS {
+        if expected_hints.contains(hint) {
+            assert_single_text(window, hint, None, width);
+        } else {
+            let count = texts(window).iter().filter(|e| e.text() == *hint).count();
+            assert_eq!(count, 0, "compact hint {hint:?} should be hidden");
+        }
+    }
+    assert_crumb_contract(window, width, expected_hints.is_empty());
+}
+
+/// Formats observed owned text, indicator, and opaque Input bounds into `out`.
+fn append_bounds_report(out: &mut String, scenario: &str, window: &Window) {
+    let _ = writeln!(out, "=== {scenario} ===");
+    for t in texts(window) {
+        let b = t.bounds();
+        let owner = t
+            .path()
+            .iter()
+            .rev()
+            .find_map(|id| find(window, &[], id).map(|s| (id, s.bounds())));
+        let owner_name = match owner {
+            Some((ElementId::Name(name), _)) => name.as_ref(),
+            _ => "-",
+        };
+        let _ = writeln!(
+            out,
+            "TEXT {:?} vis={} x={:?}..{:?} owner={} owner_b={:?}",
+            t.text(),
+            t.visible(),
+            b.origin.x,
+            b.origin.x + b.size.width,
+            owner_name,
+            owner.map(|(_, r)| (r.origin.x, r.origin.x + r.size.width))
+        );
+    }
+    for id in ["top-theme-swatch", "top-accounts-status", "top-search"] {
+        if let Some(s) = find(window, &[], &ElementId::Name(id.into())) {
+            let b = s.bounds();
+            let note = if id == "top-search" {
+                "opaque-kit-input"
+            } else {
+                "owned-indicator"
+            };
+            let _ = writeln!(
+                out,
+                "{note} {id} vis={} x={:?}..{:?}",
+                s.visible(),
+                b.origin.x,
+                b.origin.x + b.size.width
+            );
+        }
+    }
+}
+
+const START_IDS: &[&str] = &[
+    "top-crumbs",
+    "top-theme",
+    "top-theme-swatch",
+    "top-accounts",
+    "top-accounts-status",
+    "top-view",
+    "top-keys",
+];
+const FOLDER_IDS: &[&str] = &[
+    "top-crumbs",
+    "top-search",
+    "top-theme",
+    "top-theme-swatch",
+    "top-accounts",
+    "top-accounts-status",
+    "top-view",
+    "top-keys",
+    "top-sync",
+];
+const FOLDER_LABELS: &[(&str, &str)] = &[
+    ("top-theme", "Theme"),
+    ("top-accounts", "Accounts"),
+    ("top-view", "View"),
+    ("top-keys", "Keys"),
+    ("top-sync", "Sync"),
+];
+const ALL_HINTS: &[&str] = &["T", "Alt+V", "?", "Alt+S"];
+
+/// At 500 px (780 px window - 280 px Sidebar), Start and Folders fit in both Light and Dark.
+#[gpui_kit::test]
+fn narrow_500px_fits_start_and_folders_in_light_and_dark(cx: &mut TestAppContext) {
+    let mut log = String::new();
+    for theme in [Mode::Light, Mode::Dark] {
+        for (mode, expected, expect_search) in [
+            (TopbarMode::Start, START_IDS, false),
+            (TopbarMode::Folders, FOLDER_IDS, true),
+        ] {
+            let (window, view, _) = topbar_in(cx, 500., theme);
+            cx.update_window(window, |_, window, cx| {
+                view.update(cx, |bar, cx| bar.set_mode(mode, cx));
+                window.render_frame(cx);
+            })
+            .expect("window");
+            settle(cx, window);
+            cx.update_window(window, |_, window, _| {
+                append_bounds_report(&mut log, &format!("500px {mode:?} {theme:?}"), window);
+                assert_compact_fit(window, 500., expected);
+                assert_owned_texts(window, 500., expect_search, &[]);
+            })
+            .expect("window");
+        }
+    }
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../target/c2b-owned-text-bounds.log"
+    );
+    std::fs::write(path, log).expect("write c2b bounds log");
+}
+
+/// Builds a `Topbar` entity with default comparison crumbs for host-width tests.
+fn host_topbar(window: &mut Window, cx: &mut gpui_kit::App) -> Entity<Topbar> {
+    let crumbs = Crumbs {
+        title: "New comparison".into(),
+        detail: "Folder · File · Git".into(),
+    };
+    cx.new(|cx| Topbar::new(crumbs, |_, _| {}, window, cx))
+}
+
+/// Opens a bounded `Topbar` host inside a viewport of `viewport_w`.
+fn open_bounded_host(
+    cx: &mut TestAppContext,
+    viewport_w: f32,
+    host_w: f32,
+) -> (AnyWindowHandle, Entity<BoundedHost>) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        apply_sidewise(PaletteId::Violet, Mode::Light, cx);
+        bind_keys(cx);
+    });
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds {
+            origin: Point::default(),
+            size: size(px(viewport_w), px(600.)),
+        })),
+        ..Default::default()
+    };
+    cx.update(|cx| {
+        gpui_kit::open_window(options, cx, |window, cx| {
+            let bar = host_topbar(window, cx);
+            cx.new(|_| BoundedHost {
+                width: px(host_w),
+                bar,
+            })
+        })
+        .expect("open bounded host window")
+    })
+}
+
+/// Placing Topbar in a 500 px parent inside a 1200 px viewport compacts via own-width bounds.
+#[gpui_kit::test]
+fn own_width_500px_parent_in_1200px_viewport_compacts_from_bounds(cx: &mut TestAppContext) {
+    let (window, host) = open_bounded_host(cx, 1200., 1200.);
+    settle(cx, window);
+    let wide_w = cx
+        .update_window(window, |_, window, _| {
+            assert_owned_texts(window, 1200., true, ALL_HINTS);
+            width_of(window, "top-view")
+        })
+        .expect("window");
+
+    cx.update(|cx| {
+        host.update(cx, |h, cx| {
+            h.width = px(500.);
+            cx.notify();
+        });
+    });
+    settle(cx, window);
+    cx.update_window(window, |_, window, _| {
+        let narrow_w = width_of(window, "top-view");
+        assert!(
+            narrow_w < wide_w,
+            "500 px parent bounds must hide hints even in 1200 px viewport (wide={wide_w:?}, narrow={narrow_w:?})"
+        );
+        assert_compact_fit(window, 500., FOLDER_IDS);
+        assert_owned_texts(window, 500., true, &[]);
+    })
+    .expect("window");
+}
+
+/// Resizing the window 780 -> 500 -> 780 toggles pill key hints across the 640 px threshold.
+#[gpui_kit::test]
+fn window_resize_780_500_780_toggles_hints_around_640(cx: &mut TestAppContext) {
+    let (window, _view, _) = topbar(cx, MIN_W);
+    settle(cx, window);
+    let view_w_780 = cx
+        .update_window(window, |_, window, _| {
+            assert_compact_fit(window, MIN_W, FOLDER_IDS);
+            assert_owned_texts(window, MIN_W, true, ALL_HINTS);
+            width_of(window, "top-view")
+        })
+        .expect("window");
+
+    cx.simulate_window_resize(window, size(px(500.), px(600.)));
+    settle(cx, window);
+    cx.update_window(window, |_, window, _| {
+        assert!(
+            width_of(window, "top-view") < view_w_780,
+            "500 px drops hint"
+        );
+        assert_owned_texts(window, 500., true, &[]);
+    })
+    .expect("window");
+
+    cx.simulate_window_resize(window, size(px(MIN_W), px(600.)));
+    settle(cx, window);
+    cx.update_window(window, |_, window, _| {
+        assert_eq!(
+            width_of(window, "top-view"),
+            view_w_780,
+            "780 px restores hint"
+        );
+        assert_owned_texts(window, MIN_W, true, ALL_HINTS);
     })
     .expect("window");
 }
