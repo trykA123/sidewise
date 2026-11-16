@@ -5,12 +5,16 @@ use navo_compare_profile::recent::StartRows;
 use navo_ui::prelude::*;
 
 use super::Shell;
-use crate::start::StartScreen;
+use crate::screens::compare_run::RunError;
+use crate::screens::compare_tab::{CompareRequest, CompareTab};
+use crate::start::{StartEvent, StartScreen};
+use navo_compare_cli::args::SideSpec;
 
-/// What a tab shows. Only the start screen exists so far; each start tab owns its screen.
+/// What a tab shows: the start screen or a compare; each tab owns its screen.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum TabKind {
     Start(Entity<StartScreen>),
+    Compare(Entity<CompareTab>),
 }
 
 /// One tab: the title in the strip and the kind of body it shows.
@@ -28,6 +32,10 @@ pub(super) fn tab_titles(tabs: &[ShellTab]) -> Vec<SharedString> {
 pub(super) fn start_tab(window: &mut Window, cx: &mut Context<Shell>) -> ShellTab {
     let cwd = std::env::current_dir().unwrap_or_default();
     let screen = cx.new(|cx| StartScreen::new(StartRows::default(), cwd, window, cx));
+    cx.subscribe_in(&screen, window, |this, screen, event, window, cx| {
+        this.on_start((screen, event), window, cx);
+    })
+    .detach();
     ShellTab {
         title: "New compare".into(),
         kind: TabKind::Start(screen),
@@ -65,6 +73,7 @@ impl Shell {
             .iter()
             .map(|tab| match &tab.kind {
                 TabKind::Start(screen) => screen.entity_id(),
+                TabKind::Compare(tab) => tab.entity_id(),
             })
             .collect()
     }
@@ -73,8 +82,96 @@ impl Shell {
     pub fn active_screen(&self) -> Option<&Entity<StartScreen>> {
         match self.tabs.get(self.active).map(|tab| &tab.kind) {
             Some(TabKind::Start(screen)) => Some(screen),
-            None => None,
+            Some(TabKind::Compare(_)) | None => None,
         }
+    }
+
+    /// The compare tab when the active tab is one.
+    pub(crate) fn active_compare(&self) -> Option<&Entity<CompareTab>> {
+        match self.tabs.get(self.active).map(|tab| &tab.kind) {
+            Some(TabKind::Compare(tab)) => Some(tab),
+            _ => None,
+        }
+    }
+
+    /// The active tab's body: the start screen or the compare tab; empty when no tab is open.
+    pub(super) fn stage(&self) -> AnyElement {
+        match (self.active_screen(), self.active_compare()) {
+            (Some(screen), _) => screen.clone().into_any_element(),
+            (None, Some(tab)) => tab.clone().into_any_element(),
+            (None, None) => div().into_any_element(),
+        }
+    }
+
+    /// Routes one start tab's event; the `subscribe_in` made in `start_tab` calls it.
+    /// `Compare` opens a compare tab in place of that start tab; other events do nothing yet.
+    fn on_start(
+        &mut self,
+        (screen, event): (&Entity<StartScreen>, &StartEvent),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.kind == TabKind::Start(screen.clone()))
+        else {
+            return;
+        };
+        let StartEvent::Compare {
+            left: SideSpec::Path(left),
+            right: SideSpec::Path(right),
+            choice,
+        } = event
+        else {
+            return;
+        };
+        let request = CompareRequest {
+            left: left.clone(),
+            right: right.clone(),
+            choice: *choice,
+        };
+        // The error already shows as a toast inside `open_compare`.
+        let _ = self.open_compare((index, request), window, cx);
+    }
+
+    /// Replaces the tab at `index` with a compare tab, makes it active and syncs the chrome.
+    /// `choice.mode` is not read (`classify` decides from disk). Err: the tabs stay as they were
+    /// and one error toast shows the `RunError` text.
+    pub(crate) fn open_compare(
+        &mut self,
+        (index, request): (usize, CompareRequest),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), RunError> {
+        let started = match CompareTab::start(&request, cx) {
+            Ok(started) if index < self.tabs.len() => started,
+            Ok(_) => return Ok(()),
+            Err(error) => {
+                self.toast(error.to_string(), cx);
+                return Err(error);
+            }
+        };
+        let tab = cx.new(|cx| CompareTab::from_started(started, &request, cx));
+        self.tabs[index] = ShellTab {
+            title: tab.read(cx).title(),
+            kind: TabKind::Compare(tab),
+        };
+        self.active = index;
+        self.sync_chrome(cx);
+        self.activated(window, cx);
+        Ok(())
+    }
+
+    /// Pushes one toast that expires on its own.
+    pub(crate) fn toast(&self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.toasts.update(cx, |host, cx| host.push(text, cx));
+    }
+
+    /// How many toasts are on screen.
+    #[cfg(test)]
+    pub(crate) fn toast_count(&self, cx: &App) -> usize {
+        self.toasts.read(cx).len()
     }
 
     /// Appends a start tab, makes it active and focuses its left field.
@@ -132,10 +229,13 @@ impl Shell {
         self.select_tab((self.active + count - 1) % count, window, cx);
     }
 
-    /// Focuses the active start tab's left field (NS16), else the shell; redraws.
+    /// Focuses the active start tab's left field (NS16) or compare tab's view, else the shell; redraws.
     pub(super) fn activated(&self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.active_screen() {
-            Some(screen) => screen.update(cx, |screen, cx| screen.focus_left(window, cx)),
+        match self.tabs.get(self.active).map(|tab| &tab.kind) {
+            Some(TabKind::Start(screen)) => {
+                screen.update(cx, |screen, cx| screen.focus_left(window, cx));
+            }
+            Some(TabKind::Compare(tab)) => tab.update(cx, |tab, cx| tab.focus_view(window, cx)),
             None => self.handle.focus(window, cx),
         }
         cx.notify();

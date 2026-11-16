@@ -126,7 +126,7 @@ impl Shell {
             .w_full()
             .min_h_0()
             .bg(background)
-            .children(self.active_screen().cloned())
+            .child(self.stage())
             .child(toasts)
     }
 

@@ -4,6 +4,7 @@ use navo_compare_profile::brand;
 use navo_ui::prelude::*;
 use navo_ui::tokens::Mode;
 
+use crate::screens::compare_tab::install_compare_hooks;
 use crate::shell::{self, Shell};
 
 /// Starts the GPUI app, opens the window and returns the process exit code (0 after a normal close).
@@ -14,6 +15,7 @@ pub fn run() -> std::process::ExitCode {
         let initialised = navo_ui::init(Mode::Light, cx);
         shell::bind_keys(cx);
         crate::screens::compare_host::bind_compare_keys(cx);
+        install_compare_hooks(cx);
         let opened = initialised
             .map_err(|error| error.to_string())
             .and_then(|()| open(cx));
