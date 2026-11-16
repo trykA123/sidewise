@@ -9,7 +9,6 @@ use navo_compare_profile::paths::{Profile, open_profile};
 use navo_ui::prelude::*;
 
 /// The View preferences and the profile they save to; `profile` is None when no profile opened.
-#[cfg_attr(not(test), expect(dead_code, reason = "VM4b mounts the View menu"))]
 struct Prefs {
     prefs: UiPrefs,
     profile: Option<Profile>,
@@ -54,7 +53,6 @@ pub(crate) fn install_prefs(explicit: Option<&Path>, cx: &mut App) -> Result<(),
 }
 
 /// The current preferences, or the defaults when no global is installed.
-#[cfg_attr(not(test), expect(dead_code, reason = "VM4b mounts the View menu"))]
 pub(crate) fn prefs(cx: &App) -> UiPrefs {
     cx.try_global::<Prefs>()
         .map(|stored| stored.prefs.clone())
@@ -63,7 +61,6 @@ pub(crate) fn prefs(cx: &App) -> UiPrefs {
 
 /// Sets the global to `prefs` first, then saves to the profile when one exists.
 /// A save error returns `Err("Could not save the View settings: <reason>")` (the global keeps `prefs`).
-#[cfg_attr(not(test), expect(dead_code, reason = "VM4b mounts the View menu"))]
 pub(crate) fn save_prefs(prefs: UiPrefs, cx: &mut App) -> Result<(), String> {
     if cx.try_global::<Prefs>().is_none() {
         cx.set_global(Prefs {

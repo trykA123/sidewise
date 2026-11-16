@@ -13,7 +13,9 @@ use navo_ui::tokens;
 
 use crate::chrome::sidebar::{DismissTip, Sidebar, SidebarEvent, ToggleRail};
 use crate::chrome::status_bar::{StatusBar, StatusHint};
-use crate::chrome::topbar_status::{Action as TopbarAction, Crumbs, Topbar, TopbarMode};
+use crate::chrome::topbar_status::{
+    Action as TopbarAction, Crumbs, Topbar, TopbarMode, ViewMenu as TopbarViewKey,
+};
 use crate::layers::keys_sheet;
 use crate::layers::toast::{self, ToastHost};
 use crate::menu_host::{MenuSlot, menu_view};
@@ -175,7 +177,7 @@ impl Shell {
     }
 }
 
-/// Builds the start-mode topbar: Keys opens the sheet; View is off (NC123) and Sync is off (read-only).
+/// Builds the start-mode topbar: Keys opens the sheet; Sync is off (read-only).
 fn start_topbar(window: &mut Window, cx: &mut Context<Shell>) -> Entity<Topbar> {
     let crumbs = Crumbs {
         title: "New compare".into(),
@@ -185,9 +187,7 @@ fn start_topbar(window: &mut Window, cx: &mut Context<Shell>) -> Entity<Topbar> 
     cx.new(|cx| {
         let mut bar = Topbar::new(crumbs, router, window, cx);
         bar.set_mode(TopbarMode::Start, cx);
-        for action in [TopbarAction::View, TopbarAction::Sync] {
-            bar.set_available(action, false, cx);
-        }
+        bar.set_available(TopbarAction::Sync, false, cx);
         bar
     })
 }
@@ -216,6 +216,9 @@ impl Render for Shell {
             }))
             .on_action(cx.listener(|this, _: &CyclePane, window, cx| this.cycle_pane(window, cx)))
             .on_action(cx.listener(|this, _: &DismissTip, _, cx| this.dismiss_tip(cx)))
+            .on_action(cx.listener(|this, _: &TopbarViewKey, window, cx| {
+                this.on_view_key(window, cx);
+            }))
             .flex()
             .flex_col()
             .size_full()
@@ -234,6 +237,7 @@ impl Render for Shell {
                     .child(self.main_pane(cx)),
             )
             .child(self.layers.keys.clone())
+            .children(self.view_menu())
             .children(menu_view(&self.menu))
     }
 }

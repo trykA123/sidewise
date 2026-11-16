@@ -36,6 +36,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("f6", CyclePane, Some(CONTEXT)),
         KeyBinding::new("shift-f6", CyclePane, Some(CONTEXT)),
         KeyBinding::new("escape", DismissTip, Some(CONTEXT)),
+        KeyBinding::new("alt-v", topbar_status::ViewMenu, Some(CONTEXT)),
     ]);
 }
 

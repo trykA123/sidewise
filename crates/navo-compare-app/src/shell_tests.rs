@@ -362,9 +362,7 @@ fn click_id(cx: &mut TestAppContext, window: AnyWindowHandle, id: &'static str) 
 /// Start-mode Topbar shows the disabled View pill and the enabled Keys pill, hides Search/Sync, and renders cleanly
 /// at 780 and 1200 px in Light and Dark without fake placeholder dialogs.
 #[gpui_kit::test]
-fn topbar_in_start_mode_mounts_view_off_and_keys_on_without_search_or_sync(
-    cx: &mut TestAppContext,
-) {
+fn topbar_in_start_mode_mounts_view_and_keys_without_search_or_sync(cx: &mut TestAppContext) {
     for mode in [Mode::Light, Mode::Dark] {
         for width in [780., 1200.] {
             let (window, _view) = shell_at(cx, width, mode);
@@ -389,8 +387,8 @@ fn topbar_in_start_mode_mounts_view_off_and_keys_on_without_search_or_sync(
                     assert!(pill.visible(), "{id} visible at {width}px {mode:?}");
                     assert_eq!(
                         pill.disabled(),
-                        (id == "top-view").then_some(true),
-                        "{id} availability at {width}px {mode:?}: View off (NC123), Keys on"
+                        None,
+                        "{id} availability at {width}px {mode:?}: View and Keys on"
                     );
                     let b = pill.bounds();
                     assert!(

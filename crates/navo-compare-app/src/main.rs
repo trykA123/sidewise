@@ -29,7 +29,7 @@ mod launch;
     not(test),
     expect(
         dead_code,
-        reason = "the drawer host stays unmounted (Navo's CompareScreen owns the diff drawers, NC119); the View menu returns when UiPrefs has consumers (NC123)"
+        reason = "the drawer host stays unmounted (Navo's CompareScreen owns the diff drawers, NC119)"
     )
 )]
 mod layers;

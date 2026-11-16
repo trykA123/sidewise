@@ -8,6 +8,7 @@ use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
     AnyWindowHandle, AppContext as _, Entity, Modifiers, TestAppContext, VisualTestContext,
 };
+use navo_compare_profile::appearance::ViewPresetPref;
 use navo_core::Location;
 use navo_ui::browser::{CompareControl, CompareHooks, CompareSink};
 use navo_ui::compare_diff::CompareOptions;
@@ -15,6 +16,7 @@ use navo_ui::compare_diff::CompareOptions;
 use crate::compare_tab_tests::{TempDir, shell, submit};
 use crate::screens::compare_tab::{CompareRequest, TabView, install_test_hooks};
 use crate::shell::Shell;
+use crate::shell_prefs::{install_prefs, prefs};
 use crate::start_tabs::StartChoice;
 
 type Opened = (AnyWindowHandle, Entity<Shell>);
@@ -68,7 +70,7 @@ fn click(cx: &mut TestAppContext, window: AnyWindowHandle, id: &'static str) {
 
 /// Reads the Keys sheet and View menu state: `(keys open, menu open)`.
 fn open_state(cx: &mut TestAppContext, (_, view): &Opened) -> (bool, bool) {
-    view.read_with(cx, |shell, cx| (shell.keys_open(cx), false))
+    view.read_with(cx, |shell, cx| (shell.keys_open(cx), shell.view_open()))
 }
 
 /// The focused element's handle, to compare before and after a layer.
@@ -127,12 +129,57 @@ fn on_start_the_keys_action_and_the_key_open_the_sheet_and_escape_closes_it(
 }
 
 #[gpui_kit::test]
-fn on_start_view_is_unavailable_and_alt_v_opens_nothing(cx: &mut TestAppContext) {
+fn on_start_alt_v_and_the_pill_open_the_view_menu_and_escape_returns_focus(
+    cx: &mut TestAppContext,
+) {
     let opened = shell(cx);
-    assert!(!opened.1.read_with(cx, |s, cx| s.view_action_available(cx)));
-    click(cx, opened.0, "top-view");
+    assert!(opened.1.read_with(cx, |s, cx| s.view_action_available(cx)));
+    let before = focus_id(cx, opened.0);
     cx.simulate_keystrokes(opened.0, "alt-v");
-    assert_eq!(open_state(cx, &opened), (false, false), "nothing opens");
+    assert_eq!(open_state(cx, &opened), (false, true), "alt-v opens it");
+    cx.simulate_keystrokes(opened.0, "escape");
+    assert_eq!(open_state(cx, &opened), (false, false), "Escape closes it");
+    assert_eq!(focus_id(cx, opened.0), before, "focus returns to the tab");
+    click(cx, opened.0, "top-view");
+    assert_eq!(open_state(cx, &opened), (false, true), "the pill opens it");
+    click(cx, opened.0, "top-view");
+    assert_eq!(
+        open_state(cx, &opened),
+        (false, false),
+        "the pill closes it"
+    );
+}
+
+#[gpui_kit::test]
+fn picking_simple_saves_the_preset_to_the_profile(cx: &mut TestAppContext) {
+    let profile = TempDir::new("view-save");
+    let opened = shell(cx);
+    cx.update(|cx| install_prefs(Some(profile.path()), cx))
+        .expect("install");
+    cx.simulate_keystrokes(opened.0, "alt-v");
+    cx.simulate_keystrokes(opened.0, "up enter");
+    assert_eq!(cx.update(|cx| prefs(cx)).preset, ViewPresetPref::Simple);
+    let text = fs::read_to_string(profile.path().join("settings.toml")).expect("settings.toml");
+    assert!(text.contains("preset = \"simple\""), "saved: {text}");
+    assert_eq!(open_state(cx, &opened), (false, true), "stays open");
+}
+
+#[gpui_kit::test]
+fn view_is_available_on_folders_only_of_the_compare_screens(cx: &mut TestAppContext) {
+    for (tag, files, want, open) in [
+        ("folders", false, TabView::Folders, true),
+        ("file", true, TabView::File, false),
+    ] {
+        let (opened, _dirs) = on_compare(cx, tag, files);
+        let tab = opened.1.read_with(cx, |s, _| s.active_compare().cloned());
+        assert_eq!(tab.expect("tab").read_with(cx, |t, _| t.view()), want);
+        assert_eq!(
+            opened.1.read_with(cx, |s, cx| s.view_action_available(cx)),
+            open
+        );
+        cx.simulate_keystrokes(opened.0, "alt-v");
+        assert_eq!(open_state(cx, &opened), (false, open));
+    }
 }
 
 #[gpui_kit::test]
@@ -142,19 +189,4 @@ fn the_keys_sheet_opens_on_a_compare_tab_too(cx: &mut TestAppContext) {
     assert_eq!(open_state(cx, &opened), (true, false));
     cx.simulate_keystrokes(opened.0, "escape");
     assert_eq!(open_state(cx, &opened), (false, false));
-}
-
-#[gpui_kit::test]
-fn view_is_unavailable_on_folders_and_file_and_alt_v_opens_nothing(cx: &mut TestAppContext) {
-    for (tag, files, want) in [
-        ("folders", false, TabView::Folders),
-        ("file", true, TabView::File),
-    ] {
-        let (opened, _dirs) = on_compare(cx, tag, files);
-        let tab = opened.1.read_with(cx, |s, _| s.active_compare().cloned());
-        assert_eq!(tab.expect("tab").read_with(cx, |t, _| t.view()), want);
-        assert!(!opened.1.read_with(cx, |s, cx| s.view_action_available(cx)));
-        cx.simulate_keystrokes(opened.0, "alt-v");
-        assert_eq!(open_state(cx, &opened), (false, false));
-    }
 }
