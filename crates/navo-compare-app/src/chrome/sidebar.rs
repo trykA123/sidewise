@@ -15,6 +15,9 @@ use crate::theme_data::palettes::{DIMS, ModeTokens};
 
 #[path = "sidebar_actions.rs"]
 mod actions;
+#[cfg(test)]
+#[path = "rail_tooltip.rs"]
+mod rail_tooltip;
 
 gpui_kit::actions!(sidebar, [ToggleRail, NextRow, PreviousRow]);
 
