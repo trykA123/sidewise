@@ -8,19 +8,19 @@ use navo_ui::primitives::{Button, ButtonVariant, IconButton, Kbd, TextField};
 use navo_ui::tokens;
 
 use crate::start::{
-    CONTEXT, EnterList, OpenSelected, OtherField, SelectNext, SelectPrev, Side, SideHint,
-    StartScreen,
+    CONTEXT, EnterList, OpenSelected, OtherField, PrevField, SelectNext, SelectPrev, Side,
+    SideHint, StartScreen,
 };
 use crate::start_rows::{row_count, rows_view};
-use crate::start_tabs::{StartMode, hero, mode_tabs, rule_chip, tabs_state};
+use crate::start_tabs::{StartMode, StartTabs, hero, mode_tabs, rule_chip};
 use crate::theme_data::palettes::DIMS;
 
-/// The chip beside a field: "Path", "Git ref" or "Not found" (in the warning colour).
+/// The chip beside a field: "Path", "Not found" or the git notice (the last two in the warning colour).
 fn chip(hint: &SideHint, cx: &App) -> Option<Div> {
     let t = tokens::current(cx);
     let (label, color) = match hint {
         SideHint::Path(_) => ("Path", t.colors.muted),
-        SideHint::GitRef(_) => ("Git ref", t.colors.muted),
+        SideHint::GitRef(_) => ("Git compare is not in this alpha", t.colors.warn),
         SideHint::NotFound => ("Not found", t.colors.warn),
         SideHint::Empty | SideHint::Checking => return None,
     };
@@ -51,6 +51,7 @@ impl StartScreen {
         div()
             .flex()
             .flex_1()
+            .flex_wrap()
             .min_w(DIMS.start_field_min_w)
             .items_center()
             .gap(t.spacing.md)
@@ -64,18 +65,24 @@ impl StartScreen {
             .child(
                 div()
                     .flex_1()
-                    .min_w_0()
+                    .min_w(DIMS.start_field_min_w / 2.)
                     .child(TextField::new(id, &self.fields[i], label)),
             )
             .children(chip(&self.hints[i], cx))
     }
 
     /// The row of both fields with the swap and Compare buttons.
-    fn fields_row(&self, mode: StartMode, cx: &Context<Self>) -> impl IntoElement {
+    fn fields_row(
+        &self,
+        mode: StartMode,
+        tabs: &Entity<StartTabs>,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let t = tokens::current(cx);
         let swap = IconButton::new("start-swap", IconName::Replace, "Swap sides")
             .on_click(cx.listener(|this, _, window, cx| this.swap(window, cx)));
         let compare = Button::new("start-compare", "Compare")
+            .track_focus(&tabs.read(cx).compare)
             .variant(ButtonVariant::Primary)
             .on_click(cx.listener(|this, _, window, cx| this.submit(window, cx)));
         div()
@@ -112,7 +119,7 @@ impl StartScreen {
             .py(t.spacing.xs)
             .text_size(t.typography.small)
             .text_color(t.colors.muted)
-            .child("Type or paste a path, or write repo@branch.")
+            .child("Type or paste a path.")
             .children(key("hint-tab", "tab", "next side"))
             .children(key("hint-enter", "enter", "compare"))
     }
@@ -121,14 +128,19 @@ impl StartScreen {
 impl Render for StartScreen {
     /// Draws the tabs, the fields, the rule chip, the hint line, the hero and the rows inside the `Start` context.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let tabs = tabs_state(window, cx);
+        let tabs = self.tabs.clone();
         let t = tokens::current(cx);
         let selected = self.selected.filter(|_| self.list_focus.is_focused(window));
         let rows = rows_view(&self.rows, selected, &self.list_focus, cx);
         let choice = tabs.read(cx).choice();
         div()
             .key_context(CONTEXT)
-            .on_action(cx.listener(|this, _: &OtherField, window, cx| this.other_field(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &OtherField, window, cx| this.other_field(false, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &PrevField, window, cx| this.other_field(true, window, cx)),
+            )
             .on_action(cx.listener(|this, _: &EnterList, window, cx| this.enter_list(window, cx)))
             .on_action(cx.listener(|this, _: &SelectNext, _, cx| this.select_next(cx)))
             .on_action(cx.listener(|this, _: &SelectPrev, window, cx| this.select_prev(window, cx)))
@@ -140,7 +152,7 @@ impl Render for StartScreen {
             .px(t.spacing.xxl * 4.)
             .pt(t.spacing.xxl * 4.)
             .child(mode_tabs(&tabs, choice.mode, cx))
-            .child(self.fields_row(choice.mode, cx))
+            .child(self.fields_row(choice.mode, &tabs, cx))
             .child(rule_chip(&tabs, choice.respect_gitignore, cx))
             .child(self.hint_line(cx))
             .when(row_count(&self.rows) == 0, |col| col.child(hero(cx)))

@@ -14,10 +14,18 @@ use navo_ui::prelude::*;
 use navo_ui::primitives::{TextFieldState, text_field_state};
 
 use crate::start_rows::{LIST_CONTEXT, row_at, row_count};
+use crate::start_tabs::{StartChoice, StartMode, StartTabs};
 
 gpui_kit::actions!(
     start,
-    [OtherField, EnterList, SelectNext, SelectPrev, OpenSelected]
+    [
+        OtherField,
+        PrevField,
+        EnterList,
+        SelectNext,
+        SelectPrev,
+        OpenSelected
+    ]
 );
 
 /// Key context of the screen's root element.
@@ -36,8 +44,14 @@ pub enum SideHint {
 /// What the start screen asks for: compare two sides, or open a stored row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StartEvent {
-    Compare { left: SideSpec, right: SideSpec },
-    Open { id: String },
+    Compare {
+        left: SideSpec,
+        right: SideSpec,
+        choice: StartChoice,
+    },
+    Open {
+        id: String,
+    },
 }
 
 /// One of the two side fields.
@@ -55,14 +69,6 @@ impl Side {
             Self::Right => 1,
         }
     }
-
-    /// The other field.
-    fn other(self) -> Self {
-        match self {
-            Self::Left => Self::Right,
-            Self::Right => Self::Left,
-        }
-    }
 }
 
 /// Binds the start screen's keys; the shell calls it from its own `bind_keys`.
@@ -70,7 +76,7 @@ impl Side {
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("tab", OtherField, Some(CONTEXT)),
-        KeyBinding::new("shift-tab", OtherField, Some(CONTEXT)),
+        KeyBinding::new("shift-tab", PrevField, Some(CONTEXT)),
         KeyBinding::new("down", EnterList, Some("Start > Input")),
         KeyBinding::new("down", SelectNext, Some(LIST_CONTEXT)),
         KeyBinding::new("up", SelectPrev, Some(LIST_CONTEXT)),
@@ -96,10 +102,10 @@ fn probe(text: &str, cwd: &Path) -> SideHint {
     }
 }
 
-/// The side a good hint stands for; `None` for any other hint.
+/// The side a good hint stands for; only a path is good, a git ref is not in the alpha (NC89).
 fn good(hint: &SideHint) -> Option<&SideSpec> {
     match hint {
-        SideHint::Path(spec) | SideHint::GitRef(spec) => Some(spec),
+        SideHint::Path(spec) => Some(spec),
         _ => None,
     }
 }
@@ -108,6 +114,7 @@ fn good(hint: &SideHint) -> Option<&SideSpec> {
 pub struct StartScreen {
     pub(crate) fields: [Entity<TextFieldState>; 2],
     pub(crate) hints: [SideHint; 2],
+    pub(crate) tabs: Entity<StartTabs>,
     checks: [Option<Task<()>>; 2],
     pub(crate) rows: StartRows,
     pub(crate) selected: Option<usize>,
@@ -121,8 +128,17 @@ impl EventEmitter<StartEvent> for StartScreen {}
 impl StartScreen {
     /// Makes a screen over `rows`; relative sides resolve against `cwd`.
     pub fn new(rows: StartRows, cwd: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let left = text_field_state("Path or repo@branch", window, cx);
-        let right = text_field_state("Path or repo@branch", window, cx);
+        let hold = StartMode::default().placeholder();
+        let left = text_field_state(hold, window, cx);
+        let right = text_field_state(hold, window, cx);
+        let tabs = cx.new(StartTabs::new);
+        let on_tabs = cx.observe_in(&tabs, window, |this, tabs, window, cx| {
+            let hold = tabs.read(cx).choice().mode.placeholder();
+            for field in &this.fields {
+                field.update(cx, |f, cx| f.set_placeholder(hold, window, cx));
+            }
+            cx.notify();
+        });
         let subscriptions = [(Side::Left, &left), (Side::Right, &right)]
             .into_iter()
             .map(|(side, field)| {
@@ -136,10 +152,12 @@ impl StartScreen {
                     },
                 )
             })
+            .chain([on_tabs])
             .collect();
         Self {
             fields: [left, right],
             hints: [SideHint::Empty, SideHint::Empty],
+            tabs,
             checks: [None, None],
             rows,
             selected: None,
@@ -201,6 +219,7 @@ impl StartScreen {
             let event = StartEvent::Compare {
                 left: left.clone(),
                 right: right.clone(),
+                choice: self.tabs.read(cx).choice(),
             };
             cx.emit(event);
             return;
@@ -255,7 +274,7 @@ impl StartScreen {
     }
 
     /// Focuses one field.
-    fn focus_side(&self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn focus_side(&self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
         self.fields[side.index()].update(cx, |field, cx| field.focus(window, cx));
     }
 
@@ -300,14 +319,6 @@ impl StartScreen {
             self.hints[side.index()] = hint;
             cx.notify();
         }
-    }
-
-    /// Tab and Shift+Tab: the focus goes to the other field (the left one from the list).
-    pub(crate) fn other_field(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let next = self
-            .focused_side(window, cx)
-            .map_or(Side::Left, Side::other);
-        self.focus_side(next, window, cx);
     }
 
     /// Down in a field: the list gets the focus and its first row is selected.

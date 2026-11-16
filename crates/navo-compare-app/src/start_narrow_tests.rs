@@ -281,7 +281,7 @@ fn narrow_500px_handles_path_gitref_and_empty_hints_without_overflow(cx: &mut Te
                 }),
             )
         );
-        assert_narrow_wrapped(window, 500., &["Path", "Git ref"]);
+        assert_narrow_wrapped(window, 500., &["Path", "Git compare is not in this alpha"]);
     })
     .expect("window");
 

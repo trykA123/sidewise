@@ -1,12 +1,15 @@
 //! Start screen v2 parts: the Folder/File tab pill, the `.gitignore` rule chip and the hero art.
-//! The state lives in one `StartTabs` entity; `start_view` draws these and U14b reads the choice.
+//! The state lives in one `StartTabs` entity that `StartScreen` owns; `submit` reads its choice.
+//! It also holds the Tab order of the whole screen (U14b).
 
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{PaintQuad, Role, Stateful, Toggled, canvas, linear_color_stop, linear_gradient};
+use gpui_kit::{
+    FocusHandle, PaintQuad, Role, Stateful, Toggled, canvas, linear_color_stop, linear_gradient,
+};
 use navo_ui::prelude::*;
 use navo_ui::tokens;
 
-use crate::start::Side;
+use crate::start::{Side, StartScreen};
 use crate::theme::SidewiseTheme;
 
 /// What the two fields hold: two folders or two files.
@@ -25,6 +28,14 @@ impl StartMode {
             (Self::Folder, Side::Right) => "Right",
             (Self::File, Side::Left) => "Left file",
             (Self::File, Side::Right) => "Right file",
+        }
+    }
+
+    /// The placeholder of both fields: it names what the mode compares.
+    pub fn placeholder(self) -> &'static str {
+        match self {
+            Self::Folder => "Folder path",
+            Self::File => "File path",
         }
     }
 }
@@ -46,13 +57,48 @@ impl Default for StartChoice {
     }
 }
 
-/// The state entity behind the tab pill and the rule chip.
-#[derive(Default)]
+/// One keyboard stop of the start screen, in Tab (visual) order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Stop {
+    Folder,
+    File,
+    Left,
+    Right,
+    Compare,
+    Rule,
+}
+
+/// Every stop, in Tab order; Tab wraps from the last to the first.
+const STOPS: [Stop; 6] = [
+    Stop::Folder,
+    Stop::File,
+    Stop::Left,
+    Stop::Right,
+    Stop::Compare,
+    Stop::Rule,
+];
+
+/// The state entity behind the tab pill and the rule chip; it also owns their focus handles.
 pub struct StartTabs {
     choice: StartChoice,
+    folder: FocusHandle,
+    file: FocusHandle,
+    pub(crate) compare: FocusHandle,
+    pub(crate) rule: FocusHandle,
 }
 
 impl StartTabs {
+    /// Makes the default choice (folders, rule on) with one focus handle per non-field stop.
+    pub fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            choice: StartChoice::default(),
+            folder: cx.focus_handle(),
+            file: cx.focus_handle(),
+            compare: cx.focus_handle(),
+            rule: cx.focus_handle(),
+        }
+    }
+
     /// The current choice.
     pub fn choice(&self) -> StartChoice {
         self.choice
@@ -69,14 +115,59 @@ impl StartTabs {
         self.choice.respect_gitignore = !self.choice.respect_gitignore;
         cx.notify();
     }
+
+    /// The focus handle of a mode's tab.
+    fn tab_handle(&self, mode: StartMode) -> &FocusHandle {
+        match mode {
+            StartMode::Folder => &self.folder,
+            StartMode::File => &self.file,
+        }
+    }
+
+    /// The focus handle of a stop that is not a text field; `None` for `Left` and `Right`.
+    pub(crate) fn handle(&self, stop: Stop) -> Option<&FocusHandle> {
+        match stop {
+            Stop::Folder => Some(self.tab_handle(StartMode::Folder)),
+            Stop::File => Some(self.tab_handle(StartMode::File)),
+            Stop::Compare => Some(&self.compare),
+            Stop::Rule => Some(&self.rule),
+            Stop::Left | Stop::Right => None,
+        }
+    }
 }
 
-/// The state entity of this screen; it lives as long as the screen keeps drawing.
-pub fn tabs_state(window: &mut Window, cx: &mut App) -> Entity<StartTabs> {
-    window.use_keyed_state("start-tabs", cx, |_, _| StartTabs::default())
+impl StartScreen {
+    /// The stop that holds the focus, if any.
+    pub(crate) fn focused_stop(&self, window: &Window, cx: &App) -> Option<Stop> {
+        let tabs = self.tabs.read(cx);
+        STOPS.into_iter().find(|&stop| match stop {
+            Stop::Left => self.focused_side(window, cx) == Some(Side::Left),
+            Stop::Right => self.focused_side(window, cx) == Some(Side::Right),
+            _ => tabs.handle(stop).is_some_and(|h| h.is_focused(window)),
+        })
+    }
+
+    /// Tab and Shift+Tab: the next or previous stop, wrapping; from outside the stops (the
+    /// list) the left field.
+    pub(crate) fn other_field(&mut self, back: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let next = self.focused_stop(window, cx).map_or(Stop::Left, |stop| {
+            let at = STOPS.iter().position(|&s| s == stop).unwrap_or(0);
+            STOPS[(at + if back { STOPS.len() - 1 } else { 1 }) % STOPS.len()]
+        });
+        match next {
+            Stop::Left => self.focus_side(Side::Left, window, cx),
+            Stop::Right => self.focus_side(Side::Right, window, cx),
+            _ => {
+                if let Some(handle) = self.tabs.read(cx).handle(next).cloned() {
+                    handle.focus(window, cx);
+                }
+            }
+        }
+    }
 }
 
 /// One toggle cell: a focusable, clickable pill; `pressed` holds its (fill, text) look when on.
+/// A click by key (Enter or Space on the focused cell) reaches the caller's `on_click` too.
 fn cell(
     id: &'static str,
     label: &'static str,
@@ -91,7 +182,6 @@ fn cell(
         .role(Role::Button)
         .aria_label(label)
         .aria_toggled(if on { Toggled::True } else { Toggled::False })
-        .focusable()
         .cursor_pointer()
         .flex_none()
         .self_start()
@@ -111,11 +201,13 @@ fn cell(
 pub fn mode_tabs(state: &Entity<StartTabs>, mode: StartMode, cx: &App) -> impl IntoElement {
     let t = tokens::current(cx);
     let tab = |id, label, which: StartMode| {
-        let state = state.clone();
         let look = (mode == which).then_some((t.colors.surface, t.colors.text));
+        let focus = state.read(cx).tab_handle(which).clone();
+        let state = state.clone();
         cell(id, label, look, cx)
-            .rounded(t.radii.md)
             .on_click(move |_, _, cx| state.update(cx, |s, cx| s.set_mode(which, cx)))
+            .track_focus(&focus)
+            .rounded(t.radii.md)
             .test_support()
     };
     div()
@@ -133,11 +225,13 @@ pub fn mode_tabs(state: &Entity<StartTabs>, mode: StartMode, cx: &App) -> impl I
 /// The "Respect .gitignore" rule chip; it is pressed while the rule is on.
 pub fn rule_chip(state: &Entity<StartTabs>, on: bool, cx: &App) -> impl IntoElement {
     let t = tokens::current(cx);
-    let state = state.clone();
     let look = on.then_some((t.colors.selection, t.colors.accent_text));
+    let focus = state.read(cx).rule.clone();
+    let state = state.clone();
     cell("start-rule-gitignore", "Respect .gitignore", look, cx)
-        .rounded(t.radii.pill)
         .on_click(move |_, _, cx| state.update(cx, |s, cx| s.toggle_gitignore(cx)))
+        .track_focus(&focus)
+        .rounded(t.radii.pill)
         .test_support()
 }
 

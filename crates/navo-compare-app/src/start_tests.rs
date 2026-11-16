@@ -4,14 +4,19 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use gpui_kit::base::test_support::texts;
 use gpui_kit::test::TestWindowExt;
-use gpui_kit::{AnyWindowHandle, AppContext as _, Context, Entity, TestAppContext, Window};
+use gpui_kit::{
+    AnyWindowHandle, AppContext as _, Context, Entity, KeyDownEvent, KeyUpEvent, Keystroke,
+    TestAppContext, VisualTestContext, Window,
+};
 use navo_compare_cli::args::SideSpec;
 use navo_compare_profile::recent::{RowKind, StartRow, StartRows};
 
 use crate::shell::Shell;
 use crate::start::{Side, SideHint, StartEvent, StartScreen};
 use crate::start_rows::section_titles;
+use crate::start_tabs::{StartChoice, StartMode, Stop};
 use crate::test_window::open;
 
 /// A folder under the system temp dir that is removed when the guard drops.
@@ -203,20 +208,56 @@ fn swap_with_a_check_in_flight_still_settles(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn submit_emits_one_compare_when_both_sides_are_good(cx: &mut TestAppContext) {
+fn submit_emits_one_compare_with_the_choice_before_the_first_render(cx: &mut TestAppContext) {
     let dir = TempDir::new("submit");
-    let s = screen(cx, StartRows::default(), dir.path());
-    let log = record(cx, &s.1);
-    settle(cx, &s, &dir.text(), &format!("{}@main", dir.text()));
+    let cwd = dir.path().to_path_buf();
+    let (window, view): Screen = open(cx, move |w, cx| {
+        StartScreen::new(StartRows::default(), cwd, w, cx)
+    });
+    let log = record(cx, &view);
+    let tabs = view.read_with(cx, |s, _| s.tabs.clone());
+    tabs.update(cx, |t, cx| {
+        t.set_mode(StartMode::File, cx);
+        t.toggle_gitignore(cx);
+    });
+    let s = (window, view);
+    settle(cx, &s, &dir.text(), &dir.text());
     act(cx, &s, |screen, window, cx| screen.submit(window, cx));
+    let side = SideSpec::Path(dir.path().to_path_buf());
     let want = StartEvent::Compare {
-        left: SideSpec::Path(dir.path().to_path_buf()),
-        right: SideSpec::GitRev {
-            repo: dir.path().to_path_buf(),
-            rev: "main".into(),
+        left: side.clone(),
+        right: side,
+        choice: StartChoice {
+            mode: StartMode::File,
+            respect_gitignore: false,
         },
     };
     assert_eq!(*log.borrow(), vec![want]);
+}
+
+#[gpui_kit::test]
+fn a_git_ref_side_never_emits_and_takes_the_focus(cx: &mut TestAppContext) {
+    let dir = TempDir::new("gitref");
+    let s = screen(cx, StartRows::default(), dir.path());
+    let log = record(cx, &s.1);
+    let git_text = format!("{}@main", dir.text());
+    for (left, right, want) in [
+        (git_text.clone(), dir.text(), Side::Left),
+        (dir.text(), git_text.clone(), Side::Right),
+    ] {
+        settle(cx, &s, &left, &right);
+        act(cx, &s, |screen, window, cx| screen.submit(window, cx));
+        assert!(log.borrow().is_empty(), "a git ref side must not compare");
+        assert_eq!(focused(cx, &s), Some(want));
+    }
+    let shown = cx
+        .update_window(s.0, |_, w, _| {
+            texts(w)
+                .iter()
+                .any(|t| t.text() == "Git compare is not in this alpha")
+        })
+        .expect("window");
+    assert!(shown, "the git ref chip says Git is not in the alpha");
 }
 
 #[gpui_kit::test]
@@ -300,10 +341,10 @@ fn tab_moves_between_the_fields(cx: &mut TestAppContext) {
     assert_eq!(focused(cx, &s), Some(Side::Left));
     cx.simulate_keystrokes(s.0, "tab");
     assert_eq!(focused(cx, &s), Some(Side::Right));
-    cx.simulate_keystrokes(s.0, "tab");
+    cx.simulate_keystrokes(s.0, "shift-tab");
     assert_eq!(focused(cx, &s), Some(Side::Left));
     cx.simulate_keystrokes(s.0, "shift-tab");
-    assert_eq!(focused(cx, &s), Some(Side::Right));
+    assert_eq!(stop(cx, &s), Some(Stop::File));
 }
 
 #[gpui_kit::test]
@@ -369,4 +410,88 @@ fn the_shells_start_tab_focuses_its_left_field(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(window, "ctrl-shift-tab");
     assert_eq!(shell.read_with(cx, |shell, _| shell.active()), 1);
     assert_eq!(side(cx), Some(Side::Left));
+}
+
+/// The stop that holds the focus.
+fn stop(cx: &mut TestAppContext, s: &Screen) -> Option<Stop> {
+    cx.update_window(s.0, |_, window, cx| s.1.read(cx).focused_stop(window, cx))
+        .expect("window")
+}
+
+/// Presses and releases one key, as a keyboard does; a click by key fires on the release.
+fn press(cx: &mut TestAppContext, s: &Screen, key: &'static str) {
+    let keystroke = Keystroke::parse(key).expect("a key");
+    let mut vcx = VisualTestContext::from_window(s.0, cx);
+    vcx.simulate_event(KeyDownEvent {
+        keystroke: keystroke.clone(),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    vcx.simulate_event(KeyUpEvent { keystroke });
+}
+
+#[gpui_kit::test]
+fn tab_and_shift_tab_cycle_through_every_stop(cx: &mut TestAppContext) {
+    let dir = TempDir::new("cycle");
+    let s = screen(cx, StartRows::default(), dir.path());
+    act(cx, &s, |screen, window, cx| screen.focus_left(window, cx));
+    let order = [
+        Stop::Right,
+        Stop::Compare,
+        Stop::Rule,
+        Stop::Folder,
+        Stop::File,
+        Stop::Left,
+    ];
+    for want in order {
+        cx.simulate_keystrokes(s.0, "tab");
+        assert_eq!(stop(cx, &s), Some(want));
+    }
+    cx.simulate_keystrokes(s.0, "shift-tab");
+    assert_eq!(stop(cx, &s), Some(Stop::File));
+}
+
+#[gpui_kit::test]
+fn space_and_enter_activate_the_chip_and_the_tabs(cx: &mut TestAppContext) {
+    let dir = TempDir::new("activate");
+    let s = screen(cx, StartRows::default(), dir.path());
+    let tabs = s.1.read_with(cx, |s, _| s.tabs.clone());
+    let choice = |cx: &mut TestAppContext| tabs.read_with(cx, |t, _| t.choice());
+    act(cx, &s, |screen, window, cx| {
+        screen.focus_side(Side::Right, window, cx)
+    });
+    cx.simulate_keystrokes(s.0, "tab tab");
+    assert_eq!(stop(cx, &s), Some(Stop::Rule));
+    press(cx, &s, "space");
+    assert!(!choice(cx).respect_gitignore);
+    press(cx, &s, "enter");
+    assert!(choice(cx).respect_gitignore);
+    cx.simulate_keystrokes(s.0, "tab tab");
+    press(cx, &s, "enter");
+    assert_eq!(stop(cx, &s), Some(Stop::File));
+    assert_eq!(choice(cx).mode, StartMode::File);
+    let hold = cx
+        .update_window(s.0, |_, w, _| {
+            w.find("start-right").placeholder().map(str::to_owned)
+        })
+        .expect("window");
+    assert_eq!(hold.as_deref(), Some("File path"));
+    cx.simulate_keystrokes(s.0, "shift-tab");
+    press(cx, &s, "space");
+    assert_eq!(choice(cx).mode, StartMode::Folder);
+}
+
+#[gpui_kit::test]
+fn enter_on_the_compare_stop_submits(cx: &mut TestAppContext) {
+    let dir = TempDir::new("compare-key");
+    let s = screen(cx, StartRows::default(), dir.path());
+    let log = record(cx, &s.1);
+    settle(cx, &s, &dir.text(), &dir.text());
+    act(cx, &s, |screen, window, cx| {
+        screen.focus_side(Side::Right, window, cx)
+    });
+    cx.simulate_keystrokes(s.0, "tab");
+    assert_eq!(stop(cx, &s), Some(Stop::Compare));
+    press(cx, &s, "enter");
+    assert_eq!(log.borrow().len(), 1);
 }
