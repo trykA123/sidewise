@@ -1,7 +1,17 @@
-//! State for collapsed-rail tooltips: hover priority, Esc suppression, anchor bounds, and pruning.
-//! Pure state gated under `#[cfg(test)]` until overlay rendering (A2) and `Sidebar` wiring (B).
+//! Collapsed-rail row tooltips: state lifecycle (`A1`) and hoverable deferred overlay (`A2`).
+//! Gated under `#[cfg(test)]` in `Sidebar` until `B` activation.
 
-use gpui_kit::{Bounds, Pixels, SharedString, px};
+use gpui_kit::base::{TestSupportExt as _, TestTextExt as _};
+use gpui_kit::{
+    Anchor, AnyElement, App, Bounds, HoverListenerMode, Pixels, Role, SharedString, Window,
+    anchored, deferred, div, px,
+};
+use navo_ui::prelude::*;
+
+use crate::theme_data::palettes::{DIMS, ModeTokens};
+
+/// Horizontal gap in logical pixels between the row's outer right edge and the tooltip box.
+const TIP_GAP: f32 = 10.;
 
 /// Stable identity of an interactive sidebar row eligible for a rail tooltip.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -138,6 +148,46 @@ impl RailTips {
         let target = self.active_target()?;
         let (key, bounds) = self.anchor?;
         (key == target.key).then_some((target, bounds))
+    }
+
+    /// Renders the deferred, hoverable tooltip `TIP_GAP` px right of the active row's outer edge.
+    pub(super) fn overlay(
+        &self,
+        on_hover: impl Fn(Target, bool, &mut Window, &mut App) + 'static,
+        m: &ModeTokens,
+    ) -> Option<AnyElement> {
+        let (target, bounds) = self.active_anchor()?;
+        let [bg, fg, _] = m.toast;
+        let label = target.label.clone();
+        let hover_target = target.clone();
+        let tip = div()
+            .id("rail-tooltip")
+            .role(Role::Tooltip)
+            .aria_label(label.clone())
+            .test_support()
+            .whitespace_nowrap()
+            .px_3()
+            .py_1()
+            .rounded(DIMS.btn_r)
+            .border_1()
+            .border_color(m.sep_strong)
+            .bg(bg)
+            .text_color(fg)
+            .child(label.clone().test_text(label));
+        let bridge = div()
+            .id("rail-tooltip-bridge")
+            .pl(px(TIP_GAP))
+            .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
+            .on_hover(move |hovered, window, cx| {
+                on_hover(hover_target.clone(), *hovered, window, cx);
+            })
+            .test_support()
+            .child(tip);
+        Some(
+            deferred(anchored().attach(bounds, Anchor::TopRight).child(bridge))
+                .with_priority(1)
+                .into_any_element(),
+        )
     }
 
     /// Active visible target (`row_hover > overlay_hover > focused`), hidden while suppressed.
