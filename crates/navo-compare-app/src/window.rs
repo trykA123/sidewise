@@ -13,6 +13,7 @@ pub fn run() -> std::process::ExitCode {
     navo_ui::application().run(move |cx| {
         let initialised = navo_ui::init(Mode::Light, cx);
         shell::bind_keys(cx);
+        crate::screens::compare_host::bind_compare_keys(cx);
         let opened = initialised
             .map_err(|error| error.to_string())
             .and_then(|()| open(cx));
