@@ -21,8 +21,8 @@ use crate::start_tabs::StartChoice;
 /// Pause between two wake updates, about one frame.
 const PAUSE: Duration = Duration::from_millis(16);
 
-/// Key context of the tab root; the tab keys bind inside it later.
-const CONTEXT: &str = "CompareTab";
+/// Key context of the tab root; the tab keys bind inside it.
+pub(super) const CONTEXT: &str = "CompareTab";
 
 /// The two sides and the start choice a compare tab opens with.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,9 +32,8 @@ pub struct CompareRequest {
     pub choice: StartChoice,
 }
 
-/// Which screen the tab shows; `Large` and `Stream` wait for H4 and H5.
+/// Which screen the tab shows; `File` and `Stream` both use the one compare screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[expect(dead_code, reason = "H4 and H5 show the Stream and Large screens")]
 pub enum TabView {
     Large,
     Folders,
@@ -224,15 +223,18 @@ fn title_of(request: &CompareRequest) -> SharedString {
 
 impl Render for CompareTab {
     /// The shown view inside the tab's key context.
-    fn render(&mut self, _: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let shown = match self.view {
-            TabView::Folders | TabView::Large => self.folders.clone().into_any_element(),
+            TabView::Folders => self.folders.clone().into_any_element(),
+            // H5 fills the Large view here.
+            TabView::Large => div().into_any_element(),
             TabView::File | TabView::Stream => self.screen.clone().into_any_element(),
         };
-        div()
+        let root = div()
             .key_context(CONTEXT)
             .track_focus(&self.focus)
             .size_full()
-            .child(shown)
+            .child(shown);
+        self.with_keys(root, cx)
     }
 }

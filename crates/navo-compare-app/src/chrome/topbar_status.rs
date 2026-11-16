@@ -122,8 +122,17 @@ impl Topbar {
 
     /// Switches which screen controls the topbar mounts.
     pub fn set_mode(&mut self, mode: TopbarMode, cx: &mut Context<Self>) {
+        if self.mode == mode {
+            return;
+        }
         self.mode = mode;
         cx.notify();
+    }
+
+    /// The screen mode now mounted; for tests.
+    #[cfg(test)]
+    pub(crate) fn mode(&self) -> TopbarMode {
+        self.mode
     }
 
     /// Enables or disables one action across pills, shortcut handlers, and search focus.

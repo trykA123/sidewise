@@ -5,8 +5,9 @@ use navo_compare_profile::recent::StartRows;
 use navo_ui::prelude::*;
 
 use super::Shell;
+use crate::chrome::topbar_status::TopbarMode;
 use crate::screens::compare_run::RunError;
-use crate::screens::compare_tab::{CompareRequest, CompareTab};
+use crate::screens::compare_tab::{CompareRequest, CompareTab, TabView};
 use crate::start::{StartEvent, StartScreen};
 use navo_compare_cli::args::SideSpec;
 
@@ -164,6 +165,8 @@ impl Shell {
         };
         let tab = cx.new(|cx| CompareTab::from_started(started, &request, cx));
         tab.update(cx, |tab, cx| tab.attach(&request, window, cx));
+        cx.observe(&tab, |shell, _, cx| shell.sync_mode(cx))
+            .detach();
         self.tabs[index] = ShellTab {
             title: tab.read(cx).title(),
             kind: TabKind::Compare(tab),
@@ -257,5 +260,26 @@ impl Shell {
         let titles = tab_titles(&self.tabs);
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.set_tabs(titles, self.active, cx));
+        self.sync_mode(cx);
+    }
+
+    /// The topbar's mode; for tests.
+    #[cfg(test)]
+    pub(crate) fn topbar_mode(&self, cx: &App) -> TopbarMode {
+        self.topbar.read(cx).mode()
+    }
+
+    /// Sets the topbar mode from the active tab: Start for a start tab, else the compare tab's view.
+    pub(super) fn sync_mode(&self, cx: &mut Context<Self>) {
+        let mode = match self.tabs.get(self.active).map(|tab| &tab.kind) {
+            Some(TabKind::Compare(tab)) => match tab.read(cx).view() {
+                TabView::Folders => TopbarMode::Folders,
+                TabView::File => TopbarMode::File,
+                TabView::Stream => TopbarMode::Stream,
+                TabView::Large => TopbarMode::Large,
+            },
+            _ => TopbarMode::Start,
+        };
+        self.topbar.update(cx, |bar, cx| bar.set_mode(mode, cx));
     }
 }
