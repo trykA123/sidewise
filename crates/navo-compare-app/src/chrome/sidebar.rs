@@ -139,8 +139,10 @@ impl Sidebar {
 
     /// Replaces the open tab labels and clamps `active`, keeping handles for unchanged indices.
     pub fn set_tabs(&mut self, tabs: Vec<SharedString>, active: usize, cx: &mut Context<Self>) {
-        self.tabs = tabs;
-        self.tips.sync_tabs(&self.tabs);
+        if self.tabs != tabs {
+            self.tabs = tabs;
+            self.tips.sync_tabs(&self.tabs);
+        }
         self.active = if self.tabs.is_empty() {
             0
         } else {
@@ -408,3 +410,7 @@ impl Render for Sidebar {
 #[cfg(test)]
 #[path = "sidebar_tests.rs"]
 mod sidebar_tests;
+
+#[cfg(test)]
+#[path = "sidebar_tip_tests.rs"]
+mod sidebar_tip_tests;
