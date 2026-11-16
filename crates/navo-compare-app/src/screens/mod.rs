@@ -18,3 +18,6 @@ mod large_model_tests;
 pub mod large_view;
 #[cfg(test)]
 mod large_view_tests;
+pub mod pair_requests;
+#[cfg(test)]
+mod pair_requests_tests;
