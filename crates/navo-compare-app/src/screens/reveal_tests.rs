@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::select_arg;
+use super::{explorer_exe, explorer_in, select_arg};
 
 /// A temp directory holding a file named `name`; returns its path.
 fn temp_file(tag: &str, name: &str) -> PathBuf {
@@ -51,4 +51,23 @@ fn select_arg_refuses_a_control_character() {
 fn reveal_off_windows_gives_the_notice() {
     let file = temp_file("off", "x.txt");
     assert_eq!(super::reveal(&file), Err(super::OFF_WINDOWS.to_owned()));
+}
+
+#[test]
+fn explorer_exe_ends_in_explorer_exe() {
+    let fallback = PathBuf::from(r"C:\Windows").join("explorer.exe");
+    assert_eq!(explorer_in(None), fallback);
+    assert_eq!(explorer_in(Some("relative".as_ref())), fallback);
+    let root = std::env::temp_dir();
+    assert_eq!(
+        explorer_in(Some(root.as_os_str())),
+        root.join("explorer.exe")
+    );
+    let real = explorer_exe();
+    assert_eq!(
+        real.file_name().and_then(|n| n.to_str()),
+        Some("explorer.exe")
+    );
+    #[cfg(windows)]
+    assert!(real.is_absolute());
 }

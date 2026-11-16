@@ -1,7 +1,8 @@
 //! Reveal in Explorer (NC138): builds the one argument for `explorer.exe /select,` from a
 //! checked path and spawns Explorer on Windows. Used by the Folders context menu.
 
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 /// The toast text off Windows, where there is no Explorer to open.
 pub const OFF_WINDOWS: &str = "Reveal in Explorer works on Windows only.";
@@ -23,13 +24,26 @@ pub fn select_arg(path: &Path) -> Result<String, String> {
     Ok(format!("/select,\"{text}\""))
 }
 
+/// The full path of `explorer.exe` under `SystemRoot`, so Windows never picks a copy that sits
+/// next to our own exe. Compiles on every OS; the fallback is `C:\Windows`.
+fn explorer_exe() -> PathBuf {
+    explorer_in(std::env::var_os("SystemRoot").as_deref())
+}
+
+/// `explorer.exe` under `system_root`, or under `C:\Windows` when it is unset or not absolute.
+fn explorer_in(system_root: Option<&OsStr>) -> PathBuf {
+    let root = system_root.map(Path::new).filter(|root| root.is_absolute());
+    root.unwrap_or(Path::new(r"C:\Windows"))
+        .join("explorer.exe")
+}
+
 /// Opens Explorer with `path` selected and does not wait for it. Fails with the user-facing
 /// toast text: a refused path, a spawn error, or the off-Windows notice.
 #[cfg(windows)]
 pub fn reveal(path: &Path) -> Result<(), String> {
     use std::os::windows::process::CommandExt as _;
     let arg = select_arg(path).map_err(|why| format!("Could not open Explorer: {why}."))?;
-    std::process::Command::new("explorer.exe")
+    std::process::Command::new(explorer_exe())
         .raw_arg(arg)
         .spawn()
         .map(drop)
