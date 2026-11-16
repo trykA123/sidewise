@@ -6037,7 +6037,7 @@ dependencies = [
 
 [[package]]
 name = "navo-compare-app"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "embed-resource",
  "futures",
@@ -6054,11 +6054,11 @@ dependencies = [
 
 [[package]]
 name = "navo-compare-cli"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 
 [[package]]
 name = "navo-compare-profile"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "serde",
  "toml 1.2.1+spec-1.1.0",
@@ -12056,7 +12056,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 
 [[package]]
 name = "xxhash-rust"
