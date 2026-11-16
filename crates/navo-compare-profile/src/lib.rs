@@ -2,6 +2,7 @@
 //! and the store of saved sessions. Pure logic with no GUI.
 
 pub mod appearance;
+pub mod book;
 pub mod brand;
 pub mod paths;
 pub mod pick;
@@ -11,6 +12,9 @@ pub mod session_store;
 
 #[cfg(test)]
 mod appearance_tests;
+
+#[cfg(test)]
+mod book_tests;
 
 #[cfg(test)]
 mod paths_tests;
