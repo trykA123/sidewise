@@ -29,7 +29,6 @@ const GROUPS: [(&str, &[Row]); 5] = [
             ("Previous tab", &["ctrl-shift-tab"]),
             ("Show or hide the sidebar", &["ctrl-\\"]),
             ("Move between sidebar and tab", &["f6", "shift-f6"]),
-            ("View menu (Start, Folders, Large)", &["alt-v"]),
             ("Show keyboard shortcuts", &["?", "f1"]),
         ],
     ),

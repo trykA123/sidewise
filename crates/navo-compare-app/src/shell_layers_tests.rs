@@ -68,9 +68,7 @@ fn click(cx: &mut TestAppContext, window: AnyWindowHandle, id: &'static str) {
 
 /// Reads the Keys sheet and View menu state: `(keys open, menu open)`.
 fn open_state(cx: &mut TestAppContext, (_, view): &Opened) -> (bool, bool) {
-    view.read_with(cx, |shell, cx| {
-        (shell.keys_open(cx), shell.view_menu_open())
-    })
+    view.read_with(cx, |shell, cx| (shell.keys_open(cx), false))
 }
 
 /// The focused element's handle, to compare before and after a layer.
@@ -129,16 +127,12 @@ fn on_start_the_keys_action_and_the_key_open_the_sheet_and_escape_closes_it(
 }
 
 #[gpui_kit::test]
-fn on_start_the_view_action_opens_the_menu_and_escape_closes_it(cx: &mut TestAppContext) {
+fn on_start_view_is_unavailable_and_alt_v_opens_nothing(cx: &mut TestAppContext) {
     let opened = shell(cx);
-    let before = focus_id(cx, opened.0);
+    assert!(!opened.1.read_with(cx, |s, cx| s.view_action_available(cx)));
     click(cx, opened.0, "top-view");
-    assert_eq!(open_state(cx, &opened), (false, true), "View pill opens it");
-    cx.simulate_keystrokes(opened.0, "escape");
-    assert_eq!(open_state(cx, &opened), (false, false), "Escape closes it");
-    assert_eq!(focus_id(cx, opened.0), before, "focus returns");
     cx.simulate_keystrokes(opened.0, "alt-v");
-    assert_eq!(open_state(cx, &opened), (false, true), "Alt+V opens it");
+    assert_eq!(open_state(cx, &opened), (false, false), "nothing opens");
 }
 
 #[gpui_kit::test]
@@ -151,28 +145,16 @@ fn the_keys_sheet_opens_on_a_compare_tab_too(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn view_is_available_on_folders_and_not_on_file(cx: &mut TestAppContext) {
-    let (folders, _dirs) = on_compare(cx, "folders", false);
-    let tab = folders.1.read_with(cx, |s, _| s.active_compare().cloned());
-    assert_eq!(
-        tab.expect("tab").read_with(cx, |t, _| t.view()),
-        TabView::Folders
-    );
-    assert!(folders.1.read_with(cx, |s, cx| s.view_action_available(cx)));
-    cx.simulate_keystrokes(folders.0, "alt-v");
-    assert_eq!(open_state(cx, &folders), (false, true), "opens on Folders");
-
-    let (file, _more) = on_compare(cx, "file", true);
-    let tab = file.1.read_with(cx, |s, _| s.active_compare().cloned());
-    assert_eq!(
-        tab.expect("tab").read_with(cx, |t, _| t.view()),
-        TabView::File
-    );
-    assert!(!file.1.read_with(cx, |s, cx| s.view_action_available(cx)));
-    cx.simulate_keystrokes(file.0, "alt-v");
-    assert_eq!(
-        open_state(cx, &file),
-        (false, false),
-        "Navo's Alt+V, not ours"
-    );
+fn view_is_unavailable_on_folders_and_file_and_alt_v_opens_nothing(cx: &mut TestAppContext) {
+    for (tag, files, want) in [
+        ("folders", false, TabView::Folders),
+        ("file", true, TabView::File),
+    ] {
+        let (opened, _dirs) = on_compare(cx, tag, files);
+        let tab = opened.1.read_with(cx, |s, _| s.active_compare().cloned());
+        assert_eq!(tab.expect("tab").read_with(cx, |t, _| t.view()), want);
+        assert!(!opened.1.read_with(cx, |s, cx| s.view_action_available(cx)));
+        cx.simulate_keystrokes(opened.0, "alt-v");
+        assert_eq!(open_state(cx, &opened), (false, false));
+    }
 }

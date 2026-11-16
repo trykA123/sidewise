@@ -13,9 +13,7 @@ use navo_ui::tokens;
 
 use crate::chrome::sidebar::{DismissTip, Sidebar, SidebarEvent, ToggleRail};
 use crate::chrome::status_bar::{StatusBar, StatusHint};
-use crate::chrome::topbar_status::{
-    Action as TopbarAction, Crumbs, Topbar, TopbarMode, ViewMenu as ViewKey,
-};
+use crate::chrome::topbar_status::{Action as TopbarAction, Crumbs, Topbar, TopbarMode};
 use crate::layers::keys_sheet;
 use crate::layers::toast::ToastHost;
 use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
@@ -137,7 +135,6 @@ impl Shell {
             .bg(background)
             .child(self.stage())
             .child(toasts)
-            .children(self.view_overlay(cx))
     }
 
     /// Derives the status bar from active tab title, open-tab count, and working shortcuts.
@@ -170,7 +167,7 @@ impl Shell {
     }
 }
 
-/// Builds the start-mode topbar: View and Keys reach the shell's layers; Sync stays off (read-only).
+/// Builds the start-mode topbar: Keys opens the sheet; View is off (NC123) and Sync is off (read-only).
 fn start_topbar(window: &mut Window, cx: &mut Context<Shell>) -> Entity<Topbar> {
     let crumbs = Crumbs {
         title: "New compare".into(),
@@ -180,7 +177,9 @@ fn start_topbar(window: &mut Window, cx: &mut Context<Shell>) -> Entity<Topbar> 
     cx.new(|cx| {
         let mut bar = Topbar::new(crumbs, router, window, cx);
         bar.set_mode(TopbarMode::Start, cx);
-        bar.set_available(TopbarAction::Sync, false, cx);
+        for action in [TopbarAction::View, TopbarAction::Sync] {
+            bar.set_available(action, false, cx);
+        }
         bar
     })
 }
@@ -194,7 +193,6 @@ impl Render for Shell {
         let root = div().key_context(CONTEXT).track_focus(&self.handle);
         keys_sheet::wire(root, &self.layers.keys)
             .relative()
-            .on_action(cx.listener(|this, _: &ViewKey, window, cx| this.view_key(window, cx)))
             .on_action(cx.listener(|this, _: &NewTab, window, cx| this.new_tab(window, cx)))
             .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
                 this.close_tab(this.active, window, cx);
