@@ -18,6 +18,9 @@ pub mod folders_model;
 #[cfg(test)]
 mod folders_model_tests;
 mod folders_row;
+pub mod folders_text;
+#[cfg(test)]
+mod folders_text_tests;
 pub mod folders_view;
 pub mod large_model;
 #[cfg(test)]
