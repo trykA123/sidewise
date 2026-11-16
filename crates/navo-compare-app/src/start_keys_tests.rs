@@ -50,6 +50,7 @@ fn down_and_up_move_between_the_fields_and_the_rows(cx: &mut TestAppContext) {
         .map(|event| match event {
             StartEvent::Open { id } => id.clone(),
             StartEvent::Compare { .. } => "compare".into(),
+            StartEvent::Forget { id } => format!("forget {id}"),
         })
         .collect();
     assert_eq!(ids, ["r1", "n1", "n1"]);

@@ -3,6 +3,7 @@
 
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::{
@@ -13,7 +14,9 @@ use navo_compare_profile::recent::StartRows;
 use navo_ui::prelude::*;
 use navo_ui::primitives::{TextFieldState, text_field_state};
 
-use crate::start_rows::{LIST_CONTEXT, row_at, row_count};
+use crate::menu_host::MenuSlot;
+use crate::start_menu::{CopyPaths, ForgetSelected, ShowRowMenu};
+use crate::start_rows::{LIST_CONTEXT, RowBounds, row_at, row_count};
 use crate::start_tabs::{StartChoice, StartMode, StartTabs};
 
 gpui_kit::actions!(
@@ -52,6 +55,10 @@ pub enum StartEvent {
     Open {
         id: String,
     },
+    /// Remove the unnamed stored row `id` from Recent.
+    Forget {
+        id: String,
+    },
 }
 
 /// One of the two side fields.
@@ -81,6 +88,9 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("down", SelectNext, Some(LIST_CONTEXT)),
         KeyBinding::new("up", SelectPrev, Some(LIST_CONTEXT)),
         KeyBinding::new("enter", OpenSelected, Some(LIST_CONTEXT)),
+        KeyBinding::new("ctrl-shift-c", CopyPaths, Some(LIST_CONTEXT)),
+        KeyBinding::new("delete", ForgetSelected, Some(LIST_CONTEXT)),
+        KeyBinding::new("shift-f10", ShowRowMenu, Some(LIST_CONTEXT)),
     ]);
 }
 
@@ -120,6 +130,9 @@ pub struct StartScreen {
     pub(crate) selected: Option<usize>,
     cwd: PathBuf,
     pub(crate) list_focus: FocusHandle,
+    pub(crate) menu: MenuSlot,
+    /// Where the selected row was last drawn; the menu key anchors to it.
+    pub(crate) row_bounds: RowBounds,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -163,6 +176,8 @@ impl StartScreen {
             selected: None,
             cwd,
             list_focus: cx.focus_handle(),
+            menu: None,
+            row_bounds: Rc::default(),
             _subscriptions: subscriptions,
         }
     }

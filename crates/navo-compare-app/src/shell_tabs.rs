@@ -135,7 +135,7 @@ impl Shell {
                 right: SideSpec::Path(right),
                 choice,
             } => (left, right, choice),
-            StartEvent::Compare { .. } => return,
+            StartEvent::Compare { .. } | StartEvent::Forget { .. } => return,
         };
         let request = CompareRequest {
             left: left.clone(),

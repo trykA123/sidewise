@@ -33,10 +33,6 @@ mod launch;
     )
 )]
 mod layers;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "CM2a and CM5a open the menus from their views")
-)]
 mod menu_host;
 #[cfg(test)]
 mod menu_host_tests;
@@ -55,6 +51,9 @@ mod start;
 mod start_focus;
 #[cfg(test)]
 mod start_keys_tests;
+mod start_menu;
+#[cfg(test)]
+mod start_menu_tests;
 mod start_rows;
 #[cfg(test)]
 mod start_rows_tests;

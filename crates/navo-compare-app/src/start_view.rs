@@ -7,6 +7,7 @@ use navo_ui::prelude::*;
 use navo_ui::primitives::{Button, ButtonVariant, IconButton, Kbd, TextField};
 use navo_ui::tokens;
 
+use crate::menu_host::menu_view;
 use crate::start::{
     CONTEXT, EnterList, OpenSelected, OtherField, PrevField, SelectNext, SelectPrev, Side,
     SideHint, StartScreen,
@@ -131,7 +132,12 @@ impl Render for StartScreen {
         let tabs = self.tabs.clone();
         let t = tokens::current(cx);
         let selected = self.selected.filter(|_| self.list_focus.is_focused(window));
-        let rows = rows_view(&self.rows, selected, &self.list_focus, cx);
+        let rows = rows_view(
+            &self.rows,
+            selected,
+            (&self.list_focus, &self.row_bounds),
+            cx,
+        );
         let choice = tabs.read(cx).choice();
         div()
             .key_context(CONTEXT)
@@ -157,6 +163,7 @@ impl Render for StartScreen {
             .child(self.hint_line(cx))
             .when(row_count(&self.rows) == 0, |col| col.child(hero(cx)))
             .child(rows)
+            .children(menu_view(&self.menu))
     }
 }
 
