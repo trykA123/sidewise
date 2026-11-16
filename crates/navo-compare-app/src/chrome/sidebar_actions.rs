@@ -3,8 +3,8 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{ObservedElement, TestSupportExt as _};
 use gpui_kit::{
-    AnyElement, Bounds, FocusHandle, HoverListenerMode, KeyDownEvent, MouseButton, ReadGlobal as _,
-    Role, Stateful, canvas, transparent_black,
+    AnyElement, Bounds, ClickEvent, FocusHandle, HoverListenerMode, KeyDownEvent, MouseButton,
+    ReadGlobal as _, Role, Stateful, canvas, transparent_black,
 };
 use navo_compare_profile::recent::StartRows;
 use navo_ui::prelude::*;
@@ -76,6 +76,7 @@ impl Sidebar {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let selected = tab.index == self.active;
+        let index = tab.index;
         let ring_w = px(SidewiseTheme::global(cx).spec.ring_px);
         self.action_row(
             RowControl {
@@ -101,6 +102,12 @@ impl Sidebar {
                     .bg(m.accent),
             )
         })
+        .on_aux_click(cx.listener(move |_, click: &ClickEvent, _, cx| {
+            if click.is_middle_click() {
+                cx.stop_propagation();
+                cx.emit(SidebarEvent::CloseTab(index));
+            }
+        }))
         .when(!self.rail, |row| {
             row.child(self.tab_close(tab.index, m, cx))
         })
@@ -313,3 +320,7 @@ impl Sidebar {
         &self.rows
     }
 }
+
+#[cfg(test)]
+#[path = "sidebar_mouse_tests.rs"]
+mod mouse_tests;
