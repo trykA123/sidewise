@@ -2,3 +2,6 @@
 //! Each screen owns its state and reports changes through the shell.
 
 pub mod compare_run;
+pub mod folders_model;
+#[cfg(test)]
+mod folders_model_tests;
