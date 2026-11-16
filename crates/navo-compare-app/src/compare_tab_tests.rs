@@ -17,9 +17,13 @@ use crate::start_tabs::StartChoice;
 pub(crate) struct TempDir(PathBuf);
 
 impl TempDir {
-    /// Creates the folder from `tag` and the process id.
+    /// Creates the folder from `tag`, the process id and a per-process counter, so parallel
+    /// tests that share a tag never share a folder.
     pub(crate) fn new(tag: &str) -> Self {
-        let path = std::env::temp_dir().join(format!("sidewise-h2-{tag}-{}", std::process::id()));
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let count = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let name = format!("sidewise-h2-{tag}-{}-{count}", std::process::id());
+        let path = std::env::temp_dir().join(name);
         let _ = fs::remove_dir_all(&path);
         fs::create_dir(&path).expect("create temp dir");
         Self(path)
