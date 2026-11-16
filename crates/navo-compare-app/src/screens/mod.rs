@@ -10,3 +10,6 @@ mod folders_model_tests;
 pub mod large_model;
 #[cfg(test)]
 mod large_model_tests;
+pub mod large_view;
+#[cfg(test)]
+mod large_view_tests;

@@ -189,3 +189,33 @@ fn phase_labels() {
         ("Content check", "Visible rows first")
     );
 }
+
+/// A repeated identical progress update changes nothing, so `observe` reports false.
+#[test]
+fn repeated_progress_is_not_a_change() {
+    let mut meters = PhaseMeters::default();
+    assert!(meters.observe(&progress(1, ComparePhase::QuickCheck, 2, Some(9))));
+    assert!(!meters.observe(&progress(1, ComparePhase::QuickCheck, 2, Some(9))));
+}
+
+/// `Totals` and `SlowPath` updates of a newer generation reset the meters like progress does.
+#[test]
+fn totals_and_slow_path_reset_at_a_newer_generation() {
+    let updates = [
+        CompareUpdate::Totals {
+            generation: 2,
+            totals: CompareTotals::default(),
+        },
+        CompareUpdate::SlowPath {
+            generation: 2,
+            path: "a".into(),
+            elapsed_ms: 9,
+        },
+    ];
+    for update in updates {
+        let mut meters = PhaseMeters::default();
+        assert!(meters.observe(&progress(1, ComparePhase::Listing, 7, Some(8))));
+        assert!(meters.observe(&update));
+        assert_eq!(meters.meter(ComparePhase::Listing), Meter::default());
+    }
+}
