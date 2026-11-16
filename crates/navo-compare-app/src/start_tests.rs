@@ -6,25 +6,22 @@ use std::rc::Rc;
 
 use gpui_kit::base::test_support::texts;
 use gpui_kit::test::TestWindowExt;
-use gpui_kit::{
-    AnyWindowHandle, AppContext as _, Context, Entity, KeyDownEvent, KeyUpEvent, Keystroke,
-    TestAppContext, VisualTestContext, Window,
-};
+use gpui_kit::{AnyWindowHandle, AppContext as _, Context, Entity, TestAppContext, Window};
 use navo_compare_cli::args::SideSpec;
 use navo_compare_profile::recent::{RowKind, StartRow, StartRows};
 
 use crate::shell::Shell;
 use crate::start::{Side, SideHint, StartEvent, StartScreen};
 use crate::start_rows::section_titles;
-use crate::start_tabs::{StartChoice, StartMode, Stop};
+use crate::start_tabs::{StartChoice, StartMode};
 use crate::test_window::open;
 
 /// A folder under the system temp dir that is removed when the guard drops.
-struct TempDir(PathBuf);
+pub(crate) struct TempDir(PathBuf);
 
 impl TempDir {
     /// Makes an empty folder with a `sub` folder inside; `name` keeps tests apart.
-    fn new(name: &str) -> Self {
+    pub(crate) fn new(name: &str) -> Self {
         let path =
             std::env::temp_dir().join(format!("sidewise-start-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
@@ -32,12 +29,12 @@ impl TempDir {
         Self(path)
     }
 
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.0
     }
 
     /// The folder as text, the way a user would type it.
-    fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         self.0.to_string_lossy().into_owned()
     }
 }
@@ -48,10 +45,10 @@ impl Drop for TempDir {
     }
 }
 
-type Screen = (AnyWindowHandle, Entity<StartScreen>);
+pub(crate) type Screen = (AnyWindowHandle, Entity<StartScreen>);
 
 /// One recent row with the given id and sides.
-fn row(id: &str, left: &str, right: &str) -> StartRow {
+pub(crate) fn row(id: &str, left: &str, right: &str) -> StartRow {
     StartRow {
         id: id.into(),
         name: None,
@@ -63,7 +60,7 @@ fn row(id: &str, left: &str, right: &str) -> StartRow {
 }
 
 /// Opens a start screen over `rows` with `cwd`, and renders one frame.
-fn screen(cx: &mut TestAppContext, rows: StartRows, cwd: &Path) -> Screen {
+pub(crate) fn screen(cx: &mut TestAppContext, rows: StartRows, cwd: &Path) -> Screen {
     let cwd = cwd.to_path_buf();
     let (window, view) = open(cx, move |window, cx| {
         StartScreen::new(rows, cwd, window, cx)
@@ -74,7 +71,7 @@ fn screen(cx: &mut TestAppContext, rows: StartRows, cwd: &Path) -> Screen {
 }
 
 /// Runs `f` on the screen inside its window and renders the next frame.
-fn act(
+pub(crate) fn act(
     cx: &mut TestAppContext,
     (window, view): &Screen,
     f: impl FnOnce(&mut StartScreen, &mut Window, &mut Context<StartScreen>),
@@ -87,7 +84,10 @@ fn act(
 }
 
 /// Collects every event the screen emits from now on.
-fn record(cx: &mut TestAppContext, view: &Entity<StartScreen>) -> Rc<RefCell<Vec<StartEvent>>> {
+pub(crate) fn record(
+    cx: &mut TestAppContext,
+    view: &Entity<StartScreen>,
+) -> Rc<RefCell<Vec<StartEvent>>> {
     let log = Rc::new(RefCell::new(Vec::new()));
     let sink = log.clone();
     cx.update(|cx| {
@@ -108,13 +108,18 @@ fn hints(cx: &mut TestAppContext, view: &Entity<StartScreen>) -> (SideHint, Side
 }
 
 /// Which field has the focus.
-fn focused(cx: &mut TestAppContext, s: &Screen) -> Option<Side> {
+pub(crate) fn focused(cx: &mut TestAppContext, s: &Screen) -> Option<Side> {
     cx.update_window(s.0, |_, window, cx| s.1.read(cx).focused_side(window, cx))
         .expect("window")
 }
 
 /// Sets both sides, lets the background checks finish and returns the hints.
-fn settle(cx: &mut TestAppContext, s: &Screen, left: &str, right: &str) -> (SideHint, SideHint) {
+pub(crate) fn settle(
+    cx: &mut TestAppContext,
+    s: &Screen,
+    left: &str,
+    right: &str,
+) -> (SideHint, SideHint) {
     act(cx, s, |screen, window, cx| {
         screen.set_sides(left, right, window, cx)
     });
@@ -334,59 +339,6 @@ fn a_section_is_drawn_only_when_it_has_rows(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn tab_moves_between_the_fields(cx: &mut TestAppContext) {
-    let dir = TempDir::new("tab");
-    let s = screen(cx, StartRows::default(), dir.path());
-    act(cx, &s, |screen, window, cx| screen.focus_left(window, cx));
-    assert_eq!(focused(cx, &s), Some(Side::Left));
-    cx.simulate_keystrokes(s.0, "tab");
-    assert_eq!(focused(cx, &s), Some(Side::Right));
-    cx.simulate_keystrokes(s.0, "shift-tab");
-    assert_eq!(focused(cx, &s), Some(Side::Left));
-    cx.simulate_keystrokes(s.0, "shift-tab");
-    assert_eq!(stop(cx, &s), Some(Stop::File));
-}
-
-#[gpui_kit::test]
-fn down_and_up_move_between_the_fields_and_the_rows(cx: &mut TestAppContext) {
-    let dir = TempDir::new("keys");
-    let rows = StartRows {
-        recent: vec![row("r1", "a", "b"), row("r2", "c", "d")],
-        named: vec![row("n1", "e", "f")],
-    };
-    let s = screen(cx, rows, dir.path());
-    let log = record(cx, &s.1);
-    act(cx, &s, |screen, window, cx| screen.focus_left(window, cx));
-    cx.simulate_keystrokes(s.0, "down");
-    assert_eq!(focused(cx, &s), None);
-    cx.simulate_keystrokes(s.0, "enter");
-    cx.simulate_keystrokes(s.0, "down down");
-    cx.simulate_keystrokes(s.0, "enter");
-    cx.simulate_keystrokes(s.0, "down");
-    cx.simulate_keystrokes(s.0, "enter");
-    cx.simulate_keystrokes(s.0, "up up up");
-    assert_eq!(focused(cx, &s), Some(Side::Left));
-    let ids: Vec<_> = log
-        .borrow()
-        .iter()
-        .map(|event| match event {
-            StartEvent::Open { id } => id.clone(),
-            StartEvent::Compare { .. } => "compare".into(),
-        })
-        .collect();
-    assert_eq!(ids, ["r1", "n1", "n1"]);
-}
-
-#[gpui_kit::test]
-fn down_with_no_rows_stays_in_the_field(cx: &mut TestAppContext) {
-    let dir = TempDir::new("no-rows");
-    let s = screen(cx, StartRows::default(), dir.path());
-    act(cx, &s, |screen, window, cx| screen.focus_left(window, cx));
-    cx.simulate_keystrokes(s.0, "down");
-    assert_eq!(focused(cx, &s), Some(Side::Left));
-}
-
-#[gpui_kit::test]
 fn the_shells_start_tab_focuses_its_left_field(cx: &mut TestAppContext) {
     let (window, shell) = open(cx, Shell::new);
     cx.update_window(window, |_, window, cx| window.render_frame(cx))
@@ -410,88 +362,4 @@ fn the_shells_start_tab_focuses_its_left_field(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(window, "ctrl-shift-tab");
     assert_eq!(shell.read_with(cx, |shell, _| shell.active()), 1);
     assert_eq!(side(cx), Some(Side::Left));
-}
-
-/// The stop that holds the focus.
-fn stop(cx: &mut TestAppContext, s: &Screen) -> Option<Stop> {
-    cx.update_window(s.0, |_, window, cx| s.1.read(cx).focused_stop(window, cx))
-        .expect("window")
-}
-
-/// Presses and releases one key, as a keyboard does; a click by key fires on the release.
-fn press(cx: &mut TestAppContext, s: &Screen, key: &'static str) {
-    let keystroke = Keystroke::parse(key).expect("a key");
-    let mut vcx = VisualTestContext::from_window(s.0, cx);
-    vcx.simulate_event(KeyDownEvent {
-        keystroke: keystroke.clone(),
-        is_held: false,
-        prefer_character_input: false,
-    });
-    vcx.simulate_event(KeyUpEvent { keystroke });
-}
-
-#[gpui_kit::test]
-fn tab_and_shift_tab_cycle_through_every_stop(cx: &mut TestAppContext) {
-    let dir = TempDir::new("cycle");
-    let s = screen(cx, StartRows::default(), dir.path());
-    act(cx, &s, |screen, window, cx| screen.focus_left(window, cx));
-    let order = [
-        Stop::Right,
-        Stop::Compare,
-        Stop::Rule,
-        Stop::Folder,
-        Stop::File,
-        Stop::Left,
-    ];
-    for want in order {
-        cx.simulate_keystrokes(s.0, "tab");
-        assert_eq!(stop(cx, &s), Some(want));
-    }
-    cx.simulate_keystrokes(s.0, "shift-tab");
-    assert_eq!(stop(cx, &s), Some(Stop::File));
-}
-
-#[gpui_kit::test]
-fn space_and_enter_activate_the_chip_and_the_tabs(cx: &mut TestAppContext) {
-    let dir = TempDir::new("activate");
-    let s = screen(cx, StartRows::default(), dir.path());
-    let tabs = s.1.read_with(cx, |s, _| s.tabs.clone());
-    let choice = |cx: &mut TestAppContext| tabs.read_with(cx, |t, _| t.choice());
-    act(cx, &s, |screen, window, cx| {
-        screen.focus_side(Side::Right, window, cx)
-    });
-    cx.simulate_keystrokes(s.0, "tab tab");
-    assert_eq!(stop(cx, &s), Some(Stop::Rule));
-    press(cx, &s, "space");
-    assert!(!choice(cx).respect_gitignore);
-    press(cx, &s, "enter");
-    assert!(choice(cx).respect_gitignore);
-    cx.simulate_keystrokes(s.0, "tab tab");
-    press(cx, &s, "enter");
-    assert_eq!(stop(cx, &s), Some(Stop::File));
-    assert_eq!(choice(cx).mode, StartMode::File);
-    let hold = cx
-        .update_window(s.0, |_, w, _| {
-            w.find("start-right").placeholder().map(str::to_owned)
-        })
-        .expect("window");
-    assert_eq!(hold.as_deref(), Some("File path"));
-    cx.simulate_keystrokes(s.0, "shift-tab");
-    press(cx, &s, "space");
-    assert_eq!(choice(cx).mode, StartMode::Folder);
-}
-
-#[gpui_kit::test]
-fn enter_on_the_compare_stop_submits(cx: &mut TestAppContext) {
-    let dir = TempDir::new("compare-key");
-    let s = screen(cx, StartRows::default(), dir.path());
-    let log = record(cx, &s.1);
-    settle(cx, &s, &dir.text(), &dir.text());
-    act(cx, &s, |screen, window, cx| {
-        screen.focus_side(Side::Right, window, cx)
-    });
-    cx.simulate_keystrokes(s.0, "tab");
-    assert_eq!(stop(cx, &s), Some(Stop::Compare));
-    press(cx, &s, "enter");
-    assert_eq!(log.borrow().len(), 1);
 }

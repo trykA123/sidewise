@@ -23,6 +23,9 @@ mod shell;
 #[cfg(test)]
 mod shell_tests;
 mod start;
+mod start_focus;
+#[cfg(test)]
+mod start_keys_tests;
 mod start_rows;
 #[cfg(test)]
 mod start_rows_tests;

@@ -136,10 +136,10 @@ impl Render for StartScreen {
         div()
             .key_context(CONTEXT)
             .on_action(
-                cx.listener(|this, _: &OtherField, window, cx| this.other_field(false, window, cx)),
+                cx.listener(|this, _: &OtherField, window, cx| this.cycle_stop(false, window, cx)),
             )
             .on_action(
-                cx.listener(|this, _: &PrevField, window, cx| this.other_field(true, window, cx)),
+                cx.listener(|this, _: &PrevField, window, cx| this.cycle_stop(true, window, cx)),
             )
             .on_action(cx.listener(|this, _: &EnterList, window, cx| this.enter_list(window, cx)))
             .on_action(cx.listener(|this, _: &SelectNext, _, cx| this.select_next(cx)))

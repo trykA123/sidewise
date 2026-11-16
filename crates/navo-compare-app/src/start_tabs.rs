@@ -1,6 +1,6 @@
 //! Start screen v2 parts: the Folder/File tab pill, the `.gitignore` rule chip and the hero art.
 //! The state lives in one `StartTabs` entity that `StartScreen` owns; `submit` reads its choice.
-//! It also holds the Tab order of the whole screen (U14b).
+//! The Tab order of the whole screen lives in `start_focus`.
 
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
@@ -9,7 +9,8 @@ use gpui_kit::{
 use navo_ui::prelude::*;
 use navo_ui::tokens;
 
-use crate::start::{Side, StartScreen};
+use crate::start::Side;
+use crate::start_focus::Stop;
 use crate::theme::SidewiseTheme;
 
 /// What the two fields hold: two folders or two files.
@@ -56,27 +57,6 @@ impl Default for StartChoice {
         }
     }
 }
-
-/// One keyboard stop of the start screen, in Tab (visual) order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Stop {
-    Folder,
-    File,
-    Left,
-    Right,
-    Compare,
-    Rule,
-}
-
-/// Every stop, in Tab order; Tab wraps from the last to the first.
-const STOPS: [Stop; 6] = [
-    Stop::Folder,
-    Stop::File,
-    Stop::Left,
-    Stop::Right,
-    Stop::Compare,
-    Stop::Rule,
-];
 
 /// The state entity behind the tab pill and the rule chip; it also owns their focus handles.
 pub struct StartTabs {
@@ -132,36 +112,6 @@ impl StartTabs {
             Stop::Compare => Some(&self.compare),
             Stop::Rule => Some(&self.rule),
             Stop::Left | Stop::Right => None,
-        }
-    }
-}
-
-impl StartScreen {
-    /// The stop that holds the focus, if any.
-    pub(crate) fn focused_stop(&self, window: &Window, cx: &App) -> Option<Stop> {
-        let tabs = self.tabs.read(cx);
-        STOPS.into_iter().find(|&stop| match stop {
-            Stop::Left => self.focused_side(window, cx) == Some(Side::Left),
-            Stop::Right => self.focused_side(window, cx) == Some(Side::Right),
-            _ => tabs.handle(stop).is_some_and(|h| h.is_focused(window)),
-        })
-    }
-
-    /// Tab and Shift+Tab: the next or previous stop, wrapping; from outside the stops (the
-    /// list) the left field.
-    pub(crate) fn other_field(&mut self, back: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let next = self.focused_stop(window, cx).map_or(Stop::Left, |stop| {
-            let at = STOPS.iter().position(|&s| s == stop).unwrap_or(0);
-            STOPS[(at + if back { STOPS.len() - 1 } else { 1 }) % STOPS.len()]
-        });
-        match next {
-            Stop::Left => self.focus_side(Side::Left, window, cx),
-            Stop::Right => self.focus_side(Side::Right, window, cx),
-            _ => {
-                if let Some(handle) = self.tabs.read(cx).handle(next).cloned() {
-                    handle.focus(window, cx);
-                }
-            }
         }
     }
 }
