@@ -42,4 +42,4 @@ panic = "unwind"
 
 # A patch does not pass through a dependency (NC32): repeat navo's patch at the pinned rev.
 [patch.crates-io]
-gpui-pre-windows = { git = "https://github.com/trykA123/navo", rev = "231b49c2e55e30aef81d7e59f3e84329cebb1cb6" }
+gpui-pre-windows = { git = "https://github.com/trykA123/navo", rev = "568792a31eb055745ed60572107cd1fc42512582" }
