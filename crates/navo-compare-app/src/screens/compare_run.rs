@@ -9,6 +9,7 @@ use navo_core::{Location, ProviderPath};
 use navo_ui::browser::{CompareHooks, CompareSink, CompareUpdate, FolderSession, Waker};
 use navo_ui::compare_diff::CompareOptions;
 
+use crate::screens::large_model::PhaseMeters;
 use crate::start::Side;
 use crate::start_tabs::StartChoice;
 
@@ -45,10 +46,10 @@ impl std::fmt::Display for RunError {
 }
 
 /// Classifies two roots by the file system: both folders, both files, or neither of those.
-/// Fails with the side that cannot be read, or `Mixed` when the kinds differ.
+/// A missing side is `Missing`; another read failure is `Location`; mixed kinds are `Mixed`.
 pub fn classify(left: &Path, right: &Path) -> Result<RunKind, RunError> {
-    let left = std::fs::metadata(left).map_err(|_| RunError::Missing(Side::Left))?;
-    let right = std::fs::metadata(right).map_err(|_| RunError::Missing(Side::Right))?;
+    let left = std::fs::metadata(left).map_err(|error| root_error(&error, Side::Left))?;
+    let right = std::fs::metadata(right).map_err(|error| root_error(&error, Side::Right))?;
     match (left.is_dir(), right.is_dir()) {
         (true, true) => Ok(RunKind::Folders),
         (false, false) => Ok(RunKind::Files),
@@ -56,9 +57,18 @@ pub fn classify(left: &Path, right: &Path) -> Result<RunKind, RunError> {
     }
 }
 
+/// Maps a missing root to `Missing`; any other metadata failure is a location error.
+fn root_error(error: &std::io::Error, side: Side) -> RunError {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        RunError::Missing(side)
+    } else {
+        RunError::Location(error.to_string())
+    }
+}
+
 /// Turns a path into the local location the compare engine reads; keeps non-UTF-8 names on Unix.
 #[cfg(unix)]
-fn location_of(path: &Path) -> Result<Location, RunError> {
+pub(crate) fn location_of(path: &Path) -> Result<Location, RunError> {
     use std::os::unix::ffi::OsStrExt as _;
     Location::local(ProviderPath::from_bytes(path.as_os_str().as_bytes()))
         .map_err(|error| RunError::Location(error.to_string()))
@@ -66,7 +76,7 @@ fn location_of(path: &Path) -> Result<Location, RunError> {
 
 /// Turns a path into the local location the compare engine reads; keeps wide names on Windows.
 #[cfg(windows)]
-fn location_of(path: &Path) -> Result<Location, RunError> {
+pub(crate) fn location_of(path: &Path) -> Result<Location, RunError> {
     use std::os::windows::ffi::OsStrExt as _;
     let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
     Location::local(ProviderPath::from_wide(&wide))
@@ -79,18 +89,14 @@ pub struct CompareRun {
     session: Option<FolderSession>,
     updates: Receiver<CompareUpdate>,
     roots: [Location; 2],
+    meters: PhaseMeters,
 }
 
 impl CompareRun {
     /// Classifies the roots and starts the walk for two folders; two files start no walk.
     /// `wake` is called after each update is queued; a bad root returns `RunError`.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the H1 brief fixes this signature"
-    )]
     pub fn start(
-        left: &Path,
-        right: &Path,
+        (left, right): (&Path, &Path),
         choice: &StartChoice,
         hooks: &dyn CompareHooks,
         wake: Waker,
@@ -116,6 +122,7 @@ impl CompareRun {
             session,
             updates,
             roots,
+            meters: PhaseMeters::default(),
         })
     }
 
@@ -123,11 +130,17 @@ impl CompareRun {
     pub fn drain(&mut self) -> bool {
         let mut applied = false;
         for update in self.updates.try_iter() {
+            applied |= self.meters.observe(&update);
             if let Some(session) = self.session.as_mut() {
                 applied |= session.apply(update);
             }
         }
         applied
+    }
+
+    /// The D5 phase meters of the newest generation.
+    pub fn meters(&self) -> &PhaseMeters {
+        &self.meters
     }
 
     /// What the roots are: folders walked by the engine, or two files.
@@ -231,6 +244,27 @@ mod tests {
         assert_eq!(classify(left.path(), &one), Err(RunError::Mixed));
     }
 
+    /// A root whose parent denies access is a location error, not a missing root.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_side_is_a_location_error() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let parent = TempDir::new("unreadable");
+        let child = parent.path().join("inside");
+        fs::create_dir(&child).expect("create inside folder");
+        fs::set_permissions(parent.path(), fs::Permissions::from_mode(0o000))
+            .expect("lock the parent folder");
+        let result = classify(&child, &child);
+        let readable = fs::metadata(&child).is_ok();
+        fs::set_permissions(parent.path(), fs::Permissions::from_mode(0o755))
+            .expect("unlock the parent folder");
+        if readable {
+            return; // root ignores the mode bits, so the case cannot be tested
+        }
+        assert!(matches!(result, Err(RunError::Location(_))), "{result:?}");
+    }
+
     /// Every `RunError` writes the English text the tab's toast shows.
     #[test]
     fn run_error_display_is_english() {
@@ -263,8 +297,7 @@ mod tests {
         }
         let (wake, wakes) = counting_wake();
         let mut run = CompareRun::start(
-            left.path(),
-            right.path(),
+            (left.path(), right.path()),
             &StartChoice::default(),
             &PaneCompare::default(),
             wake,
@@ -282,8 +315,7 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
 
-        assert!(run.session_mut().is_some(), "folder session");
-        let session = run.session().expect("folder session");
+        let session = run.session_mut().expect("folder session");
         let mut rows: Vec<String> = session
             .visible()
             .iter()
@@ -308,8 +340,7 @@ mod tests {
 
         let (wake, wakes) = counting_wake();
         let mut run = CompareRun::start(
-            &left_file,
-            &right_file,
+            (&left_file, &right_file),
             &StartChoice::default(),
             &PaneCompare::default(),
             wake,
