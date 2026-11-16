@@ -59,6 +59,8 @@ mod theme_bridge_tests;
 mod theme_data;
 #[cfg(test)]
 mod theme_tests;
+#[cfg(test)]
+mod ui_matrix_tests;
 mod window;
 
 use std::process::ExitCode;
