@@ -162,3 +162,54 @@ fn map_hunks_marks_changed_lines() {
     assert_eq!(hunks[1].rows, 3..4);
     assert_eq!(hunks[1].kind, HunkKind::Deleted);
 }
+
+/// A file row with `status` and both sides present, under `a`.
+fn file_row(id: u64, path: &str, status: RowStatus) -> CompareRow {
+    CompareRow::new(id, path, status, (file_side(), file_side()))
+}
+
+/// Checking, not-checked and unavailable files get no tone and stay out of mixes and totals.
+#[test]
+fn unsettled_statuses_stay_out_of_mixes_and_totals() {
+    let tree = FolderTree::new(unsettled_rows());
+    assert_eq!(tree.totals(), [1, 0, 0, 0, 0]);
+    let mut open = FolderTree::new(unsettled_rows());
+    assert!(open.toggle("a"));
+    let lines = open.lines();
+    assert_eq!(line(&lines, "a").mix, [1, 0, 0, 0, 0]);
+    for path in ["a/c.txt", "a/n.txt", "a/u.txt"] {
+        assert_eq!(line(&lines, path).tone, None, "{path}");
+    }
+}
+
+/// Folder `a` with one settled file and three unsettled ones.
+fn unsettled_rows() -> Vec<CompareRow> {
+    vec![
+        CompareRow::new(1, "a", RowStatus::Different, (folder_side(), folder_side())),
+        file_row(2, "a/c.txt", RowStatus::Checking),
+        file_row(3, "a/n.txt", RowStatus::NotChecked("big")),
+        file_row(4, "a/u.txt", RowStatus::Unavailable("denied")),
+        file_row(5, "a/d.txt", RowStatus::Different),
+    ]
+}
+
+/// A changed row list drops open paths that no longer exist, and a path that returns stays closed.
+#[test]
+fn set_rows_drops_stale_open_paths_and_keeps_the_filter() {
+    let mut tree = FolderTree::new(rows());
+    assert!(tree.toggle("a"));
+    assert!(tree.toggle("a/b"));
+    tree.set_filter(CompareFilter::Differences);
+    tree.set_rows(
+        rows()
+            .into_iter()
+            .filter(|r| r.path != "a/b" && r.path != "a/b/y.txt")
+            .collect(),
+    );
+    assert_eq!(tree.filter(), CompareFilter::Differences);
+    tree.set_rows(rows());
+    let lines = tree.lines();
+    let paths: Vec<&str> = lines.iter().map(|line| line.path.as_str()).collect();
+    assert_eq!(paths, ["a", "a/x.txt", "a/b"]);
+    assert!(!line(&lines, "a/b").expanded);
+}

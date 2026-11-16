@@ -86,9 +86,11 @@ impl FolderTree {
         }
     }
 
-    /// Replaces the rows; the open folders and the filter stay.
+    /// Replaces the rows; the filter stays, and so do the open folders that still exist.
     pub fn set_rows(&mut self, rows: Vec<CompareRow>) {
         self.rows = rows;
+        let open = std::mem::take(&mut self.expanded);
+        self.expanded = open.into_iter().filter(|p| self.has_folder(p)).collect();
     }
 
     /// Opens or closes the folder at `path`; false when no folder row has that path.
