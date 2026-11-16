@@ -80,6 +80,12 @@ impl LargeView {
         cx.notify();
     }
 
+    /// The newest snapshot; for tests.
+    #[cfg(test)]
+    pub(crate) fn snapshot(&self) -> &LargeSnapshot {
+        &self.snapshot
+    }
+
     /// One stage: its heading, sub-line, counts and the animated bar.
     fn meter_view(&self, slot: usize, cx: &App) -> impl IntoElement {
         let t = tokens::current(cx);

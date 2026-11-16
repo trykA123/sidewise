@@ -27,7 +27,10 @@ impl CompareTab {
         let screen = cx.subscribe_in(&self.screen, window, |tab, _, event, window, cx| {
             tab.on_screen_event(event, window, cx);
         });
-        self.subscriptions.extend([folders, screen]);
+        let large = cx.subscribe_in(&self.large, window, |tab, _, event, window, cx| {
+            tab.on_large_event(event, window, cx);
+        });
+        self.subscriptions.extend([folders, screen, large]);
         if self.run.kind() == RunKind::Files {
             let roots = self.run.roots();
             let path = request

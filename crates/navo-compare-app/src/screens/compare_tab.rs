@@ -15,7 +15,9 @@ use navo_ui::window_view::CompareScreen;
 
 use super::compare_host::new_compare_screen;
 use super::compare_run::{CompareRun, RunError};
+use super::compare_tab_large::large_timer;
 use super::folders_view::FoldersView;
+use super::large_view::LargeView;
 use crate::start_tabs::StartChoice;
 
 /// Pause between two wake updates, about one frame.
@@ -49,13 +51,19 @@ pub enum TabView {
 }
 
 /// The app's one folder-compare engine, shared by every compare tab.
-struct CompareHooks(Arc<PaneCompare>);
+struct CompareHooks(Arc<dyn navo_ui::browser::CompareHooks>);
 
 impl Global for CompareHooks {}
 
 /// Sets the app's one `Arc<PaneCompare>` global; `window::run` calls it once, tests call it before opening a shell.
 pub fn install_compare_hooks(cx: &mut App) {
     cx.set_global(CompareHooks(Arc::new(PaneCompare::default())));
+}
+
+/// Test hook: replaces the compare engine with a scripted one.
+#[cfg(test)]
+pub(crate) fn install_test_hooks(hooks: Arc<dyn navo_ui::browser::CompareHooks>, cx: &mut App) {
+    cx.set_global(CompareHooks(hooks));
 }
 
 /// A started run and the receiver of its wake signals, not yet tied to an entity.
@@ -70,6 +78,11 @@ pub struct CompareTab {
     pub(super) run: CompareRun,
     pub(super) view: TabView,
     pub(super) folders: Entity<FoldersView>,
+    pub(super) large: Entity<LargeView>,
+    /// True while Large shows because the 1,000 ms timer put it there; the session's end then ends it.
+    pub(super) auto_large: bool,
+    /// Set when a view change needs the window to move focus; `render` does it.
+    pub(super) focus_pending: bool,
     pub(super) screen: Entity<CompareScreen>,
     pub(super) shown: Option<u64>,
     title: SharedString,
@@ -106,13 +119,19 @@ impl CompareTab {
     ) -> Self {
         let Started { run, wakes, wake } = started;
         let folders = cx.new(FoldersView::new);
+        let large = cx.new(LargeView::new);
         let screen = cx.new(|_| new_compare_screen(wake));
         cx.spawn(async move |this, cx| pump(wakes, this, cx).await)
+            .detach();
+        cx.spawn(async move |this, cx| large_timer(this, cx).await)
             .detach();
         let mut tab = Self {
             run,
             view: TabView::Folders,
             folders,
+            large,
+            auto_large: false,
+            focus_pending: false,
             screen,
             shown: None,
             title: title_of(request),
@@ -149,6 +168,12 @@ impl CompareTab {
         &self.folders
     }
 
+    /// The Large view entity; for tests.
+    #[cfg(test)]
+    pub(crate) fn large(&self) -> &Entity<LargeView> {
+        &self.large
+    }
+
     /// The compare screen entity that shows the file diff.
     pub fn screen(&self) -> &Entity<CompareScreen> {
         &self.screen
@@ -183,7 +208,8 @@ impl CompareTab {
                     self.focus.focus(window, cx);
                 }
             }
-            _ => self.focus.focus(window, cx),
+            TabView::Large => self.large.read(cx).focus_handle(cx).focus(window, cx),
+            TabView::Stream => self.focus.focus(window, cx),
         }
     }
 
@@ -194,6 +220,7 @@ impl CompareTab {
         if drained && let Some(session) = self.run.session() {
             let rows = session.rows_under_folder();
             self.folders.update(cx, |view, cx| view.set_rows(rows, cx));
+            self.sync_large(cx);
         }
         let polled = self
             .screen
@@ -230,11 +257,13 @@ fn title_of(request: &CompareRequest) -> SharedString {
 
 impl Render for CompareTab {
     /// The shown view inside the tab's key context.
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.focus_pending) {
+            self.focus_view(window, cx);
+        }
         let shown = match self.view {
             TabView::Folders => self.folders.clone().into_any_element(),
-            // H5 fills the Large view here.
-            TabView::Large => div().into_any_element(),
+            TabView::Large => self.large.clone().into_any_element(),
             TabView::File | TabView::Stream => self.screen.clone().into_any_element(),
         };
         let own = matches!(self.view, TabView::Folders | TabView::Large);

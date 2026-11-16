@@ -35,7 +35,8 @@ impl CompareTab {
     }
 
     /// `2`: shows the Folders view.
-    fn open_folders(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_folders(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.auto_large = false;
         self.view = TabView::Folders;
         self.focus_view(window, cx);
         cx.notify();
@@ -67,8 +68,9 @@ impl CompareTab {
         }
     }
 
-    /// `5`: shows the Large view's place; H5 fills it with the meters.
+    /// `5`: shows the Large view. A user choice, so it stays when the session finishes.
     fn open_large(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.auto_large = false;
         self.view = TabView::Large;
         self.focus_view(window, cx);
         cx.notify();
