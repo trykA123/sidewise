@@ -270,6 +270,9 @@ impl Render for CompareTab {
         let root = div()
             .key_context(if own { OWN_CONTEXTS } else { CONTEXT })
             .track_focus(&self.focus)
+            // Navo's diff and Stream roots are `flex_1`: they need a flex parent to get a height.
+            .flex()
+            .flex_col()
             .size_full()
             .child(shown);
         self.with_keys(root, cx)

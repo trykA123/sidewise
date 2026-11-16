@@ -66,6 +66,8 @@ fn changes_bottom_and_footer_top(cx: &mut TestAppContext) -> (Pixels, Pixels) {
 /// The diff's status line must reach the footer; in the blank-diff bug the diff root (`flex_1`)
 /// sits in the tab's block-layout div, collapses to header plus status line and leaves the body empty.
 #[gpui_kit::test]
+// A real pair-diff thread trips GPUI's deterministic test scheduler on Windows.
+#[cfg_attr(windows, ignore = "real pair-diff worker; Linux covers the layout")]
 fn the_text_diff_fills_the_tab_down_to_the_footer(cx: &mut TestAppContext) {
     let (bottom, footer_top) = changes_bottom_and_footer_top(cx);
     assert!(
