@@ -1,5 +1,5 @@
-//! Entry point of the app (its name is in `navo_compare_profile::brand`). `--version` prints the version;
-//! otherwise the window opens with the shell (tabs and the start screen).
+//! Entry point of the app (its name is in `navo_compare_profile::brand`). `launch::decide` reads the
+//! command line: it prints `--version` or `--help`, refuses an unsupported call, or opens the window.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -18,6 +18,7 @@ mod compare_tab_pair_tests;
 mod compare_tab_tests;
 #[cfg_attr(not(test), expect(dead_code, reason = "U11c and the chrome read it"))]
 mod icons;
+mod launch;
 #[cfg_attr(
     not(test),
     expect(dead_code, reason = "U13c wires the layers into the shell")
@@ -60,18 +61,28 @@ mod window;
 
 use std::process::ExitCode;
 
-/// Prints the version for `--version`; any other call opens the window.
-/// Returns exit code 0 for `--version` and the window's exit code otherwise.
-#[expect(clippy::print_stdout, reason = "command-line output: the version line")]
+use launch::Launch;
+use navo_compare_cli::args::Exit;
+
+/// Runs the command line: prints `--version` or `--help`, refuses what the alpha cannot serve
+/// (exit code 2, before any window), or opens the window and returns its exit code.
+#[expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "command-line output: version, help and refusals"
+)]
 fn main() -> ExitCode {
-    let wants_version = std::env::args().skip(1).any(|arg| arg == "--version");
-    if wants_version {
-        println!(
-            "{} {}",
-            navo_compare_profile::brand::SLUG,
-            env!("CARGO_PKG_VERSION")
-        );
-        return ExitCode::SUCCESS;
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    let cwd = std::env::current_dir().unwrap_or_default();
+    match launch::decide(&args, &cwd, &|path| path.exists()) {
+        Launch::Print(text) => {
+            println!("{text}");
+            ExitCode::SUCCESS
+        }
+        Launch::Refuse(text) => {
+            eprintln!("{text}");
+            ExitCode::from(Exit::Error as u8)
+        }
+        Launch::Open(opening) => window::run(opening),
     }
-    window::run()
 }

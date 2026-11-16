@@ -1,27 +1,32 @@
 //! The main window of Sidewise: starts the app and opens the themed shell.
 
+use std::path::PathBuf;
+
 use navo_compare_profile::brand;
 use navo_ui::prelude::*;
 use navo_ui::tokens::Mode;
 
-use crate::screens::compare_tab::install_compare_hooks;
+use crate::launch::Opening;
+use crate::screens::compare_tab::{CompareRequest, install_compare_hooks};
 use crate::shell::{self, Shell};
+use crate::start_tabs::StartChoice;
 
-/// Starts the GPUI app, opens the window and returns the process exit code (0 after a normal close).
-pub fn run() -> std::process::ExitCode {
+/// Starts the GPUI app, opens the window from `opening` and returns the process exit code (0 after a normal close).
+pub fn run(opening: Opening) -> std::process::ExitCode {
     let failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let run_failed = failed.clone();
+    let Opening { pair, profile } = opening;
     navo_ui::application().run(move |cx| {
         let initialised = navo_ui::init(Mode::Light, cx);
         shell::bind_keys(cx);
         crate::screens::compare_host::bind_compare_keys(cx);
         install_compare_hooks(cx);
-        if let Err(message) = Shell::install_sessions(None, cx) {
+        if let Err(message) = Shell::install_sessions(profile.as_deref(), cx) {
             report(&message);
         }
         let opened = initialised
             .map_err(|error| error.to_string())
-            .and_then(|()| open(cx));
+            .and_then(|()| open(cx, pair));
         if let Err(message) = opened {
             report(&message);
             run_failed.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -35,8 +40,8 @@ pub fn run() -> std::process::ExitCode {
     }
 }
 
-/// Opens the 1,200 x 760 window titled with the product name.
-fn open(cx: &mut App) -> Result<(), String> {
+/// Opens the 1,200 x 760 window titled with the product name, with `pair` on the first compare tab.
+fn open(cx: &mut App, pair: Option<(PathBuf, PathBuf)>) -> Result<(), String> {
     let bounds = Bounds::centered(None, size(px(1200.), px(760.)), cx);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -45,7 +50,23 @@ fn open(cx: &mut App) -> Result<(), String> {
     };
     navo_ui::open_window(options, cx, |window, cx| {
         let shell = cx.new(|cx| Shell::new(window, cx));
-        shell.update(cx, |shell, cx| shell.sync_rows(cx));
+        shell.update(cx, |shell, cx| {
+            shell.sync_rows(cx);
+            if let Some((left, right)) = pair {
+                shell.open_recorded(
+                    (
+                        0,
+                        CompareRequest {
+                            left,
+                            right,
+                            choice: StartChoice::default(),
+                        },
+                    ),
+                    window,
+                    cx,
+                );
+            }
+        });
         shell
     })
     .map(|_| ())
