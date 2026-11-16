@@ -456,10 +456,10 @@ fn mode_visibility_matrix_defaults_and_crumbs(cx: &mut TestAppContext) {
     let expected = [
         (TopbarMode::Start, [false, true, true, false]),
         (TopbarMode::Folders, [true, true, true, true]),
-        (TopbarMode::File, [false, true, true, true]),
+        (TopbarMode::File, [false, false, true, true]),
         (TopbarMode::Git, [false, false, true, false]),
-        (TopbarMode::Stream, [false, true, true, true]),
-        (TopbarMode::Large, [false, true, true, true]),
+        (TopbarMode::Stream, [false, false, true, true]),
+        (TopbarMode::Large, [false, false, true, true]),
     ];
     let actions = [Action::Search, Action::View, Action::Keys, Action::Sync];
     for (mode, flags) in expected {
@@ -558,7 +558,7 @@ fn start_mode_hides_search_sync_and_disabled_pills_drop_hints_and_ignore_actions
     );
 }
 
-/// Git hides View/Sync/Search while File shows Sync and View and honors Alt+S availability.
+/// Git hides View/Sync/Search while File shows Sync (View is Start/Folders only) and honors Alt+S availability.
 #[gpui_kit::test]
 fn git_and_file_modes_gate_sync_and_view_availability(cx: &mut TestAppContext) {
     let (window, view, fired) = topbar(cx, 1024.);
@@ -581,7 +581,7 @@ fn git_and_file_modes_gate_sync_and_view_availability(cx: &mut TestAppContext) {
             bar.set_available(Action::Sync, false, cx);
         });
         window.render_frame(cx);
-        assert_mounted(window, &["top-sync", "top-view"], &["top-search"]);
+        assert_mounted(window, &["top-sync"], &["top-search", "top-view"]);
     })
     .expect("window");
     cx.simulate_keystrokes(window, "alt-s");

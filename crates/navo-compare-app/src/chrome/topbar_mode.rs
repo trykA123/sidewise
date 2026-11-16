@@ -28,7 +28,7 @@ impl TopbarMode {
     pub const fn shows(self, action: Action) -> bool {
         match action {
             Action::Search => matches!(self, Self::Folders),
-            Action::View => !matches!(self, Self::Git),
+            Action::View => matches!(self, Self::Start | Self::Folders),
             Action::Sync => {
                 matches!(
                     self,
@@ -59,3 +59,24 @@ pub(super) const PILLS: [Pill; 5] = [
     Pill { id: "top-keys", label: "Keys", hint: Some("?"), action: Action::Keys },
     Pill { id: "top-sync", label: "Sync", hint: Some("Alt+S"), action: Action::Sync },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::{Action, TopbarMode};
+
+    /// The View pill is mounted on Start and Folders only.
+    #[test]
+    fn the_view_pill_shows_on_start_and_folders_only() {
+        for mode in [
+            TopbarMode::Start,
+            TopbarMode::Folders,
+            TopbarMode::File,
+            TopbarMode::Git,
+            TopbarMode::Stream,
+            TopbarMode::Large,
+        ] {
+            let expected = matches!(mode, TopbarMode::Start | TopbarMode::Folders);
+            assert_eq!(mode.shows(Action::View), expected, "View pill on {mode:?}");
+        }
+    }
+}
