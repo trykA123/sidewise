@@ -1,5 +1,5 @@
 //! Collapsed-rail row tooltips: state lifecycle (`A1`) and hoverable deferred overlay (`A2`).
-//! Gated under `#[cfg(test)]` in `Sidebar` until `B` activation.
+//! Owned by `Sidebar`, which feeds row hover, focus and bounds while the rail is collapsed.
 
 use gpui_kit::base::{TestSupportExt as _, TestTextExt as _};
 use gpui_kit::{
