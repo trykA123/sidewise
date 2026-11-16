@@ -2,6 +2,7 @@
 //! The rows below them come from `start_rows`.
 
 use gpui_kit::assets::IconName;
+use gpui_kit::base::TestTextExt as _;
 use navo_ui::prelude::*;
 use navo_ui::primitives::{Button, ButtonVariant, IconButton, Kbd, TextField};
 use navo_ui::tokens;
@@ -11,6 +12,7 @@ use crate::start::{
     StartScreen,
 };
 use crate::start_rows::rows_view;
+use crate::theme_data::palettes::DIMS;
 
 /// The chip beside a field: "Path", "Git ref" or "Not found" (in the warning colour).
 fn chip(hint: &SideHint, cx: &App) -> Option<Div> {
@@ -31,7 +33,7 @@ fn chip(hint: &SideHint, cx: &App) -> Option<Div> {
             .border_color(color)
             .text_size(t.typography.tiny)
             .text_color(color)
-            .child(label),
+            .child(label.test_text(label)),
     )
 }
 
@@ -47,7 +49,7 @@ impl StartScreen {
         div()
             .flex()
             .flex_1()
-            .min_w_0()
+            .min_w(DIMS.start_field_min_w)
             .items_center()
             .gap(t.spacing.md)
             .child(
@@ -55,7 +57,7 @@ impl StartScreen {
                     .flex_none()
                     .text_size(t.typography.small)
                     .text_color(t.colors.faint)
-                    .child(label),
+                    .child(label.test_text(label)),
             )
             .child(
                 div()
@@ -76,6 +78,7 @@ impl StartScreen {
             .on_click(cx.listener(|this, _, window, cx| this.submit(window, cx)));
         div()
             .flex()
+            .flex_wrap()
             .items_center()
             .gap(t.spacing.md)
             .w_full()
@@ -137,3 +140,7 @@ impl Render for StartScreen {
             .child(rows)
     }
 }
+
+#[cfg(test)]
+#[path = "start_narrow_tests.rs"]
+mod start_narrow_tests;

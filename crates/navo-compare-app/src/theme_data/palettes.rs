@@ -87,7 +87,7 @@ pub struct DimTokens {
     pub card_r: Pixels, pub row_r: Pixels, pub btn_r: Pixels, pub sheet_r: Pixels,
     pub row_h: Pixels, pub gut_w: Pixels, pub map_w: Pixels, pub ln_w: Pixels, pub fs: Pixels,
     pub code_fs: Pixels, pub code_lh: Pixels, pub inset_x: Pixels, pub inset_y: Pixels,
-    pub sidebar_w: Pixels, pub rail_w: Pixels,
+    pub sidebar_w: Pixels, pub rail_w: Pixels, pub start_field_min_w: Pixels,
 }
 
 /// The `:root` dimensions of the prototype.
@@ -96,6 +96,7 @@ pub const DIMS: DimTokens = DimTokens {
     card_r: px(16.), row_r: px(12.), btn_r: px(10.), sheet_r: px(22.), row_h: px(30.),
     gut_w: px(98.), map_w: px(14.), ln_w: px(52.), fs: px(14.), code_fs: px(13.),
     code_lh: px(21.), inset_x: px(16.), inset_y: px(12.), sidebar_w: px(280.), rail_w: px(56.),
+    start_field_min_w: px(224.),
 };
 
 /// Transition durations in milliseconds (NC68); the UI snaps them to 0 on reduced motion.
