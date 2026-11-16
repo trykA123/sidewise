@@ -245,17 +245,14 @@ impl StartScreen {
         }
     }
 
-    /// A click on the row at flat position `index`: selects it, then opens it.
+    /// A click on the row at flat position `index`: only selects it (a double click opens, NC135).
     /// An index past the last row does nothing.
     pub(crate) fn click_row(&mut self, index: usize, cx: &mut Context<Self>) {
         if index >= row_count(&self.rows) {
             return;
         }
         self.selected = Some(index);
-        let id = row_at(&self.rows, index).map(|row| row.id.clone());
-        if let Some(id) = id {
-            self.open_row(&id, cx);
-        }
+        cx.notify();
     }
 
     /// Puts the focus on the left field (NS16).

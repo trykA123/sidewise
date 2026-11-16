@@ -99,7 +99,12 @@ fn row_view(
         .text_size(t.typography.small)
         .cursor_pointer()
         .hover(|style| style.bg(t.colors.hover))
-        .on_click(cx.listener(move |this, _, _, cx| this.click_row(index, cx)))
+        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+            this.click_row(index, cx);
+            if event.click_count() >= 2 {
+                this.open_selected(cx);
+            }
+        }))
         .children(row.name.as_ref().map(|name| div().child(name.clone())))
         .child(side(&row.left))
         .child(div().text_color(muted).child("\u{2194}"))
