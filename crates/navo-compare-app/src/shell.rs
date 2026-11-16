@@ -16,6 +16,7 @@ use crate::chrome::status_bar::{StatusBar, StatusHint};
 use crate::chrome::topbar_status::{Action as TopbarAction, Crumbs, Topbar, TopbarMode};
 use crate::layers::keys_sheet;
 use crate::layers::toast::{self, ToastHost};
+use crate::menu_host::{MenuSlot, menu_view};
 use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
 use crate::theme_data::palettes::DIMS;
 
@@ -23,11 +24,14 @@ use crate::theme_data::palettes::DIMS;
 mod shell_keys;
 #[path = "shell_layers.rs"]
 mod shell_layers;
+#[path = "shell_menus.rs"]
+mod shell_menus;
 #[path = "shell_tabs.rs"]
 mod shell_tabs;
 pub use shell_keys::bind_keys;
 use shell_keys::{CONTEXT, CloseTab, CyclePane, NewTab, NextTab, PrevTab};
 use shell_layers::{Layers, topbar_router};
+use shell_menus::CloseOthers;
 pub use shell_tabs::ShellTab;
 use shell_tabs::{start_tab, tab_titles};
 
@@ -40,6 +44,7 @@ pub struct Shell {
     topbar: Entity<Topbar>,
     toasts: Entity<ToastHost>,
     layers: Layers,
+    menu: MenuSlot,
     handle: FocusHandle,
     _appearance: Subscription,
 }
@@ -80,6 +85,7 @@ impl Shell {
             topbar,
             toasts,
             layers,
+            menu: None,
             handle: cx.focus_handle(),
             _appearance: appearance,
         };
@@ -100,7 +106,7 @@ impl Shell {
             SidebarEvent::SelectTab(index) => self.select_tab(index, window, cx),
             SidebarEvent::CloseTab(index) => self.close_tab(index, window, cx),
             SidebarEvent::RailToggled(_) => cx.notify(),
-            SidebarEvent::TabMenu(..) => {}
+            SidebarEvent::TabMenu(_, at) => self.show_tab_menu(at, window, cx),
         }
     }
 
@@ -199,6 +205,9 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
                 this.close_tab(this.active, window, cx);
             }))
+            .on_action(cx.listener(|this, _: &CloseOthers, window, cx| {
+                this.close_others(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &NextTab, window, cx| this.next_tab(window, cx)))
             .on_action(cx.listener(|this, _: &PrevTab, window, cx| this.prev_tab(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleRail, _, cx| {
@@ -225,5 +234,6 @@ impl Render for Shell {
                     .child(self.main_pane(cx)),
             )
             .child(self.layers.keys.clone())
+            .children(menu_view(&self.menu))
     }
 }
