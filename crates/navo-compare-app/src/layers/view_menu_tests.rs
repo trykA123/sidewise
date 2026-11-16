@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui_kit::test::TestWindowExt;
-use gpui_kit::{Role, TestAppContext};
+use gpui_kit::{Role, Subscription, TestAppContext};
 use navo_compare_profile::appearance::PaletteId;
 use navo_ui::tokens::Mode;
 
@@ -21,6 +21,7 @@ fn rig(
     AnyWindowHandle,
     Entity<ViewMenu>,
     Rc<RefCell<Vec<ViewMenuEvent>>>,
+    Subscription,
 ) {
     cx.update(|cx| {
         gpui_kit::init(cx);
@@ -29,17 +30,18 @@ fn rig(
     let (window, menu) = open(cx, |_, cx| ViewMenu::new(prefs, cx));
     let events = Rc::new(RefCell::new(Vec::new()));
     let log = Rc::clone(&events);
-    cx.update_window(window, |_, window, cx| {
-        let sub = cx.subscribe(&menu, move |_, event: &ViewMenuEvent, _| {
-            log.borrow_mut().push(*event)
-        });
-        std::mem::forget(sub);
-        let handle = menu.read(cx).handle.clone();
-        handle.focus(window, cx);
-        window.render_frame(cx);
-    })
-    .expect("window");
-    (window, menu, events)
+    let sub = cx
+        .update_window(window, |_, window, cx| {
+            let sub = cx.subscribe(&menu, move |_, event: &ViewMenuEvent, _| {
+                log.borrow_mut().push(*event)
+            });
+            let handle = menu.read(cx).handle.clone();
+            handle.focus(window, cx);
+            window.render_frame(cx);
+            sub
+        })
+        .expect("window");
+    (window, menu, events, sub)
 }
 
 /// A bare menu for the state tests.
@@ -121,7 +123,7 @@ fn best_steps_down_to_bytes_with_the_notice(cx: &mut TestAppContext) {
 /// Clicking an entry applies it; picking a kind also dismisses the menu.
 #[gpui_kit::test]
 fn clicks_apply_entries_and_a_kind_dismisses(cx: &mut TestAppContext) {
-    let (window, menu, events) = rig(cx, UiPrefs::default());
+    let (window, menu, events, _sub) = rig(cx, UiPrefs::default());
     cx.update_window(window, |_, window, cx| {
         window.click(("view-item", 9usize), cx)
     })
@@ -153,7 +155,7 @@ fn clicks_apply_entries_and_a_kind_dismisses(cx: &mut TestAppContext) {
 /// Arrow keys move the active entry, Enter applies it, Escape dismisses, and focus stays in the menu.
 #[gpui_kit::test]
 fn keys_move_apply_and_dismiss(cx: &mut TestAppContext) {
-    let (window, menu, events) = rig(cx, UiPrefs::default());
+    let (window, menu, events, _sub) = rig(cx, UiPrefs::default());
     cx.update_window(window, |_, window, cx| {
         menu.update(cx, |m, cx| m.focus(window, cx))
     })
@@ -193,17 +195,31 @@ fn keys_move_apply_and_dismiss(cx: &mut TestAppContext) {
     .expect("window");
 }
 
-/// The menu draws in both modes, with and without the entrance, and a non-text pair's notice
-/// stays out of the menu's own rows.
+/// The key hints render in gpui syntax: Alt+Z for wrapping, and a plain L (not Shift+L) for layout.
 #[gpui_kit::test]
-fn the_menu_draws_in_both_modes_with_and_without_motion(cx: &mut TestAppContext) {
-    let (window, _menu, _events) = rig(cx, UiPrefs::default());
+fn key_hints_render_alt_z_and_l(cx: &mut TestAppContext) {
+    let (window, _menu, _events, _sub) = rig(cx, UiPrefs::default());
+    cx.update_window(window, |_, window, _| {
+        for (ix, text) in [(9usize, "Alt+Z"), (3, "L"), (4, "L")] {
+            let hint = window.try_find(("view-key", ix));
+            assert_eq!(hint.as_ref().and_then(|h| h.label()), Some(text));
+        }
+    })
+    .expect("window");
+}
+
+/// The menu draws in both modes; the opacity entrance runs normally and is skipped under reduced motion.
+#[gpui_kit::test]
+fn the_entrance_is_skipped_under_reduced_motion(cx: &mut TestAppContext) {
+    let (window, menu, _events, _sub) = rig(cx, UiPrefs::default());
     for mode in [Mode::Dark, Mode::Light] {
         cx.update(|cx| apply_sidewise(PaletteId::Violet, mode, cx));
         cx.update_window(window, |_, window, cx| {
             window.render_frame(cx);
+            assert!(menu.read(cx).animated.get(), "the entrance animates");
             cx.set_reduce_motion(true);
             window.render_frame(cx);
+            assert!(!menu.read(cx).animated.get(), "reduced motion skips it");
             cx.set_reduce_motion(false);
             assert_eq!(window.find("view-menu").role(), Some(Role::Menu));
         })

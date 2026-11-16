@@ -225,7 +225,9 @@ impl Render for ViewMenu {
             focused: self.handle.is_focused(window),
         };
         let card = self.card(&look, cx);
-        match motion::anim("view-menu", side.motion.menu_ms, cx) {
+        let enter = motion::anim("view-menu", side.motion.menu_ms, cx);
+        self.animated.set(enter.is_some());
+        match enter {
             Some(enter) => card
                 .with_animation("view-menu", enter, |el, delta| el.opacity(delta))
                 .into_any_element(),

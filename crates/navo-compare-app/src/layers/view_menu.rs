@@ -52,10 +52,10 @@ enum Act {
 const ITEMS: [(Act, &str, &str); 14] = [
     (Act::Preset(ViewPresetPref::Simple), "Simple", ""), (Act::Preset(ViewPresetPref::Rich), "Rich", ""),
     (Act::Preset(ViewPresetPref::Custom), "Custom", ""),
-    (Act::Layout(Layout::Split), "Side by side", "L"), (Act::Layout(Layout::Unified), "Single file · unified", "L"),
+    (Act::Layout(Layout::Split), "Side by side", "l"), (Act::Layout(Layout::Unified), "Single file · unified", "l"),
     (Act::Toggle(Toggle::Words), "Changed words inside a line", ""), (Act::Toggle(Toggle::Syntax), "Syntax colours", ""),
     (Act::Toggle(Toggle::LineNo), "Line numbers", ""), (Act::Toggle(Toggle::Fold), "Fold unchanged lines", ""),
-    (Act::Toggle(Toggle::Wrap), "Wrap long lines", "Alt+Z"), (Act::Toggle(Toggle::IgnoreWhitespace), "Ignore whitespace", ""),
+    (Act::Toggle(Toggle::Wrap), "Wrap long lines", "alt-z"), (Act::Toggle(Toggle::IgnoreWhitespace), "Ignore whitespace", ""),
     (Act::Kind(ViewModePref::Best), "Best view for this pair", ""), (Act::Kind(ViewModePref::Text), "Text", ""),
     (Act::Kind(ViewModePref::Bytes), "Bytes", ""),
 ];
@@ -66,6 +66,8 @@ pub struct ViewMenu {
     layout: Layout,
     active: usize,
     handle: FocusHandle,
+    /// Whether the last frame ran the opacity entrance; false under reduced motion.
+    animated: std::cell::Cell<bool>,
 }
 
 impl EventEmitter<ViewMenuEvent> for ViewMenu {}
@@ -83,6 +85,7 @@ impl ViewMenu {
             layout,
             active,
             handle: cx.focus_handle(),
+            animated: std::cell::Cell::new(false),
         }
     }
 
