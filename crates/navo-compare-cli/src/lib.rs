@@ -2,6 +2,7 @@
 //! Pure logic with no GUI, so the app and the console launcher share it.
 
 pub mod args;
+mod quote;
 
 #[cfg(test)]
 mod args_pick_tests;

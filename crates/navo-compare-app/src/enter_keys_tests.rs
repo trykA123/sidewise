@@ -40,7 +40,12 @@ fn hints(cx: &mut TestAppContext, (_, view): &Opened) -> [SideHint; 2] {
 fn enter_in_a_field_with_plain_paths_starts_the_compare(cx: &mut TestAppContext) {
     let (l, r) = (TempDir::new("enter-ok-l"), TempDir::new("enter-ok-r"));
     let opened = scripted_shell(cx);
-    typed(cx, &opened, &l.path().to_string_lossy(), &r.path().to_string_lossy());
+    typed(
+        cx,
+        &opened,
+        &l.path().to_string_lossy(),
+        &r.path().to_string_lossy(),
+    );
     cx.simulate_keystrokes(opened.0, "enter");
     cx.run_until_parked();
     assert!(compare_open(cx, &opened));
