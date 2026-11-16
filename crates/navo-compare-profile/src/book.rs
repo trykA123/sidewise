@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::paths::{self, Profile, ProfileError};
+use crate::paths::{self, ProfileError};
 use crate::recent::{self, StartRows};
 use crate::session::{Rules, SESSION_VERSION, Session, SessionKind, SideKind, SideRef};
 use crate::session_store::{SessionStore, StoreError};
@@ -24,11 +24,8 @@ pub struct SessionBook {
 impl SessionBook {
     /// Opens the profile and store, then refreshes. Fails with `"Recent sessions are off: …"`.
     pub fn open(explicit: Option<&Path>, now_s: i64) -> Result<SessionBook, String> {
-        let profile = paths::resolve(explicit, cfg!(windows), &|name: &str| {
-            std::env::var(name).ok()
-        })
-        .and_then(Profile::open)
-        .map_err(|error| format!("Recent sessions are off: {}.", profile_text(&error)))?;
+        let profile = paths::open_profile(explicit)
+            .map_err(|error| format!("Recent sessions are off: {}.", profile_text(&error)))?;
         let mut book = SessionBook {
             store: SessionStore::open(profile.sessions_dir()),
             rows: StartRows::default(),

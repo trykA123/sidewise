@@ -98,6 +98,15 @@ pub fn resolve(
     })
 }
 
+/// Resolves the profile folders (from `explicit`, or the OS defaults) and opens the profile.
+/// Fails with the same `ProfileError` that `resolve` or `Profile::open` gives.
+pub fn open_profile(explicit: Option<&Path>) -> Result<Profile, ProfileError> {
+    resolve(explicit, cfg!(windows), &|name: &str| {
+        std::env::var(name).ok()
+    })
+    .and_then(Profile::open)
+}
+
 impl Profile {
     /// Opens the profile, reading the marker before creating anything.
     ///
