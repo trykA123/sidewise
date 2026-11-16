@@ -15,11 +15,12 @@ use crate::theme_data::palettes::{DIMS, ModeTokens};
 
 #[path = "sidebar_actions.rs"]
 mod actions;
-#[cfg(test)]
 #[path = "rail_tooltip.rs"]
 mod rail_tooltip;
 
-gpui_kit::actions!(sidebar, [ToggleRail, NextRow, PreviousRow]);
+use rail_tooltip::RailTips;
+
+gpui_kit::actions!(sidebar, [ToggleRail, NextRow, PreviousRow, DismissTip]);
 
 /// Key context of the sidebar root; Ctrl+\ and row traversal keys bind inside it.
 const CONTEXT: &str = "Sidebar";
@@ -45,6 +46,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("tab", NextRow, Some(CONTEXT)),
         KeyBinding::new("up", PreviousRow, Some(CONTEXT)),
         KeyBinding::new("shift-tab", PreviousRow, Some(CONTEXT)),
+        KeyBinding::new("escape", DismissTip, Some(CONTEXT)),
     ]);
 }
 
@@ -88,6 +90,7 @@ pub struct Sidebar {
     handle: FocusHandle,
     new_compare_focus: FocusHandle,
     tab_focuses: Vec<FocusHandle>,
+    tips: RailTips,
 }
 
 impl EventEmitter<SidebarEvent> for Sidebar {}
@@ -107,6 +110,7 @@ impl Sidebar {
             handle: cx.focus_handle(),
             new_compare_focus: cx.focus_handle().tab_stop(true),
             tab_focuses,
+            tips: RailTips::new(),
         }
     }
 
@@ -128,6 +132,7 @@ impl Sidebar {
     pub fn toggle_rail(&mut self, cx: &mut Context<Self>) {
         self.from = self.width();
         self.rail = !self.rail;
+        self.tips.clear();
         cx.emit(SidebarEvent::RailToggled(self.rail));
         cx.notify();
     }
@@ -135,6 +140,7 @@ impl Sidebar {
     /// Replaces the open tab labels and clamps `active`, keeping handles for unchanged indices.
     pub fn set_tabs(&mut self, tabs: Vec<SharedString>, active: usize, cx: &mut Context<Self>) {
         self.tabs = tabs;
+        self.tips.sync_tabs(&self.tabs);
         self.active = if self.tabs.is_empty() {
             0
         } else {
@@ -145,6 +151,15 @@ impl Sidebar {
             self.tab_focuses.push(cx.focus_handle().tab_stop(true));
         }
         cx.notify();
+    }
+
+    /// Hides the active rail tooltip until its hover and focus sources leave; `false` if none.
+    pub fn dismiss_tip(&mut self, cx: &mut Context<Self>) -> bool {
+        let dismissed = self.rail && self.tips.dismiss();
+        if dismissed {
+            cx.notify();
+        }
+        dismissed
     }
 
     /// Moves focus onto the mounted `New comparison` button.
@@ -338,7 +353,8 @@ fn mark_view(mark: Mark, color: Hsla, cx: &mut App) -> AnyElement {
 impl Render for Sidebar {
     /// The sidebar on `--bg2` with a `--sep` hairline, its text kept 16 px off the sides and
     /// 12 px off the top. The width lerps from the previous one, or snaps under reduced motion.
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_rail_focus(window);
         let side = *SidewiseTheme::global(cx);
         let m = if side.mode.is_dark() {
             side.spec.dark
@@ -362,6 +378,7 @@ impl Render for Sidebar {
                 this.focus_row(actions::RowDirection::Previous, window, cx);
                 cx.stop_propagation();
             }))
+            .on_action(cx.listener(Self::on_dismiss_tip))
             .flex()
             .flex_col()
             .flex_none()
@@ -375,7 +392,8 @@ impl Render for Sidebar {
             .pt(DIMS.inset_y)
             .gap_3()
             .children(self.sections().iter().map(|s| self.group_view(s, &m, cx)))
-            .child(self.footer_view(&m, cx));
+            .child(self.footer_view(&m, cx))
+            .children(self.rail_tip_overlay(&m, cx));
         match motion::anim("sidebar-width", side.motion.side_ms, cx) {
             Some(enter) => body
                 .with_animation("sidebar-width", enter, move |el, delta| {

@@ -3,13 +3,14 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::base::{ObservedElement, TestSupportExt as _};
 use gpui_kit::{
-    AnyElement, FocusHandle, KeyDownEvent, MouseButton, ReadGlobal as _, Role, Stateful,
-    transparent_black,
+    AnyElement, Bounds, FocusHandle, HoverListenerMode, KeyDownEvent, MouseButton, ReadGlobal as _,
+    Role, Stateful, canvas, transparent_black,
 };
 use navo_ui::prelude::*;
 use navo_ui::primitives::icon;
 
-use super::{Entry, Sidebar, SidebarEvent};
+use super::rail_tooltip::{HoverPlace, RowKey, Target};
+use super::{DismissTip, Entry, Sidebar, SidebarEvent};
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::{DIMS, ModeTokens};
 
@@ -40,6 +41,7 @@ struct RowControl<'a> {
     role: Role,
     focus: FocusHandle,
     event: SidebarEvent,
+    key: RowKey,
 }
 
 impl Sidebar {
@@ -57,6 +59,7 @@ impl Sidebar {
                 role: Role::Button,
                 focus: self.new_compare_focus.clone(),
                 event: SidebarEvent::NewCompare,
+                key: RowKey::NewCompare,
             },
             m,
             cx,
@@ -80,12 +83,12 @@ impl Sidebar {
                 role: Role::Tab,
                 focus: self.tab_focuses[tab.index].clone(),
                 event: SidebarEvent::SelectTab(tab.index),
+                key: RowKey::Tab(tab.index),
             },
             m,
             cx,
         )
         .aria_selected(selected)
-        .relative()
         .when(selected, |row| {
             row.bg(m.selected).child(
                 div()
@@ -141,10 +144,13 @@ impl Sidebar {
             role,
             focus,
             event,
+            key,
         } = control;
         let (ring, hover) = (m.accent, m.accent_tint);
         let ring_w = px(SidewiseTheme::global(cx).spec.ring_px);
-        self.row_view(entry, m, cx)
+        let tip = Target::new(key, entry.label.clone());
+        let row = self
+            .row_view(entry, m, cx)
             .id(id)
             .role(role)
             .aria_label(entry.label.clone())
@@ -152,6 +158,7 @@ impl Sidebar {
             .track_focus(&focus)
             .rounded(DIMS.btn_r)
             .border(ring_w)
+            .relative()
             .border_color(transparent_black())
             .when(!self.rail, |row| row.px_1())
             .cursor_pointer()
@@ -170,7 +177,105 @@ impl Sidebar {
                 {
                     cx.stop_propagation();
                 }
-            })
+            });
+        self.attach_rail_tip(row, tip, cx)
+    }
+
+    /// In the rail, adds row hover to the tooltip state and a bounds probe while the row is active.
+    fn attach_rail_tip(
+        &self,
+        row: ObservedElement<Stateful<Div>>,
+        tip: Target,
+        cx: &mut Context<Self>,
+    ) -> ObservedElement<Stateful<Div>> {
+        if !self.rail {
+            return row;
+        }
+        let key = tip.key;
+        let row = row
+            .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                this.set_tip_hover((HoverPlace::Row, tip.clone()), *hovered, cx);
+            }));
+        if !self.tips.wants_bounds(key) {
+            return row;
+        }
+        let (this, ring_w) = (cx.entity(), px(SidewiseTheme::global(cx).spec.ring_px));
+        let probe = canvas(
+            move |bounds, _, cx| {
+                // The padding box inside the border; dilate restores the row's outer bounds.
+                let outer = bounds.dilate(ring_w);
+                this.update(cx, |sb, cx| sb.set_tip_bounds(key, outer, cx));
+            },
+            |_, _, _, _| {},
+        );
+        row.child(probe.absolute().inset_0())
+    }
+
+    /// Records one hover change in the tooltip state and repaints when the shown tip changed.
+    fn set_tip_hover(
+        &mut self,
+        (place, tip): (HoverPlace, Target),
+        hovered: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.tips.set_hovered(place, tip, hovered) {
+            cx.notify();
+        }
+    }
+
+    /// Records a row's measured outer bounds and repaints when they changed.
+    fn set_tip_bounds(&mut self, key: RowKey, outer: Bounds<Pixels>, cx: &mut Context<Self>) {
+        if self.tips.set_bounds(key, outer) {
+            cx.notify();
+        }
+    }
+
+    /// The row target holding keyboard focus in the rail, or nothing outside it.
+    fn focused_row_target(&self, window: &Window) -> Option<Target> {
+        if !self.rail {
+            return None;
+        }
+        if self.new_compare_focus.is_focused(window) {
+            return Some(Target::new(RowKey::NewCompare, "New comparison"));
+        }
+        let ix = self.tab_focuses.iter().position(|h| h.is_focused(window))?;
+        Some(Target::new(RowKey::Tab(ix), self.tabs.get(ix)?.clone()))
+    }
+
+    /// Mirrors the focused row into the tooltip state before the frame is built.
+    pub(super) fn sync_rail_focus(&mut self, window: &Window) {
+        let focused = self.focused_row_target(window);
+        self.tips.sync_focus(focused);
+    }
+
+    /// The deferred tooltip overlay; pointer movement over it feeds overlay hover.
+    pub(super) fn rail_tip_overlay(
+        &self,
+        m: &ModeTokens,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let this = cx.entity();
+        self.tips.overlay(
+            move |tip, hovered, _, cx| {
+                this.update(cx, |sb, cx| {
+                    sb.set_tip_hover((HoverPlace::Overlay, tip), hovered, cx)
+                });
+            },
+            m,
+        )
+    }
+
+    /// `Escape` inside the sidebar: consumed when a tooltip was dismissed, else passed on.
+    pub(super) fn on_dismiss_tip(
+        &mut self,
+        _: &DismissTip,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.dismiss_tip(cx) {
+            cx.propagate();
+        }
     }
 
     /// Moves focus across `New comparison` and `Open tabs`, wrapping in both directions.
