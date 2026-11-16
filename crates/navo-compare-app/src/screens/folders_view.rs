@@ -1,16 +1,18 @@
 //! The Folders view of the compare tab: a summary bar and a tree of folders and files over the
 //! `FolderTree` model. The cursor moves with the arrow keys; Enter opens a pair of files.
 
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyBinding, ParentElement, ReadGlobal, Render, ScrollStrategy,
-    Styled, UniformListScrollHandle, Window, div, px, uniform_list,
+    InteractiveElement, IntoElement, KeyBinding, ParentElement, Pixels, ReadGlobal, Render,
+    ScrollStrategy, Styled, UniformListScrollHandle, Window, canvas, div, px, uniform_list,
 };
 use navo_ui::browser::{CompareFilter, CompareRow};
 use navo_ui::compare_diff::map::{ChangeMap, MapEvent};
 
+use super::folders_head::head_view;
 use super::folders_model::{FolderTree, TreeLine, map_hunks};
 use super::folders_row::{LineCtx, line_view, summary_bar};
 use super::folders_text::Meta;
@@ -50,6 +52,7 @@ pub struct FoldersView {
     focus: FocusHandle,
     map: Entity<ChangeMap>,
     meta: Meta,
+    roots: Option<[PathBuf; 2]>,
 }
 
 impl EventEmitter<FoldersEvent> for FoldersView {}
@@ -80,6 +83,23 @@ impl FoldersView {
             focus: cx.focus_handle(),
             map,
             meta: Meta::Size,
+            roots: None,
+        }
+    }
+
+    /// Sets the two folder roots the headers name; each goes through `absolute`, kept as given
+    /// when that fails.
+    pub fn with_roots(mut self, roots: [PathBuf; 2]) -> Self {
+        self.roots = Some(roots.map(|root| std::path::absolute(&root).unwrap_or(root)));
+        self
+    }
+
+    /// Takes the list column's width; only a change of meta mode redraws.
+    pub(super) fn record_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        let meta = Meta::for_width(f32::from(width));
+        if meta != self.meta {
+            self.meta = meta;
+            cx.notify();
         }
     }
 
@@ -224,27 +244,49 @@ impl FoldersView {
     }
 }
 
-impl Render for FoldersView {
-    /// The summary chips above a virtual list of tree lines, with the change map at the right.
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+impl FoldersView {
+    /// A zero-hit overlay on the list column that reports its width to `record_width`.
+    fn width_probe(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let this = cx.weak_entity();
+        canvas(
+            move |bounds, _, cx| {
+                let _ = this.update(cx, |view, cx| view.record_width(bounds.size.width, cx));
+            },
+            |_, (), _, _| {},
+        )
+        .absolute()
+        .inset_0()
+    }
+}
+
+impl FoldersView {
+    /// What every line needs to draw: the theme, the cursor, the fade, the filter and the meta mode.
+    fn line_ctx(&self, cx: &mut Context<Self>) -> LineCtx {
         let theme = *SidewiseTheme::global(cx);
         let m = if theme.mode.is_dark() {
             theme.spec.dark
         } else {
             theme.spec.light
         };
-        let (cursor, fade, filter) = (self.cursor, self.fade.clone(), self.tree.filter());
-        let ctx = LineCtx {
+        LineCtx {
             theme,
             m,
-            cursor,
-            fade,
-            filter,
+            cursor: self.cursor,
+            fade: self.fade.clone(),
+            filter: self.tree.filter(),
             view: cx.entity(),
             meta: self.meta,
             mono: navo_ui::tokens::current(cx).typography.mono_font.clone(),
-        };
+        }
+    }
+}
+
+impl Render for FoldersView {
+    /// The summary chips above a virtual list of tree lines, with the change map at the right.
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let ctx = self.line_ctx(cx);
         let lines = Rc::new(self.tree.lines());
+        let head = head_view(self.roots.as_ref(), &ctx);
         let bar = summary_bar(self.tree.totals(), &ctx);
         let map = self.map.clone();
         let list = uniform_list("folder-lines", lines.len(), move |range, _, cx| {
@@ -272,8 +314,11 @@ impl Render for FoldersView {
                     .flex_col()
                     .flex_1()
                     .min_w_0()
+                    .relative()
+                    .children(head)
                     .child(bar)
-                    .child(list),
+                    .child(list)
+                    .child(self.width_probe(cx)),
             )
             .child(self.map.clone())
     }

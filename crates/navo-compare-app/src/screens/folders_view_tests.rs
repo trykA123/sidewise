@@ -1,10 +1,13 @@
 //! Tests of `FoldersView`: cursor keys, Enter on a file, and the summary chips.
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::test::TestWindowExt;
-use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, Focusable as _, TestAppContext};
+use gpui_kit::{
+    AnyWindowHandle, AppContext as _, Entity, Focusable as _, TestAppContext, px, size,
+};
 use navo_compare_profile::appearance::PaletteId;
 use navo_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
 use navo_ui::tokens::Mode;
@@ -208,4 +211,46 @@ fn the_chips_say_orphans(cx: &mut TestAppContext) {
         assert_eq!(window.find("chip-Orphans").label(), Some("Orphans 1"));
     })
     .expect("window");
+}
+
+/// Each side's header names its folder root: the label is the full path.
+#[gpui_kit::test]
+fn the_headers_name_both_roots(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        apply_sidewise(PaletteId::Violet, Mode::Light, cx);
+    });
+    let roots = [PathBuf::from("/work/left"), PathBuf::from("/work/right")];
+    let (window, _) = open(cx, |_, cx| FoldersView::new(cx).with_roots(roots));
+    cx.update_window(window, |_, window, cx| window.render_frame(cx))
+        .expect("window");
+    assert_eq!(
+        label_of(window, ("head", 0), cx).as_deref(),
+        Some("/work/left")
+    );
+    assert_eq!(
+        label_of(window, ("head", 1), cx).as_deref(),
+        Some("/work/right")
+    );
+}
+
+/// The meta text and the gutter width follow the view width: wide shows size, narrow names only.
+#[gpui_kit::test]
+fn meta_follows_the_view_width(cx: &mut TestAppContext) {
+    let (window, _, _) = view(cx);
+    let gut_w = |cx: &mut TestAppContext| {
+        cx.update_window(window, |_, window, _| {
+            f32::from(window.find(("gut", 2usize)).bounds().size.width)
+        })
+        .expect("window")
+    };
+    for (w, text, gut) in [(1000., "z.txt · 1 B", 98.), (500., "z.txt", 40.)] {
+        cx.simulate_window_resize(window, size(px(w), px(600.)));
+        cx.update_window(window, |_, window, cx| window.render_frame(cx))
+            .expect("window");
+        cx.update_window(window, |_, window, cx| window.render_frame(cx))
+            .expect("window");
+        assert_eq!(label_of(window, ("cell-l", 2), cx).as_deref(), Some(text));
+        assert_eq!(gut_w(cx), gut);
+    }
 }

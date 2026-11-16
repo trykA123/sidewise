@@ -118,7 +118,8 @@ impl CompareTab {
         cx: &mut Context<Self>,
     ) -> Self {
         let Started { run, wakes, wake } = started;
-        let folders = cx.new(FoldersView::new);
+        let roots = [request.left.clone(), request.right.clone()];
+        let folders = cx.new(|cx| FoldersView::new(cx).with_roots(roots));
         let large = cx.new(LargeView::new);
         let screen = cx.new(|_| new_compare_screen(wake));
         cx.spawn(async move |this, cx| pump(wakes, this, cx).await)

@@ -15,6 +15,7 @@ pub mod folders_cells;
 #[cfg(test)]
 mod folders_cells_tests;
 mod folders_cells_view;
+mod folders_head;
 pub mod folders_model;
 #[cfg(test)]
 mod folders_model_tests;
