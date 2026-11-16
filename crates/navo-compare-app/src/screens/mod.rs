@@ -5,3 +5,6 @@ pub mod compare_run;
 pub mod folders_model;
 #[cfg(test)]
 mod folders_model_tests;
+pub mod large_model;
+#[cfg(test)]
+mod large_model_tests;
