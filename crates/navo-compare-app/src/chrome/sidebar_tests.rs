@@ -372,18 +372,16 @@ fn assert_static_rows_and_rail_labels(rig: &HostRig, cx: &mut TestAppContext) {
         let tab0 = window.find(("open-tab", 0usize));
         assert_eq!(tab0.role(), Some(Role::Tab));
         assert_eq!(tab0.selected(), Some(true));
-        for label in [
-            "Git compare",
-            "left ↔ right",
-            "Saved",
-            "Accounts",
-            "Appearance",
-        ] {
+        for label in ["Git compare", "left ↔ right", "Saved", "Appearance"] {
             let snap = window.find_by_label(label);
             assert_ne!(snap.role(), Some(Role::Button));
             assert_ne!(snap.role(), Some(Role::Tab));
             assert_ne!(snap.focused(), Some(true));
         }
+        assert!(
+            window.try_find("footer-accounts").is_none(),
+            "the Accounts row is hidden in alpha"
+        );
         assert!(rig.view.read(cx).sections()[0].entries[1].hint.is_none());
 
         rig.view.update(cx, |sb, cx| sb.toggle_rail(cx));
@@ -395,7 +393,6 @@ fn assert_static_rows_and_rail_labels(rig: &HostRig, cx: &mut TestAppContext) {
             "tab",
             "left ↔ right",
             "Saved",
-            "Accounts",
             "Appearance",
         ] {
             assert!(window.try_find_by_label(label).is_some(), "{label} in rail");

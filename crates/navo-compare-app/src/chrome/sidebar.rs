@@ -286,11 +286,6 @@ impl Sidebar {
 
     /// The footer actions, pushed to the bottom and icon-only in the rail.
     fn footer_view(&self, m: &ModeTokens, cx: &mut Context<Self>) -> Div {
-        let accounts = Entry {
-            mark: Mark::File(MaterialIcon::Lock),
-            label: "Accounts".into(),
-            hint: None,
-        };
         let appearance = Entry {
             mark: Mark::Chrome(IconName::Palette),
             label: "Appearance".into(),
@@ -301,11 +296,6 @@ impl Sidebar {
             .flex()
             .flex_col()
             .gap_1()
-            .child(Self::static_row(
-                "footer-accounts".into(),
-                accounts.label.clone(),
-                self.row_view(&accounts, m, cx),
-            ))
             .child(Self::static_row(
                 "footer-appearance".into(),
                 appearance.label.clone(),
