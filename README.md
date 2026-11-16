@@ -1,10 +1,53 @@
 # Sidewise
 
-A standalone compare and merge app for folders, files and Git refs. It is built from the same
-compare code as [Navo](https://github.com/trykA123/navo), where compare also runs as a module.
+Sidewise compares two folders or two files. It is built from the compare engine of [Navo](https://github.com/trykA123/navo).
 
-Status: in development; there is no release yet. Releases will appear at
-[trykA123/sidewise](https://github.com/trykA123/sidewise).
+Status: alpha pre-release 0.1.0-alpha.1. Windows only. Read-only: it never changes your files.
+
+See the [CHANGELOG](CHANGELOG.md) for the full list of what this release has and lacks.
+
+## Download
+
+Get the files from the [Releases page](https://github.com/trykA123/sidewise/releases):
+
+- `sidewise-0.1.0-alpha.1-windows-x64.zip`
+- `SHA256SUMS`
+
+Check the zip before you run it:
+
+1. Open PowerShell in the download folder.
+2. Run `Get-FileHash -Algorithm SHA256 .\sidewise-0.1.0-alpha.1-windows-x64.zip`.
+3. Check that the `Hash` value matches the line for the zip in `SHA256SUMS`.
+
+Unzip the file into any folder. Then start `sidewise.exe`.
+
+The build is not signed. Windows SmartScreen warns on the first start. To run it anyway:
+
+1. Click **More info**.
+2. Click **Run anyway**.
+
+## Use
+
+Start `sidewise.exe` and pick two folders or two files on the Start screen.
+
+Or run `sidewise <left> <right>` in a terminal. Run `sidewise --help` for the other flags.
+
+## In this alpha
+
+- Compare two folders or two files, in tabs.
+- Folders view with filters and a change map.
+- File diff for text, hex and images.
+- Stream view with an Outline.
+- Recent sessions on the Start screen.
+- Light and Dark mode, with the Violet colour scheme.
+- Command line: `sidewise <left> <right>`, `--profile DIR`, `--version` and `--help`.
+
+## Not in this alpha
+
+- Git branch or ref compare.
+- Accounts and theme switching.
+- Copying changes, merging, syncing and three-way merge.
+- An installer, an Explorer menu and auto-update.
 
 ## Layout
 
