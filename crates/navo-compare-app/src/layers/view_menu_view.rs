@@ -9,7 +9,7 @@ use gpui_kit::{
 use navo_ui::prelude::*;
 use navo_ui::primitives::{Kbd, icon};
 
-use super::{Act, ITEMS, KIND_NOTE, ViewMenu};
+use super::{Act, ITEMS, ViewMenu};
 use crate::motion;
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::{DIMS, ModeTokens};
@@ -21,7 +21,7 @@ struct Look {
     focused: bool,
 }
 
-/// A small muted heading (`View`, `Kind of view`).
+/// A small muted heading (`View`).
 fn heading(text: &'static str, m: &ModeTokens) -> Div {
     div()
         .px_3()
@@ -161,7 +161,7 @@ impl ViewMenu {
             .collect()
     }
 
-    /// The card: presets, layouts, toggles, kinds and the note, in the prototype's order.
+    /// The card: presets, layouts and toggles, in the prototype's order.
     fn card(&self, look: &Look, cx: &mut Context<Self>) -> ObservedElement<Stateful<Div>> {
         let m = look.m;
         let rule = || div().h(px(1.)).mx_2().my_1().bg(m.sep);
@@ -194,19 +194,7 @@ impl ViewMenu {
             )
             .children(self.rows(3..5, look, cx))
             .child(rule())
-            .children(self.rows(5..11, look, cx))
-            .child(rule())
-            .child(heading("Kind of view", &m))
-            .children(self.rows(11..14, look, cx))
-            .child(
-                div()
-                    .px_3()
-                    .pt_1()
-                    .pb_2()
-                    .text_size(px(12.))
-                    .text_color(m.muted)
-                    .child(KIND_NOTE),
-            )
+            .children(self.rows(5..7, look, cx))
     }
 }
 

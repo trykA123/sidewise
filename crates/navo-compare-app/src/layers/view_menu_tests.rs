@@ -1,4 +1,4 @@
-//! Tests of the View menu (U16b): presets, the Custom flip, the step-down notice, and the
+//! Tests of the View menu (U16b): presets, the Custom flip, layout in `UiPrefs`, and the
 //! click, key and focus behaviour of the popover.
 
 use std::cell::RefCell;
@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{Role, Subscription, TestAppContext};
-use navo_compare_profile::appearance::PaletteId;
+use navo_compare_profile::appearance::{LayoutPref, PaletteId};
 use navo_ui::tokens::Mode;
 
 use super::*;
@@ -62,7 +62,7 @@ fn simple_and_rich_set_their_toggles_and_layout(cx: &mut TestAppContext) {
             (false, false, false),
             "Simple turns them off"
         );
-        assert_eq!(m.layout(), Layout::Unified, "Simple is unified");
+        assert_eq!(p.layout, LayoutPref::Unified, "Simple is unified");
         assert_eq!(p.preset, ViewPresetPref::Simple);
         menu.update(cx, |m, cx| m.apply(Act::Preset(ViewPresetPref::Rich), cx));
         let m = menu.read(cx);
@@ -70,7 +70,7 @@ fn simple_and_rich_set_their_toggles_and_layout(cx: &mut TestAppContext) {
             m.prefs().words && m.prefs().syntax && m.prefs().fold_unchanged,
             "Rich turns them on"
         );
-        assert_eq!(m.layout(), Layout::Split, "Rich is side by side");
+        assert_eq!(m.prefs().layout, LayoutPref::Split, "Rich is side by side");
     });
 }
 
@@ -91,7 +91,7 @@ fn a_manual_change_flips_the_preset_to_custom(cx: &mut TestAppContext) {
             "only the toggled value changed"
         );
         menu.update(cx, |m, cx| m.apply(Act::Preset(ViewPresetPref::Rich), cx));
-        menu.update(cx, |m, cx| m.apply(Act::Layout(Layout::Unified), cx));
+        menu.update(cx, |m, cx| m.apply(Act::Layout(LayoutPref::Unified), cx));
         assert_eq!(
             menu.read(cx).prefs().preset,
             ViewPresetPref::Custom,
@@ -100,32 +100,24 @@ fn a_manual_change_flips_the_preset_to_custom(cx: &mut TestAppContext) {
     });
 }
 
-/// Best and Text step down to Bytes with the notice when the pair has no text view; Bytes does not.
+/// Picking "Single file · unified" stores `LayoutPref::Unified` in the preferences.
 #[gpui_kit::test]
-fn best_steps_down_to_bytes_with_the_notice(cx: &mut TestAppContext) {
+fn single_file_stores_the_unified_layout(cx: &mut TestAppContext) {
     let menu = bare(cx, UiPrefs::default());
     cx.update(|cx| {
-        let m = menu.read(cx);
-        assert_eq!(
-            m.step_down(false),
-            Some("No text view for this pair. Alt+V opens it as Bytes.")
-        );
-        assert_eq!(m.step_down(true), None, "a text pair needs no notice");
-        menu.update(cx, |m, cx| m.apply(Act::Kind(ViewModePref::Bytes), cx));
-        assert_eq!(
-            menu.read(cx).step_down(false),
-            None,
-            "Bytes is already the fallback"
-        );
+        assert_eq!(menu.read(cx).prefs().layout, LayoutPref::Split);
+        menu.update(cx, |m, cx| m.apply(ITEMS[4].0, cx));
+        assert_eq!(ITEMS[4].1, "Single file · unified");
+        assert_eq!(menu.read(cx).prefs().layout, LayoutPref::Unified);
     });
 }
 
-/// Clicking an entry applies it; picking a kind also dismisses the menu.
+/// Clicking an entry applies it; the menu stays open.
 #[gpui_kit::test]
 fn clicks_apply_entries_and_a_kind_dismisses(cx: &mut TestAppContext) {
     let (window, menu, events, _sub) = rig(cx, UiPrefs::default());
     cx.update_window(window, |_, window, cx| {
-        window.click(("view-item", 9usize), cx)
+        window.click(("view-item", 6usize), cx)
     })
     .expect("window");
     cx.update(|cx| {
@@ -136,18 +128,8 @@ fn clicks_apply_entries_and_a_kind_dismisses(cx: &mut TestAppContext) {
         assert_eq!(*events.borrow(), vec![ViewMenuEvent::Changed]);
     });
     cx.update_window(window, |_, window, cx| {
-        window.click(("view-item", 13usize), cx)
-    })
-    .expect("window");
-    cx.update_window(window, |_, window, cx| {
-        assert_eq!(menu.read(cx).prefs().view_mode, ViewModePref::Bytes);
-        assert_eq!(
-            events.borrow().last(),
-            Some(&ViewMenuEvent::Dismissed),
-            "a kind closes the menu"
-        );
         window.render_frame(cx);
-        assert_eq!(window.find(("view-item", 9usize)).checked(), Some(true));
+        assert_eq!(window.find(("view-item", 6usize)).checked(), Some(true));
     })
     .expect("window");
 }
@@ -164,8 +146,8 @@ fn keys_move_apply_and_dismiss(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(window, "enter");
     cx.update(|cx| {
         assert_eq!(
-            menu.read(cx).layout(),
-            Layout::Unified,
+            menu.read(cx).prefs().layout,
+            LayoutPref::Unified,
             "Rich starts on item 1; three downs reach the unified layout"
         );
         assert_eq!(menu.read(cx).prefs().preset, ViewPresetPref::Custom);
@@ -173,13 +155,11 @@ fn keys_move_apply_and_dismiss(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(window, "up space");
     cx.update(|cx| {
         assert_eq!(
-            menu.read(cx).layout(),
-            Layout::Split,
+            menu.read(cx).prefs().layout,
+            LayoutPref::Split,
             "Up then Space picks side by side"
         )
     });
-    cx.simulate_keystrokes(window, "end");
-    cx.update(|cx| assert_eq!(menu.read(cx).active, 13, "End goes to the last entry"));
     cx.simulate_keystrokes(window, "escape");
     cx.update_window(window, |_, window, cx| {
         assert_eq!(
@@ -195,12 +175,37 @@ fn keys_move_apply_and_dismiss(cx: &mut TestAppContext) {
     .expect("window");
 }
 
+/// End goes to the last of the 7 entries, and Down and Up wrap around the ends.
+#[gpui_kit::test]
+fn keys_wrap_over_seven_entries(cx: &mut TestAppContext) {
+    let (window, menu, _events, _sub) = rig(cx, UiPrefs::default());
+    assert_eq!(ITEMS.len(), 7);
+    cx.simulate_keystrokes(window, "end");
+    cx.update(|cx| assert_eq!(menu.read(cx).active, 6, "End goes to the last entry"));
+    cx.simulate_keystrokes(window, "down");
+    cx.update(|cx| {
+        assert_eq!(
+            menu.read(cx).active,
+            0,
+            "Down wraps from the last of 7 to the first"
+        )
+    });
+    cx.simulate_keystrokes(window, "up");
+    cx.update(|cx| {
+        assert_eq!(
+            menu.read(cx).active,
+            6,
+            "Up wraps from the first to the last"
+        )
+    });
+}
+
 /// The key hints render in gpui syntax: Alt+Z for wrapping, and a plain L (not Shift+L) for layout.
 #[gpui_kit::test]
 fn key_hints_render_alt_z_and_l(cx: &mut TestAppContext) {
     let (window, _menu, _events, _sub) = rig(cx, UiPrefs::default());
     cx.update_window(window, |_, window, _| {
-        for (ix, text) in [(9usize, "Alt+Z"), (3, "L"), (4, "L")] {
+        for (ix, text) in [(6usize, "Alt+Z"), (3, "L"), (4, "L")] {
             let hint = window.try_find(("view-key", ix));
             assert_eq!(hint.as_ref().and_then(|h| h.label()), Some(text));
         }
