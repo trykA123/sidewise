@@ -8,7 +8,8 @@ use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext};
 use navo_ui::window_view::ScreenEvent;
 
-use crate::compare_tab_tests::{TempDir, shell, submit, wait_for_row};
+use crate::compare_tab_script::scripted_shell;
+use crate::compare_tab_tests::{TempDir, submit, wait_for_row};
 use crate::screens::compare_tab::{CompareRequest, CompareTab, TabView};
 use crate::shell::Shell;
 use crate::start_tabs::StartChoice;
@@ -27,7 +28,7 @@ fn folders(cx: &mut TestAppContext, tag: &str) -> (Opened, Entity<CompareTab>, [
         fs::write(left.path().join(name), one).expect("write left");
         fs::write(right.path().join(name), two).expect("write right");
     }
-    let opened = shell(cx);
+    let opened = scripted_shell(cx);
     submit(cx, &opened, [left.path(), right.path()]);
     assert!(wait_for_row(cx, &opened, "a.txt"), "rows reach the view");
     let tab = settled(cx, &opened);
@@ -101,7 +102,7 @@ fn two_files_open_their_pair_at_once(cx: &mut TestAppContext) {
     let (left, right) = (dir.path().join("l.txt"), dir.path().join("r.txt"));
     fs::write(&left, "one").expect("write");
     fs::write(&right, "two").expect("write");
-    let opened = shell(cx);
+    let opened = scripted_shell(cx);
     let request = CompareRequest {
         left,
         right,

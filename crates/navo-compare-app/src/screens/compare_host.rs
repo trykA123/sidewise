@@ -20,9 +20,25 @@ pub fn read_only_file_hooks() -> FileHooks {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Test seam: diff hooks that replace the in-memory backend on this thread.
+    pub(crate) static TEST_DIFF_HOOKS: std::cell::RefCell<Option<Arc<dyn DiffHooks>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The diff hooks a new screen uses: the in-memory backend, or the test seam's hooks.
+fn diff_hooks() -> Arc<dyn DiffHooks> {
+    #[cfg(test)]
+    if let Some(hooks) = TEST_DIFF_HOOKS.with_borrow(Clone::clone) {
+        return hooks;
+    }
+    Arc::new(DiffBackend::in_memory())
+}
+
 /// A compare screen over the in-memory diff backend (NC118); `wake` runs after each diff update.
 pub fn new_compare_screen(wake: Waker) -> CompareScreen {
-    let hooks: Arc<dyn DiffHooks> = Arc::new(DiffBackend::in_memory());
+    let hooks = diff_hooks();
     CompareScreen::new(
         DiffSlot::new(Some(hooks), wake),
         CompareOptions::default(),

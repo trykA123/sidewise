@@ -7,7 +7,8 @@ use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext};
 use navo_ui::window_view::ScreenEvent;
 
 use crate::chrome::topbar_status::TopbarMode;
-use crate::compare_tab_tests::{TempDir, shell, submit, wait_for_row};
+use crate::compare_tab_script::scripted_shell;
+use crate::compare_tab_tests::{TempDir, submit, wait_for_row};
 use crate::screens::compare_tab::{CompareTab, TabView};
 use crate::shell::Shell;
 
@@ -19,7 +20,7 @@ fn opened(cx: &mut TestAppContext, tag: &str) -> (Opened, Entity<CompareTab>, [T
     let right = TempDir::new(&format!("{tag}-r"));
     fs::write(left.path().join("a.txt"), "one").expect("write left");
     fs::write(right.path().join("a.txt"), "two").expect("write right");
-    let opened = shell(cx);
+    let opened = scripted_shell(cx);
     submit(cx, &opened, [left.path(), right.path()]);
     assert!(wait_for_row(cx, &opened, "a.txt"), "rows reach the view");
     let tab = opened

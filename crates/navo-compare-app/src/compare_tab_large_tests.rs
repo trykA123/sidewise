@@ -1,56 +1,15 @@
 //! Tests of H5: a compare still checking after 1,000 ms opens on Large; Enter and the end of
 //! the session lead back to Folders; the Large view gets a snapshot after each drain.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::{AnyWindowHandle, Entity, TestAppContext};
-use navo_core::Location;
-use navo_ui::browser::{CompareControl, CompareHooks, ComparePhase, CompareSink, CompareUpdate};
-use navo_ui::compare_diff::CompareOptions;
+use navo_ui::browser::{ComparePhase, CompareUpdate};
 
+use crate::compare_tab_script::{Held, SharedSink};
 use crate::compare_tab_tests::{TempDir, shell, submit};
 use crate::screens::compare_tab::{CompareTab, TabView, install_test_hooks};
-
-/// The sink the fake engine was given; the test sends updates through it.
-type SharedSink = Arc<Mutex<Option<CompareSink>>>;
-
-/// A compare engine that sends nothing by itself and keeps the sink.
-struct Held(SharedSink);
-
-impl CompareHooks for Held {
-    /// Every location can be compared in this fixture.
-    fn supports(&self, _location: &Location) -> bool {
-        true
-    }
-
-    /// Keeps the sink and returns an idle control.
-    fn start(
-        &self,
-        _sides: (&Location, &Location),
-        _options: &CompareOptions,
-        sink: CompareSink,
-    ) -> Box<dyn CompareControl> {
-        *self.0.lock().expect("sink lock") = Some(sink);
-        Box::new(Idle)
-    }
-}
-
-/// A compare control that ignores every request.
-struct Idle;
-
-impl CompareControl for Idle {
-    /// Ignores a focus request.
-    fn focus(&self, _row_ids: Vec<u64>) {}
-    /// Ignores a stop request for one row.
-    fn stop_row(&self, _id: u64) {}
-    /// Ignores a stop request for the whole walk.
-    fn stop_all(&self) {}
-    /// Ignores a refresh request.
-    fn refresh(&self) {}
-    /// Ignores a request to resume a stopped walk.
-    fn continue_walk(&self) {}
-}
 
 /// A submitted compare on the held engine: shell, tab, the sink and the two folders.
 fn started(
@@ -66,7 +25,7 @@ fn started(
     let right = TempDir::new(&format!("{tag}-r"));
     let opened = shell(cx);
     let sink: SharedSink = Arc::default();
-    let hooks = Arc::new(Held(Arc::clone(&sink)));
+    let hooks = Arc::new(Held::new(Arc::clone(&sink)));
     cx.update(|cx| install_test_hooks(hooks, cx));
     submit(cx, &opened, [left.path(), right.path()]);
     cx.run_until_parked();
