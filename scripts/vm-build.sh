@@ -24,10 +24,13 @@ main() {
   mkdir -p "$logs"
 
   # One VM serves every project: the lock is the one Navo's CI run takes.
-  exec 9>"$logs/.vm.lock"
-  if ! flock -w "$LOCK_WAIT_S" 9; then
-    printf '%s\n' "vm-build: the VM stayed busy for ${LOCK_WAIT_S} s" >&2
-    exit 75
+  # VM_LOCK_HELD=1 means the caller (vm-release.sh) already holds the lock.
+  if [[ "${VM_LOCK_HELD:-}" != "1" ]]; then
+    exec 9>"$logs/.vm.lock"
+    if ! flock -w "$LOCK_WAIT_S" 9; then
+      printf '%s\n' "vm-build: the VM stayed busy for ${LOCK_WAIT_S} s" >&2
+      exit 75
+    fi
   fi
 
   bundle="$(mktemp --suffix=.bundle)"
