@@ -34,3 +34,4 @@ It is read-only. It never changes your files.
 - No View menu of its own. Inside a file diff, `Alt+V` opens the diff's menu.
 - No Sync plan, no copying of changes and no three-way merge.
 - No Explorer menu and no auto-update.
+- In a narrow window the hex view of one file can draw its text column over the right side. The same bytes show correctly in Stream.
