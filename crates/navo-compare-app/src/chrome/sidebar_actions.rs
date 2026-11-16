@@ -11,9 +11,20 @@ use navo_ui::prelude::*;
 use navo_ui::primitives::icon;
 
 use super::rail_tooltip::{HoverPlace, RowKey, Target};
-use super::{DismissTip, Entry, Sidebar, SidebarEvent};
+use super::{DismissTip, Entry, ShowTabMenu, Sidebar};
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::{DIMS, ModeTokens};
+
+/// Typed events emitted by [`Sidebar`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SidebarEvent {
+    NewCompare,
+    SelectTab(usize),
+    CloseTab(usize),
+    RailToggled(bool),
+    /// Ask for the tab menu of tab `.0` at window point `.1`.
+    TabMenu(usize, Point<Pixels>),
+}
 
 /// Direction for keyboard row traversal inside [`Sidebar`].
 #[derive(Clone, Copy)]
@@ -92,7 +103,7 @@ impl Sidebar {
         )
         .aria_selected(selected)
         .when(selected, |row| {
-            row.bg(m.selected).child(
+            row.bg(m.selected).child(self.active_probe(cx)).child(
                 div()
                     .absolute()
                     .left_0()
@@ -106,12 +117,26 @@ impl Sidebar {
             if click.is_middle_click() {
                 cx.stop_propagation();
                 cx.emit(SidebarEvent::CloseTab(index));
+            } else if click.is_right_click() {
+                cx.stop_propagation();
+                cx.emit(SidebarEvent::SelectTab(index));
+                cx.emit(SidebarEvent::TabMenu(index, click.position()));
             }
         }))
         .when(!self.rail, |row| {
             row.child(self.tab_close(tab.index, m, cx))
         })
         .into_any_element()
+    }
+
+    /// A zero-paint child that records the active row's bounds for `Shift+F10`.
+    fn active_probe(&self, cx: &mut Context<Self>) -> Div {
+        let this = cx.entity();
+        let probe = canvas(
+            move |bounds, _, cx| this.update(cx, |sb, _| sb.active_bounds = bounds),
+            |_, _, _, _| {},
+        );
+        div().absolute().inset_0().child(probe.size_full())
     }
 
     /// Non-focusable tab close button (hidden in rail) emitting `CloseTab` only.
@@ -274,6 +299,15 @@ impl Sidebar {
         )
     }
 
+    /// Hides the active rail tooltip until its hover and focus sources leave; `false` if none.
+    pub fn dismiss_tip(&mut self, cx: &mut Context<Self>) -> bool {
+        let dismissed = self.rail && self.tips.dismiss();
+        if dismissed {
+            cx.notify();
+        }
+        dismissed
+    }
+
     /// `Escape` inside the sidebar: consumed when a tooltip was dismissed, else passed on.
     pub(super) fn on_dismiss_tip(
         &mut self,
@@ -283,6 +317,22 @@ impl Sidebar {
     ) {
         if !self.dismiss_tip(cx) {
             cx.propagate();
+        }
+    }
+
+    /// `Shift+F10`: asks for the active tab's menu at the bottom-left of its row.
+    pub(super) fn on_show_tab_menu(
+        &mut self,
+        _: &ShowTabMenu,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.stop_propagation();
+        if !self.tabs.is_empty() {
+            cx.emit(SidebarEvent::TabMenu(
+                self.active,
+                self.active_bounds.bottom_left(),
+            ));
         }
     }
 

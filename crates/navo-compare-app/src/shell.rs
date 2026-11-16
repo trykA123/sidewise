@@ -100,6 +100,7 @@ impl Shell {
             SidebarEvent::SelectTab(index) => self.select_tab(index, window, cx),
             SidebarEvent::CloseTab(index) => self.close_tab(index, window, cx),
             SidebarEvent::RailToggled(_) => cx.notify(),
+            SidebarEvent::TabMenu(..) => {}
         }
     }
 

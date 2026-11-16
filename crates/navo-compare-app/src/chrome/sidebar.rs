@@ -18,9 +18,13 @@ mod actions;
 #[path = "rail_tooltip.rs"]
 mod rail_tooltip;
 
+pub use actions::SidebarEvent;
 use rail_tooltip::RailTips;
 
-gpui_kit::actions!(sidebar, [ToggleRail, NextRow, PreviousRow, DismissTip]);
+gpui_kit::actions!(
+    sidebar,
+    [ToggleRail, NextRow, PreviousRow, DismissTip, ShowTabMenu]
+);
 
 /// Key context of the sidebar root; Ctrl+\ and row traversal keys bind inside it.
 const CONTEXT: &str = "Sidebar";
@@ -28,15 +32,6 @@ const CONTEXT: &str = "Sidebar";
 const MARK: u32 = 16;
 /// The mark side as a length.
 const MARK_PX: f32 = MARK as f32;
-
-/// Typed events emitted by [`Sidebar`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SidebarEvent {
-    NewCompare,
-    SelectTab(usize),
-    CloseTab(usize),
-    RailToggled(bool),
-}
 
 /// Binds `Sidebar`-scoped keys; the shell calls this from its own `bind_keys`.
 pub fn bind_keys(cx: &mut App) {
@@ -47,6 +42,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("up", PreviousRow, Some(CONTEXT)),
         KeyBinding::new("shift-tab", PreviousRow, Some(CONTEXT)),
         KeyBinding::new("escape", DismissTip, Some(CONTEXT)),
+        KeyBinding::new("shift-f10", ShowTabMenu, Some(CONTEXT)),
     ]);
 }
 
@@ -91,6 +87,7 @@ pub struct Sidebar {
     new_compare_focus: FocusHandle,
     tab_focuses: Vec<FocusHandle>,
     tips: RailTips,
+    active_bounds: Bounds<Pixels>,
 }
 
 impl EventEmitter<SidebarEvent> for Sidebar {}
@@ -111,6 +108,7 @@ impl Sidebar {
             new_compare_focus: cx.focus_handle().tab_stop(true),
             tab_focuses,
             tips: RailTips::new(),
+            active_bounds: Bounds::default(),
         }
     }
 
@@ -153,15 +151,6 @@ impl Sidebar {
             self.tab_focuses.push(cx.focus_handle().tab_stop(true));
         }
         cx.notify();
-    }
-
-    /// Hides the active rail tooltip until its hover and focus sources leave; `false` if none.
-    pub fn dismiss_tip(&mut self, cx: &mut Context<Self>) -> bool {
-        let dismissed = self.rail && self.tips.dismiss();
-        if dismissed {
-            cx.notify();
-        }
-        dismissed
     }
 
     /// Moves focus onto the mounted `New comparison` button.
@@ -372,6 +361,7 @@ impl Render for Sidebar {
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(Self::on_dismiss_tip))
+            .on_action(cx.listener(Self::on_show_tab_menu))
             .flex()
             .flex_col()
             .flex_none()
