@@ -11,6 +11,9 @@ pub mod compare_tab;
 mod compare_tab_events;
 pub mod compare_tab_keys;
 mod compare_tab_large;
+pub mod folders_cells;
+#[cfg(test)]
+mod folders_cells_tests;
 pub mod folders_model;
 #[cfg(test)]
 mod folders_model_tests;

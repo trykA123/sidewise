@@ -7,6 +7,8 @@ use std::sync::Arc;
 use navo_ui::browser::{CompareFilter, CompareKind, CompareRow, RowStatus};
 use navo_ui::compare_diff::map::{HunkKind, MapHunk};
 
+use super::folders_cells::{GutTag, Newer, SideCell, child_counts, gut_of, newer_of, side_cell};
+
 /// The five Sidewise row tones, in mix-bar order (NC121).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwTone {
@@ -31,6 +33,10 @@ pub struct TreeLine {
     pub tone: Option<SwTone>,
     pub mix: Mix,
     pub expanded: bool,
+    pub left: Option<SideCell>,
+    pub right: Option<SideCell>,
+    pub newer: Option<Newer>,
+    pub gut: Option<GutTag>,
 }
 
 /// Every compare row, the open folders and the filter.
@@ -125,11 +131,12 @@ impl FolderTree {
     #[must_use]
     pub fn lines(&self) -> Vec<TreeLine> {
         let mixes = folder_mixes(&self.rows);
+        let counts = child_counts(&self.rows);
         self.rows
             .iter()
             .filter(|row| self.kept(row, &mixes))
             .filter(|row| self.visible(row))
-            .map(|row| self.line_of(row, &mixes))
+            .map(|row| self.line_of(row, &mixes, &counts))
             .collect()
     }
 
@@ -143,6 +150,22 @@ impl FolderTree {
             }
         }
         totals
+    }
+
+    /// Opens the folder at `path` and every folder row below it; nothing when `path` is no folder.
+    pub fn expand_all_under(&mut self, path: &str) {
+        if !self.has_folder(path) {
+            return;
+        }
+        let prefix = format!("{path}/");
+        let below: Vec<String> = self
+            .rows
+            .iter()
+            .filter(|row| is_folder(row) && row.path.starts_with(&prefix))
+            .map(|row| row.path.clone())
+            .collect();
+        self.expanded.insert(path.to_string());
+        self.expanded.extend(below);
     }
 
     /// Whether a folder row with `path` is known.
@@ -166,8 +189,16 @@ impl FolderTree {
     }
 
     /// Builds the drawn line for `row`.
-    fn line_of(&self, row: &CompareRow, mixes: &HashMap<&str, Mix>) -> TreeLine {
+    fn line_of(
+        &self,
+        row: &CompareRow,
+        mixes: &HashMap<&str, Mix>,
+        counts: &HashMap<&str, [u32; 2]>,
+    ) -> TreeLine {
         let folder = is_folder(row);
+        let items = |index: usize| {
+            folder.then(|| counts.get(row.path.as_str()).map_or(0, |pair| pair[index]))
+        };
         TreeLine {
             id: row.id,
             path: row.path.clone(),
@@ -177,6 +208,10 @@ impl FolderTree {
             tone: if folder { None } else { tone_of(row.status) },
             mix: mix_of(row, mixes),
             expanded: folder && self.expanded.contains(&row.path),
+            left: row.left.as_ref().map(|s| side_cell(s, items(0))),
+            right: row.right.as_ref().map(|s| side_cell(s, items(1))),
+            newer: newer_of(row),
+            gut: if folder { None } else { gut_of(row.status) },
         }
     }
 }
