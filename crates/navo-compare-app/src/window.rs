@@ -16,6 +16,9 @@ pub fn run() -> std::process::ExitCode {
         shell::bind_keys(cx);
         crate::screens::compare_host::bind_compare_keys(cx);
         install_compare_hooks(cx);
+        if let Err(message) = Shell::install_sessions(None, cx) {
+            report(&message);
+        }
         let opened = initialised
             .map_err(|error| error.to_string())
             .and_then(|()| open(cx));
@@ -41,7 +44,9 @@ fn open(cx: &mut App) -> Result<(), String> {
         ..navo_ui::window_options(brand::NAME)
     };
     navo_ui::open_window(options, cx, |window, cx| {
-        cx.new(|cx| Shell::new(window, cx))
+        let shell = cx.new(|cx| Shell::new(window, cx));
+        shell.update(cx, |shell, cx| shell.sync_rows(cx));
+        shell
     })
     .map(|_| ())
     .map_err(|error| format!("could not open the window: {error:#}"))

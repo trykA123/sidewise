@@ -1,6 +1,10 @@
 //! Tab lifecycle of the shell: the tab types, and opening, closing, switching and tracking tabs.
 //! A child module of `shell`, so it reads the shell's private fields.
 
+use std::path::Path;
+
+use gpui_kit::Global;
+use navo_compare_profile::book::{SessionBook, Visit, now_ms};
 use navo_compare_profile::recent::StartRows;
 use navo_ui::prelude::*;
 
@@ -9,6 +13,7 @@ use crate::chrome::topbar_status::TopbarMode;
 use crate::screens::compare_run::RunError;
 use crate::screens::compare_tab::{CompareRequest, CompareTab, TabView};
 use crate::start::{StartEvent, StartScreen};
+use crate::start_tabs::{StartChoice, StartMode};
 use navo_compare_cli::args::SideSpec;
 
 /// What a tab shows: the start screen or a compare; each tab owns its screen.
@@ -29,10 +34,10 @@ pub(super) fn tab_titles(tabs: &[ShellTab]) -> Vec<SharedString> {
     tabs.iter().map(|tab| tab.title.clone()).collect()
 }
 
-/// A fresh start tab titled "New compare", with its own start screen over no stored rows yet.
+/// A fresh start tab titled "New compare", with its own start screen over the stored rows.
 pub(super) fn start_tab(window: &mut Window, cx: &mut Context<Shell>) -> ShellTab {
     let cwd = std::env::current_dir().unwrap_or_default();
-    let screen = cx.new(|cx| StartScreen::new(StartRows::default(), cwd, window, cx));
+    let screen = cx.new(|cx| StartScreen::new(stored_rows(cx), cwd, window, cx));
     cx.subscribe_in(&screen, window, |this, screen, event, window, cx| {
         this.on_start((screen, event), window, cx);
     })
@@ -111,7 +116,7 @@ impl Shell {
     }
 
     /// Routes one start tab's event; the `subscribe_in` made in `start_tab` calls it.
-    /// `Compare` opens a compare tab in place of that start tab; other events do nothing yet.
+    /// `Compare` opens and records a compare tab in place of that start tab; `Open` reopens a stored session.
     fn on_start(
         &mut self,
         (screen, event): (&Entity<StartScreen>, &StartEvent),
@@ -125,21 +130,21 @@ impl Shell {
         else {
             return;
         };
-        let StartEvent::Compare {
-            left: SideSpec::Path(left),
-            right: SideSpec::Path(right),
-            choice,
-        } = event
-        else {
-            return;
+        let (left, right, choice) = match event {
+            StartEvent::Open { id } => return self.reopen((index, id), window, cx),
+            StartEvent::Compare {
+                left: SideSpec::Path(left),
+                right: SideSpec::Path(right),
+                choice,
+            } => (left, right, choice),
+            StartEvent::Compare { .. } => return,
         };
         let request = CompareRequest {
             left: left.clone(),
             right: right.clone(),
             choice: *choice,
         };
-        // The error already shows as a toast inside `open_compare`.
-        let _ = self.open_compare((index, request), window, cx);
+        self.open_recorded((index, request), window, cx);
     }
 
     /// Replaces the tab at `index` with a compare tab, makes it active and syncs the chrome.
@@ -283,3 +288,108 @@ impl Shell {
         self.topbar.update(cx, |bar, cx| bar.set_mode(mode, cx));
     }
 }
+
+/// The app's session book as a GPUI global; absent when the profile did not open and in tests that install none.
+struct Sessions(SessionBook);
+impl Global for Sessions {}
+
+/// The stored rows, or no rows without a book.
+fn stored_rows(cx: &App) -> StartRows {
+    cx.try_global::<Sessions>()
+        .map(|sessions| sessions.0.rows().clone())
+        .unwrap_or_default()
+}
+
+/// Unix seconds now.
+fn now_s() -> i64 {
+    i64::try_from(now_ms() / 1000).unwrap_or(i64::MAX)
+}
+
+impl Shell {
+    /// Opens the session book (`explicit` folder, else the platform folders) as the app global; Err is the text to print.
+    pub(crate) fn install_sessions(explicit: Option<&Path>, cx: &mut App) -> Result<(), String> {
+        let book = SessionBook::open(explicit, now_s())?;
+        cx.set_global(Sessions(book));
+        Ok(())
+    }
+
+    /// Pushes the stored rows into the sidebar and into every start tab.
+    pub(crate) fn sync_rows(&self, cx: &mut Context<Self>) {
+        let rows = stored_rows(cx);
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.set_rows(rows.clone(), cx));
+        let screens = self.tabs.iter().filter_map(|tab| match &tab.kind {
+            TabKind::Start(screen) => Some(screen.clone()),
+            TabKind::Compare(_) => None,
+        });
+        for screen in screens.collect::<Vec<_>>() {
+            let rows = rows.clone();
+            screen.update(cx, |screen, cx| {
+                screen.rows = rows;
+                screen.selected = None;
+                cx.notify();
+            });
+        }
+    }
+
+    /// `open_compare`; when it returns Ok, remembers the request. An error already toasted.
+    pub(crate) fn open_recorded(
+        &mut self,
+        (index, request): (usize, CompareRequest),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .open_compare((index, request.clone()), window, cx)
+            .is_ok()
+        {
+            self.remember(&request, cx);
+        }
+    }
+
+    /// Records the compare in the book (no book: nothing); a save error shows as a toast.
+    fn remember(&mut self, request: &CompareRequest, cx: &mut Context<Self>) {
+        if !cx.has_global::<Sessions>() {
+            return;
+        }
+        let visit = Visit {
+            left: request.left.clone(),
+            right: request.right.clone(),
+            respect_gitignore: request.choice.respect_gitignore,
+        };
+        if let Err(text) = cx.global_mut::<Sessions>().0.record(&visit, now_ms()) {
+            self.toast(text, cx);
+        }
+        self.sync_rows(cx);
+    }
+
+    /// Opens stored session `id` in the tab at `index`; a bad session shows one toast and the rows refresh.
+    fn reopen(&mut self, (index, id): (usize, &str), window: &mut Window, cx: &mut Context<Self>) {
+        if !cx.has_global::<Sessions>() {
+            return;
+        }
+        match cx.global::<Sessions>().0.load(id) {
+            Ok(visit) => {
+                let choice = StartChoice {
+                    mode: StartMode::Folder,
+                    respect_gitignore: visit.respect_gitignore,
+                };
+                let request = CompareRequest {
+                    left: visit.left,
+                    right: visit.right,
+                    choice,
+                };
+                self.open_recorded((index, request), window, cx);
+            }
+            Err(text) => {
+                self.toast(text, cx);
+                let _ = cx.global_mut::<Sessions>().0.refresh(now_s());
+                self.sync_rows(cx);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "shell_session_tests.rs"]
+mod session_tests;

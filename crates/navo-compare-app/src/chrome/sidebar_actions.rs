@@ -6,6 +6,7 @@ use gpui_kit::{
     AnyElement, Bounds, FocusHandle, HoverListenerMode, KeyDownEvent, MouseButton, ReadGlobal as _,
     Role, Stateful, canvas, transparent_black,
 };
+use navo_compare_profile::recent::StartRows;
 use navo_ui::prelude::*;
 use navo_ui::primitives::icon;
 
@@ -296,5 +297,19 @@ impl Sidebar {
             &self.tab_focuses[target_ix - 1]
         };
         target.focus(window, cx);
+    }
+}
+
+impl Sidebar {
+    /// Replaces the Recent and Named rows and redraws.
+    pub fn set_rows(&mut self, rows: StartRows, cx: &mut Context<Self>) {
+        self.rows = rows;
+        cx.notify();
+    }
+
+    /// The rows shown (lets the shell tests read them).
+    #[cfg(test)]
+    pub(crate) fn rows(&self) -> &StartRows {
+        &self.rows
     }
 }
