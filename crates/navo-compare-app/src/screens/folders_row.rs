@@ -11,7 +11,7 @@ use gpui_kit::{
     IntoElement, ParentElement, Pixels, SharedString, StatefulInteractiveElement, Styled, canvas,
     div, img, px,
 };
-use navo_ui::browser::CompareFilter;
+use sidewise_ui::browser::CompareFilter;
 
 use super::folders_cells_view::{cell_view, gutter_view};
 use super::folders_model::{Mix, TreeLine};

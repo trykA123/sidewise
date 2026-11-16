@@ -7,9 +7,9 @@ use gpui_kit::{App, FocusHandle, Subscription, WindowAppearance};
 use navo_compare_profile::appearance::PaletteId;
 use navo_compare_profile::brand;
 use navo_compare_profile::recent::StartRows;
-use navo_ui::NavoTitleBar;
-use navo_ui::prelude::*;
-use navo_ui::tokens;
+use sidewise_kit::prelude::*;
+use sidewise_kit::title_bar::NavoTitleBar;
+use sidewise_kit::tokens;
 
 use crate::chrome::sidebar::{DismissTip, Sidebar, SidebarEvent, ToggleRail};
 use crate::chrome::status_bar::{StatusBar, StatusHint};

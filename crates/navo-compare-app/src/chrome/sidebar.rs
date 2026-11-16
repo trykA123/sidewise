@@ -5,8 +5,8 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{AnimationExt, EventEmitter, FocusHandle, KeyBinding, ReadGlobal, Role, img};
 use navo_compare_profile::recent::{StartRow, StartRows};
-use navo_ui::prelude::*;
-use navo_ui::primitives::icon;
+use sidewise_kit::prelude::*;
+use sidewise_kit::primitives::icon;
 
 use crate::icons::{MaterialIcon, cache::IconCache, icon_id};
 use crate::motion;

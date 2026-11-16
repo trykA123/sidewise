@@ -9,7 +9,7 @@ use gpui_kit::{
     size,
 };
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::{self, Mode};
+use sidewise_kit::tokens::{self, Mode};
 
 use crate::shell::{Shell, bind_keys};
 use crate::start::Side;

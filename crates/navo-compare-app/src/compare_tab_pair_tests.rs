@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext};
-use navo_ui::window_view::ScreenEvent;
+use sidewise_ui::window_view::ScreenEvent;
 
 use crate::compare_tab_script::scripted_shell;
 use crate::compare_tab_tests::{TempDir, submit, wait_for_row};

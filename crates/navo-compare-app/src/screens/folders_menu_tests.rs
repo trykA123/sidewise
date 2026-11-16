@@ -54,7 +54,7 @@ fn menu_lines(
     let menu = view.read_with(cx, |view, _| menu_view(&view.menu));
     let menu = menu.expect("open menu");
     menu.read_with(cx, |menu, _| {
-        let sep = navo_core::shell_menu::ItemKind::Separator;
+        let sep = sidewise_core::shell_menu::ItemKind::Separator;
         let items = menu.menu().items.iter().filter(|item| item.kind != sep);
         items
             .map(|i| (i.text.clone(), i.accelerator.clone(), i.enabled))

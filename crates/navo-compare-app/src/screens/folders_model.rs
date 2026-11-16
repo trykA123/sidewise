@@ -4,8 +4,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use navo_ui::browser::{CompareFilter, CompareKind, CompareRow, RowStatus};
-use navo_ui::compare_diff::map::{HunkKind, MapHunk};
+use sidewise_ui::browser::{CompareFilter, CompareKind, CompareRow, RowStatus};
+use sidewise_ui::compare_diff::map::{HunkKind, MapHunk};
 
 use super::folders_cells::{GutTag, Newer, SideCell, child_counts, gut_of, newer_of, side_cell};
 

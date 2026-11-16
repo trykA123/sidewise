@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, FocusHandle, TestAppContext};
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::Mode;
+use sidewise_kit::tokens::Mode;
 
 use super::*;
 use crate::test_window::open;

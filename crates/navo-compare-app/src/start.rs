@@ -11,8 +11,8 @@ use gpui_kit::{
 };
 use navo_compare_cli::args::{self, SideSpec};
 use navo_compare_profile::recent::StartRows;
-use navo_ui::prelude::*;
-use navo_ui::primitives::{TextFieldState, text_field_state};
+use sidewise_kit::prelude::*;
+use sidewise_kit::primitives::{TextFieldState, text_field_state};
 
 use crate::menu_host::MenuSlot;
 use crate::start_menu::{CopyPaths, ForgetSelected, ShowRowMenu};

@@ -2,8 +2,8 @@
 //! A child of `screens`; the shell binds them through `shell_keys::bind_keys`.
 
 use gpui_kit::{App, KeyBinding};
-use navo_ui::compare_diff::{PairRequest, StreamList};
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
+use sidewise_ui::compare_diff::{PairRequest, StreamList};
 
 use super::compare_tab::{CONTEXT, CompareTab, OWN, TabView};
 use super::pair_requests::stream_request;

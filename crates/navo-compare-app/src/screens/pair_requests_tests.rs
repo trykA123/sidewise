@@ -1,6 +1,6 @@
 //! Tests for the Stream's pairs built from a folder session's rows.
 
-use navo_ui::browser::{
+use sidewise_ui::browser::{
     CompareControl, CompareKind, CompareRow, CompareSide, CompareUpdate, FolderSession, RowStatus,
 };
 

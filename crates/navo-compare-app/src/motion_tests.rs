@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use gpui_kit::{ReadGlobal, TestAppContext};
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::Mode;
+use sidewise_kit::tokens::Mode;
 
 use crate::motion::{anim, ease_out_quint, hover, menu, row, screen, sheet, side, theme};
 use crate::theme::{SidewiseTheme, apply_sidewise};

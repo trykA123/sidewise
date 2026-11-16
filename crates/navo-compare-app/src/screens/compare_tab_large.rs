@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use gpui_kit::{AsyncApp, WeakEntity};
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 use super::compare_tab::{CompareTab, TabView};
 use super::large_view::{LargeEvent, LargeSnapshot};

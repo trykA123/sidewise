@@ -3,7 +3,7 @@
 
 use gpui_kit::{Bounds, ClipboardItem, Pixels, Point};
 use navo_compare_profile::recent::StartRow;
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 use crate::menu_host::{MenuAt, MenuLine, show_menu};
 use crate::start::{OpenSelected, StartEvent, StartScreen};

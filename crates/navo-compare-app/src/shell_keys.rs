@@ -16,7 +16,7 @@ gpui_kit::actions!(shell, [NewTab, CloseTab, NextTab, PrevTab, CyclePane]);
 /// Key context of the shell's root element; the tab keys are bound inside it.
 pub(super) const CONTEXT: &str = "Shell";
 
-/// Binds the shell, start screen, sidebar, and topbar keys; call once after `navo_ui::init`.
+/// Binds the shell, start screen, sidebar, and topbar keys; call once after `sidewise_kit::init`.
 pub fn bind_keys(cx: &mut App) {
     start::bind_keys(cx);
     folders_view::bind_keys(cx);

@@ -2,7 +2,7 @@
 
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AppContext as _, TestAppContext};
-use navo_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
+use sidewise_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
 
 use super::tests::view;
 

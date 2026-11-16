@@ -2,7 +2,7 @@
 //! A child module of `shell`. The drawer host stays unmounted (NC119).
 
 use gpui_kit::{App, Subscription, WeakEntity};
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 use super::Shell;
 use crate::chrome::topbar_status::Action;

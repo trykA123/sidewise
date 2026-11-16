@@ -2,10 +2,10 @@
 //! and which pair opens (H3).
 
 use gpui_kit::Focusable as _;
-use navo_ui::browser::FolderSession;
-use navo_ui::compare_diff::PairRequest;
-use navo_ui::prelude::*;
-use navo_ui::window_view::ScreenEvent;
+use sidewise_kit::prelude::*;
+use sidewise_ui::browser::FolderSession;
+use sidewise_ui::compare_diff::PairRequest;
+use sidewise_ui::window_view::ScreenEvent;
 
 use super::compare_run::RunKind;
 use super::compare_tab::{CompareRequest, CompareTab, TabView};

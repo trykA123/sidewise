@@ -8,7 +8,7 @@ use gpui_kit::{
     WindowOptions, canvas, div, point, px, size,
 };
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::Mode;
+use sidewise_kit::tokens::Mode;
 
 use super::*;
 use crate::theme::{SidewiseTheme, apply_sidewise};

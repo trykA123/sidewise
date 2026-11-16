@@ -1,7 +1,7 @@
 //! Presentation model for the large compare screen: per-stage meters, the D5 tiles and the
 //! slow-file note. It reads engine updates and holds no GPUI state.
 
-use navo_ui::browser::{ComparePhase, CompareTotals, CompareUpdate, SlowPath};
+use sidewise_ui::browser::{ComparePhase, CompareTotals, CompareUpdate, SlowPath};
 
 /// The number of walk stages the meter strip shows, one per `ComparePhase`.
 const PHASES: usize = 3;

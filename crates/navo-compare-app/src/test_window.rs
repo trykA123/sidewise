@@ -4,7 +4,7 @@ use gpui_kit::{
     AnyWindowHandle, AppContext, Bounds, Context, Entity, Point, Render, TestAppContext, Window,
     WindowBounds, WindowOptions, px, size,
 };
-use navo_ui::tokens::{self, Mode};
+use sidewise_kit::tokens::{self, Mode};
 
 /// Opens a test window holding the view `build` makes; returns the window handle and the view.
 /// Fails (test panic) when the window cannot open.

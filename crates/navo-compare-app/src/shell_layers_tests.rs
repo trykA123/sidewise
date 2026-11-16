@@ -9,9 +9,9 @@ use gpui_kit::{
     AnyWindowHandle, AppContext as _, Entity, Modifiers, TestAppContext, VisualTestContext,
 };
 use navo_compare_profile::appearance::ViewPresetPref;
-use navo_core::Location;
-use navo_ui::browser::{CompareControl, CompareHooks, CompareSink};
-use navo_ui::compare_diff::CompareOptions;
+use sidewise_core::Location;
+use sidewise_ui::browser::{CompareControl, CompareHooks, CompareSink};
+use sidewise_ui::compare_diff::CompareOptions;
 
 use crate::compare_tab_tests::{TempDir, shell, submit};
 use crate::screens::compare_tab::{CompareRequest, TabView, install_test_hooks};

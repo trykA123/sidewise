@@ -4,7 +4,7 @@ use std::fs;
 
 use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext};
 
-use navo_ui::window_view::ScreenEvent;
+use sidewise_ui::window_view::ScreenEvent;
 
 use crate::chrome::topbar_status::TopbarMode;
 use crate::compare_tab_script::scripted_shell;

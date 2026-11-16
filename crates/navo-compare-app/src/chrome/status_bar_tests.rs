@@ -9,9 +9,9 @@ use gpui_kit::{
     SharedString, TestAppContext, WindowBounds, WindowOptions, div, px, size,
 };
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::prelude::*;
-use navo_ui::primitives::Kbd;
-use navo_ui::tokens::Mode;
+use sidewise_kit::prelude::*;
+use sidewise_kit::primitives::Kbd;
+use sidewise_kit::tokens::Mode;
 
 use super::status_bar::{StatusBar, StatusHint};
 use crate::theme::apply_sidewise;

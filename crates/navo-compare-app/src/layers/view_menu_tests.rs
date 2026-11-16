@@ -7,7 +7,7 @@ use std::rc::Rc;
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{Role, Subscription, TestAppContext};
 use navo_compare_profile::appearance::{LayoutPref, PaletteId};
-use navo_ui::tokens::Mode;
+use sidewise_kit::tokens::Mode;
 
 use super::*;
 use crate::test_window::open;

@@ -1,6 +1,6 @@
 //! Tests for the large compare model: meter fractions, generation handling, tiles, notes and labels.
 
-use navo_ui::browser::{ComparePhase, CompareTotals, CompareUpdate, SlowPath};
+use sidewise_ui::browser::{ComparePhase, CompareTotals, CompareUpdate, SlowPath};
 
 use super::large_model::{Meter, PhaseMeters, phase_label, slow_note, tiles};
 

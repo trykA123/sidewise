@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, Pixels, TestAppContext};
-use navo::compare::diff::DiffBackend;
+use sidewise_host::compare::diff::hooks::DiffBackend;
 
 use crate::compare_tab_script::scripted_shell;
 use crate::compare_tab_tests::TempDir;
@@ -32,7 +32,7 @@ fn changes_bottom_and_footer_top(cx: &mut TestAppContext) -> (Pixels, Pixels) {
     fs::write(&left, lines("left")).expect("write left");
     fs::write(&right, lines("right")).expect("write right");
     let opened: (AnyWindowHandle, Entity<Shell>) = scripted_shell(cx);
-    TEST_DIFF_HOOKS.with_borrow_mut(|slot| *slot = Some(Arc::new(DiffBackend::in_memory())));
+    TEST_DIFF_HOOKS.with_borrow_mut(|slot| *slot = Some(Arc::new(DiffBackend::default())));
     let (window, view) = &opened;
     let request = CompareRequest {
         left,

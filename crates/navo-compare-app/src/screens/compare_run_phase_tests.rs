@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
-use navo_core::Location;
-use navo_ui::browser::{
+use sidewise_core::Location;
+use sidewise_ui::browser::{
     CompareControl, CompareHooks, ComparePhase, CompareSink, CompareUpdate, Waker,
 };
-use navo_ui::compare_diff::CompareOptions;
+use sidewise_ui::compare_diff::CompareOptions;
 
 use super::compare_run::CompareRun;
 use super::large_model::Meter;

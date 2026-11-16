@@ -1,7 +1,7 @@
 //! Keyboard order of the start screen: the six stops Tab and Shift+Tab walk, and who holds focus.
 //! It extends `StartScreen`; the tab cells' focus handles come from `StartTabs`.
 
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 use crate::start::{Side, StartScreen};
 

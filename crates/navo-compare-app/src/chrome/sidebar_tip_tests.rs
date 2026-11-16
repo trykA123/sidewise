@@ -5,7 +5,7 @@ use gpui_kit::{
     AnyWindowHandle, Modifiers, Point, Role, TestAppContext, VisualTestContext, point, px,
 };
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::Mode;
+use sidewise_kit::tokens::Mode;
 
 use super::sidebar_tests::{HostRig, open_host_with_outside};
 use super::*;

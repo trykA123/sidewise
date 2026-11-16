@@ -6,8 +6,8 @@ use gpui_kit::base::{ObservedElement, TestSupportExt as _};
 use gpui_kit::{
     AnimationExt, BoxShadow, KeyDownEvent, ReadGlobal, Role, Stateful, Toggled, transparent_black,
 };
-use navo_ui::prelude::*;
-use navo_ui::primitives::{Kbd, icon};
+use sidewise_kit::prelude::*;
+use sidewise_kit::primitives::{Kbd, icon};
 
 use super::{Act, ITEMS, ViewMenu};
 use crate::motion;

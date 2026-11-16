@@ -3,7 +3,7 @@
 
 use gpui_kit::Hsla;
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::{Mode, contrast_ratio, relative_luminance};
+use sidewise_kit::tokens::{Mode, contrast_ratio, relative_luminance};
 
 use super::change_syntax::{
     CHANGE_TOKENS, ChangeKind, ChangeTone, SYNTAX_TOKENS, change_tokens, syntax_tokens,

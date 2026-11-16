@@ -9,10 +9,10 @@ use gpui_kit::{
     AnyWindowHandle, AppContext as _, Entity, Focusable as _, TestAppContext, px, size,
 };
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
-use navo_ui::tokens::Mode;
+use sidewise_kit::tokens::Mode;
+use sidewise_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
 
-use navo_ui::compare_diff::map::MapEvent;
+use sidewise_ui::compare_diff::map::MapEvent;
 
 use super::{FoldersEvent, FoldersView, bind_keys};
 use crate::test_window::open;

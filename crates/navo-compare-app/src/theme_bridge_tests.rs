@@ -6,7 +6,7 @@ use std::time::Duration;
 use gpui_kit::component::theme::{Theme as KitTheme, ThemeMode};
 use gpui_kit::{App, Hsla, ReadGlobal, Rgba, TestAppContext};
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::{self, Mode};
+use sidewise_kit::tokens::{self, Mode};
 
 use crate::theme::{SidewiseTheme, apply_sidewise};
 use crate::theme_data::change_syntax::{ChangeKind, change_tokens, syntax_tokens};

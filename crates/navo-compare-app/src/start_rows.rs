@@ -6,8 +6,8 @@ use std::rc::Rc;
 
 use gpui_kit::{Bounds, FocusHandle, Pixels, TestSupportExt, canvas};
 use navo_compare_profile::recent::{RowKind, StartRow, StartRows};
-use navo_ui::prelude::*;
-use navo_ui::tokens;
+use sidewise_kit::prelude::*;
+use sidewise_kit::tokens;
 
 use crate::start::StartScreen;
 use crate::start_menu::{CopyPaths, ForgetSelected, ShowRowMenu};

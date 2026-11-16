@@ -1,5 +1,5 @@
 //! The Sidewise theme injector (NC66): one palette and mode projected onto `SidewiseTheme`,
-//! `navo_ui::tokens::Theme` and the gpui-kit theme, so no projection is left behind.
+//! `sidewise_kit::tokens::Theme` and the gpui-kit theme, so no projection is left behind.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,7 +8,7 @@ use gpui_kit::component::highlighter::{HighlightTheme, SyntaxColors};
 use gpui_kit::component::theme::{Theme as KitTheme, ThemeColor, ThemeMode, ThemeTokens};
 use gpui_kit::{App, Global, Hsla, Rgba, WindowAppearance};
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::{
+use sidewise_kit::tokens::{
     self, Colors, DiffColors, DiffTone, MarkColors, Mode, Motion, Rows, Surfaces, Theme,
 };
 

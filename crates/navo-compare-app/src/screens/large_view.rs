@@ -3,9 +3,9 @@
 
 use gpui_kit::base::TestTextExt as _;
 use gpui_kit::{AnimationExt, EventEmitter, FocusHandle, Focusable, KeyBinding, relative};
-use navo_ui::browser::{ComparePhase, CompareTotals, SlowPath};
-use navo_ui::prelude::*;
-use navo_ui::tokens;
+use sidewise_kit::prelude::*;
+use sidewise_kit::tokens;
+use sidewise_ui::browser::{ComparePhase, CompareTotals, SlowPath};
 
 use super::large_model::{PhaseMeters, phase_label, slow_note, tiles};
 use crate::motion;

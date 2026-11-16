@@ -6,7 +6,7 @@ use gpui_kit::{
     Anchor, AnyElement, App, Bounds, HoverListenerMode, Pixels, Role, SharedString, Window,
     anchored, deferred, div, px,
 };
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 use crate::theme_data::palettes::{DIMS, ModeTokens};
 

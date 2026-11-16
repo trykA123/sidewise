@@ -13,7 +13,7 @@ use gpui_kit::{
     Window, WindowBounds, WindowOptions, div, point, px, size,
 };
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::Mode;
+use sidewise_kit::tokens::Mode;
 
 use super::topbar_status::{Action, Crumbs, MIN_W, Topbar, TopbarMode, bind_keys};
 use crate::theme::apply_sidewise;

@@ -1,45 +1,71 @@
-//! Tests for the compare host: key binding count, read-only file hooks and opening a text pair.
+//! Tests for the compare host: key binding count, the compare file reads and opening a text pair.
 
 use std::fs;
 use std::sync::Arc;
 
-use navo_ui::browser::Waker;
-use navo_ui::commands::{COMPARE_KEYMAP, Keymap};
-use navo_ui::compare_diff::PairRequest;
+use sidewise_ui::browser::Waker;
+use sidewise_ui::compare_diff::PairRequest;
+use sidewise_ui::compare_keys::compare_keys;
 
-use super::compare_host::{bind_compare_keys, new_compare_screen, read_only_file_hooks};
+use super::compare_host::{action_name, bind_compare_keys, new_compare_screen};
 use super::compare_run::location_of;
+use super::host_parts::compare_files;
 
-/// The binding count equals the keys of every parsed bind that has an action.
+/// Every compare key that names a registered action binds; the count matches those keys.
 #[gpui_kit::test]
 fn bind_compare_keys_binds_every_compare_key(cx: &mut gpui_kit::TestAppContext) {
-    let keymap = Keymap::parse(COMPARE_KEYMAP).expect("parse compare keymap");
-    let expected: usize = keymap
-        .binds()
-        .iter()
-        .filter(|bind| bind.spec.action.is_some())
-        .map(|bind| bind.keys.len())
-        .sum();
-    let added = cx.update(|cx| {
+    let (added, expected, failed_compare) = cx.update(|cx| {
         gpui_kit::init(cx);
-        bind_compare_keys(cx)
+        let added = bind_compare_keys(cx);
+        let mut expected = 0;
+        let mut failed_compare = Vec::new();
+        for entry in compare_keys().expect("the compare key file parses") {
+            let builds = action_name(&entry.command)
+                .is_some_and(|name| cx.build_action(&name, None).is_ok());
+            if builds {
+                expected += entry.keys.len();
+            } else if entry.command.starts_with("compare.") {
+                failed_compare.push(entry.command);
+            }
+        }
+        (added, expected, failed_compare)
     });
-    assert!(expected > 0);
     assert_eq!(added, expected);
+    assert!(
+        failed_compare.is_empty(),
+        "compare commands that do not build: {failed_compare:?}"
+    );
+    assert!(expected > 0);
 }
 
-/// The hooks read a local file as text and as bytes.
+/// A command name becomes a PascalCase action name after its namespace.
 #[test]
-fn read_only_file_hooks_read_local_files() {
+fn action_name_pascal_cases_the_command() {
+    assert_eq!(
+        action_name("compare.next_difference"),
+        Some("compare::NextDifference".to_owned())
+    );
+    assert_eq!(
+        action_name("viewer.page_up"),
+        Some("viewer::PageUp".to_owned())
+    );
+    assert_eq!(action_name("nodot"), None);
+}
+
+/// The compare files read a local file as bytes up to a limit and open it as a paged source.
+#[test]
+fn compare_files_read_local_files() {
     let path = std::env::temp_dir().join(format!("sidewise-host-{}.txt", std::process::id()));
     fs::write(&path, b"hello").expect("write temp file");
     let loc = location_of(&path).expect("location");
-    let hooks = read_only_file_hooks();
-    let text = (hooks.read)(&loc).expect("read text");
-    let bytes = (hooks.bytes)(&loc, 64).expect("read bytes");
+    let files = compare_files();
+    let bytes = (files.bytes)(&loc, 64).expect("read bytes");
+    let too_large = (files.bytes)(&loc, 2).expect_err("limit rejects the file");
+    let source = (files.source)(&loc).expect("open source");
     let _ = fs::remove_file(&path);
-    assert_eq!(text.text, "hello");
     assert_eq!(bytes, b"hello");
+    assert!(too_large.contains("Too large"), "message: {too_large}");
+    assert_eq!(source.len(), 5);
 }
 
 /// A text pair opens in the file diff.

@@ -3,7 +3,7 @@
 
 use gpui_kit::{EventEmitter, FocusHandle, KeyDownEvent};
 use navo_compare_profile::appearance::{LayoutPref, UiPrefs, ViewPresetPref};
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 /// The two individual View toggles the screen reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

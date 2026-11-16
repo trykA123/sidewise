@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::{AnimationExt, Global, ReadGlobal, Task, WeakEntity};
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 use crate::motion;
 use crate::theme::SidewiseTheme;
@@ -217,7 +217,7 @@ mod tests {
     use gpui_kit::TestAppContext;
     use gpui_kit::test::TestWindowExt;
     use navo_compare_profile::appearance::PaletteId;
-    use navo_ui::tokens::Mode;
+    use sidewise_kit::tokens::Mode;
 
     use super::*;
     use crate::test_window::open;

@@ -6,7 +6,7 @@ use gpui_kit::Global;
 use navo_compare_profile::appearance::{AppearanceError, UiPrefs, load_or_default, save};
 use navo_compare_profile::book::profile_text;
 use navo_compare_profile::paths::{Profile, open_profile};
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 /// The View preferences and the profile they save to; `profile` is None when no profile opened.
 struct Prefs {

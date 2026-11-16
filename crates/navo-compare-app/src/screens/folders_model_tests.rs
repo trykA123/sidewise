@@ -1,7 +1,7 @@
 //! Tests for the folder tree model: tones, mixes, filters, expansion and the change map.
 
-use navo_ui::browser::{CompareFilter, CompareKind, CompareRow, CompareSide, RowStatus};
-use navo_ui::compare_diff::map::HunkKind;
+use sidewise_ui::browser::{CompareFilter, CompareKind, CompareRow, CompareSide, RowStatus};
+use sidewise_ui::compare_diff::map::HunkKind;
 
 use super::folders_model::{FolderTree, SwTone, TreeLine, map_hunks, tone_of};
 

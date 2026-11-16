@@ -5,7 +5,7 @@ use gpui_kit::{
     base::{TestSupportExt as _, TestTextExt as _},
     div,
 };
-use navo_ui::{prelude::*, primitives::Kbd, tokens};
+use sidewise_kit::{prelude::*, primitives::Kbd, tokens};
 
 /// One keyboard hint displayed on the right side of [`StatusBar`].
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -5,9 +5,9 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 
-use navo_core::{Location, ProviderPath};
-use navo_ui::browser::{CompareHooks, CompareSink, CompareUpdate, FolderSession, Waker};
-use navo_ui::compare_diff::CompareOptions;
+use sidewise_core::{Location, ProviderPath};
+use sidewise_ui::browser::{CompareHooks, CompareSink, CompareUpdate, FolderSession, Waker};
+use sidewise_ui::compare_diff::CompareOptions;
 
 use crate::screens::large_model::PhaseMeters;
 use crate::start::Side;
@@ -173,9 +173,11 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use navo::compare::PaneCompare;
+    use sidewise_host::compare::handle::std_local;
+    use sidewise_host::compare::pane::PaneCompare;
 
     use super::*;
+    use crate::screens::host_parts::NoHashes;
 
     const WAIT: Duration = Duration::from_secs(20);
 
@@ -299,7 +301,7 @@ mod tests {
         let mut run = CompareRun::start(
             (left.path(), right.path()),
             &StartChoice::default(),
-            &PaneCompare::default(),
+            &PaneCompare::new(Arc::new(NoHashes), std_local()),
             wake,
         )
         .expect("start folders");
@@ -342,7 +344,7 @@ mod tests {
         let mut run = CompareRun::start(
             (&left_file, &right_file),
             &StartChoice::default(),
-            &PaneCompare::default(),
+            &PaneCompare::new(Arc::new(NoHashes), std_local()),
             wake,
         )
         .expect("start files");

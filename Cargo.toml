@@ -12,7 +12,9 @@ publish = false
 license = "MIT OR Apache-2.0"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# sidewise-fs allows unsafe_code for its Windows handle query, which `forbid` would reject.
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
 unused_must_use = "deny"
 
 [workspace.lints.clippy]
@@ -27,6 +29,7 @@ print_stdout = "deny"
 todo = "deny"
 too_many_arguments = "deny"
 too_many_lines = "deny"
+undocumented_unsafe_blocks = "deny"
 unimplemented = "deny"
 unwrap_used = "deny"
 

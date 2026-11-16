@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use navo_compare_profile::brand;
-use navo_ui::prelude::*;
-use navo_ui::tokens::Mode;
+use sidewise_kit::prelude::*;
+use sidewise_kit::tokens::Mode;
 
 use crate::launch::Opening;
 use crate::screens::compare_tab::{CompareRequest, install_compare_hooks};
@@ -16,8 +16,8 @@ pub fn run(opening: Opening) -> std::process::ExitCode {
     let failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let run_failed = failed.clone();
     let Opening { pair, profile } = opening;
-    navo_ui::application().run(move |cx| {
-        let initialised = navo_ui::init(Mode::Light, cx);
+    sidewise_kit::application().run(move |cx| {
+        let initialised = sidewise_kit::init(Mode::Light, cx);
         shell::bind_keys(cx);
         crate::screens::compare_host::bind_compare_keys(cx);
         install_compare_hooks(cx);
@@ -49,9 +49,9 @@ fn open(cx: &mut App, pair: Option<(PathBuf, PathBuf)>) -> Result<(), String> {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         app_id: Some(brand::SLUG.into()),
-        ..navo_ui::window_options(brand::NAME)
+        ..sidewise_kit::title_bar::window_options(brand::NAME)
     };
-    navo_ui::open_window(options, cx, |window, cx| {
+    sidewise_kit::open_window(options, cx, |window, cx| {
         let shell = cx.new(|cx| Shell::new(window, cx));
         shell.update(cx, |shell, cx| {
             shell.sync_rows(cx);

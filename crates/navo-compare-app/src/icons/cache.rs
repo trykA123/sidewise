@@ -6,8 +6,8 @@ use std::sync::{Arc, LazyLock};
 use gpui_kit::assets::{Assets, IconName};
 use gpui_kit::{App, AssetSource, Global, RenderImage};
 use image::RgbaImage;
-use navo_ui::primitives::{gpu_images, new_image};
 use resvg::{tiny_skia, usvg};
+use sidewise_kit::primitives::{gpu_images, new_image};
 
 use super::MaterialIcon;
 

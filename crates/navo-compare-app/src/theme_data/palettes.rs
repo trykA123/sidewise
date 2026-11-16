@@ -198,7 +198,7 @@ const CONTRAST: [[Oklch; 23]; 2] = [
 #[cfg(test)]
 mod tests {
     use navo_compare_profile::appearance::PaletteId;
-    use navo_ui::tokens::{contrast_ratio, relative_luminance};
+    use sidewise_kit::tokens::{contrast_ratio, relative_luminance};
 
     use super::{PALETTES, oklch};
 

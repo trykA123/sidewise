@@ -1,8 +1,8 @@
 //! The Stream's pairs for the compare tab: a file diff's pair, the Stream's items and their
 //! pairs, and the pair beside a row. Adapted from Navo's compare entry.
 
-use navo_ui::browser::{FileDiffRequest, FolderSession};
-use navo_ui::compare_diff::{PairRequest, StreamList, is_stream_item, stream_items};
+use sidewise_ui::browser::{FileDiffRequest, FolderSession};
+use sidewise_ui::compare_diff::{PairRequest, StreamList, is_stream_item, stream_items};
 
 /// The file diff's form of a compare pair: the same id, path and sides.
 pub fn pair_request(asked: FileDiffRequest) -> PairRequest {

@@ -1,7 +1,7 @@
 //! Tests of the theme follow (NS19): the appearance mapping and the shell's tokens on open.
 
 use gpui_kit::{AppContext as _, TestAppContext, WindowAppearance};
-use navo_ui::tokens::{self, Mode};
+use sidewise_kit::tokens::{self, Mode};
 
 use crate::shell::Shell;
 use crate::test_window::open;

@@ -7,8 +7,8 @@ use gpui_kit::{
     ReadGlobal as _, Role, Stateful, canvas, transparent_black,
 };
 use navo_compare_profile::recent::StartRows;
-use navo_ui::prelude::*;
-use navo_ui::primitives::icon;
+use sidewise_kit::prelude::*;
+use sidewise_kit::primitives::icon;
 
 use super::rail_tooltip::{HoverPlace, RowKey, Target};
 use super::{DismissTip, Entry, ShowTabMenu, Sidebar};

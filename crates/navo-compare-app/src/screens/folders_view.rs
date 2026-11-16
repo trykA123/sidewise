@@ -10,8 +10,8 @@ use gpui_kit::{
     InteractiveElement, IntoElement, KeyBinding, ParentElement, Pixels, ReadGlobal, Render,
     ScrollStrategy, Styled, UniformListScrollHandle, Window, canvas, div, px, uniform_list,
 };
-use navo_ui::browser::{CompareFilter, CompareRow};
-use navo_ui::compare_diff::map::{ChangeMap, MapEvent};
+use sidewise_ui::browser::{CompareFilter, CompareRow};
+use sidewise_ui::compare_diff::map::{ChangeMap, MapEvent};
 
 use self::menu::{CopyLeftPath, ExpandAll, OpenStream, RevealLeft, ShowMenu, menu_actions};
 use super::folders_head::head_view;
@@ -318,7 +318,10 @@ impl FoldersView {
             view: cx.entity(),
             cursor_bounds: self.cursor_bounds.clone(),
             meta: self.meta,
-            mono: navo_ui::tokens::current(cx).typography.mono_font.clone(),
+            mono: sidewise_kit::tokens::current(cx)
+                .typography
+                .mono_font
+                .clone(),
         }
     }
 }

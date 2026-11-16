@@ -3,9 +3,9 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::base::TestTextExt as _;
-use navo_ui::prelude::*;
-use navo_ui::primitives::{Button, ButtonVariant, IconButton, Kbd, TextField};
-use navo_ui::tokens;
+use sidewise_kit::prelude::*;
+use sidewise_kit::primitives::{Button, ButtonVariant, IconButton, Kbd, TextField};
+use sidewise_kit::tokens;
 
 use crate::menu_host::menu_view;
 use crate::start::{

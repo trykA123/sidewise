@@ -6,12 +6,12 @@ use std::sync::{Arc, Mutex};
 
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext};
-use navo_core::Location;
-use navo_ui::browser::{
+use sidewise_core::Location;
+use sidewise_ui::browser::{
     CompareControl, CompareHooks, CompareKind, CompareRow, CompareSide, CompareSink, CompareTotals,
     CompareUpdate, RowStatus,
 };
-use navo_ui::compare_diff::{
+use sidewise_ui::compare_diff::{
     CompareOptions, DiffHooks, DiffSink, PairControl, PairRequest, StreamControl, StreamSink,
     ViewedKey,
 };

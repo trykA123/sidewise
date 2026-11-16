@@ -17,7 +17,7 @@ use gpui_kit::{
 };
 use navo_compare_cli::args::SideSpec;
 use navo_compare_profile::recent::StartRows;
-use navo_ui::tokens::{self, Mode};
+use sidewise_kit::tokens::{self, Mode};
 
 use crate::start::{Side, SideHint, StartEvent, StartScreen};
 use crate::test_window::open;

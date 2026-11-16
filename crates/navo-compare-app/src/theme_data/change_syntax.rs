@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 use gpui_kit::Hsla;
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::Mode;
+use sidewise_kit::tokens::Mode;
 
 use super::palettes::{Oklch, oklch};
 

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::{AnyWindowHandle, Entity, TestAppContext};
-use navo_ui::browser::{ComparePhase, CompareUpdate};
+use sidewise_ui::browser::{ComparePhase, CompareUpdate};
 
 use crate::compare_tab_script::{Held, SharedSink};
 use crate::compare_tab_tests::{TempDir, shell, submit};

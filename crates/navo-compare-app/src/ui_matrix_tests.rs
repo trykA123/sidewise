@@ -12,8 +12,8 @@ use gpui_kit::{
     size,
 };
 use navo_compare_profile::appearance::PaletteId;
-use navo_ui::tokens::{self, Mode};
-use navo_ui::window_view::ScreenEvent;
+use sidewise_kit::tokens::{self, Mode};
+use sidewise_ui::window_view::ScreenEvent;
 
 use crate::compare_tab_tests::{TempDir, shell, submit, wait_for_row};
 use crate::screens::compare_tab::{CompareTab, TabView};

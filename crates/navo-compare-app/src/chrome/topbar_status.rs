@@ -8,9 +8,9 @@ use gpui_kit::component::button::Button;
 use gpui_kit::component::input::{Input, InputEvent};
 use gpui_kit::component::{Disableable as _, Sizable as _};
 use gpui_kit::{FocusHandle, Hsla, KeyBinding, ReadGlobal, Role, Subscription};
-use navo_ui::prelude::*;
-use navo_ui::primitives::{TextFieldState, text_field_state};
-use navo_ui::tokens;
+use sidewise_kit::prelude::*;
+use sidewise_kit::primitives::{TextFieldState, text_field_state};
+use sidewise_kit::tokens;
 
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::{DIMS, ModeTokens};

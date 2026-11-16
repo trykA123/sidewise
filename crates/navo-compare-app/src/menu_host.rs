@@ -7,9 +7,9 @@ use gpui_kit::{
     Action, App, AppContext as _, Bounds, Context, Entity, FocusHandle, KeyBinding,
     KeyBindingContextPredicate, Pixels, Point, SharedString, Subscription, Window,
 };
-use navo_core::shell_menu::ItemId;
-use navo_ui::context_menu::{ContextMenu, ContextMenuEvent, ContextMenuInput};
-use navo_ui::window_view::{MenuEntry, viewer_menu};
+use sidewise_core::shell_menu::ItemId;
+use sidewise_kit::context_menu::{ContextMenu, ContextMenuEvent, ContextMenuInput};
+use sidewise_ui::window_view::viewer::{MenuEntry, viewer_menu};
 
 /// One line of a context menu: an action to run, or a separator.
 pub enum MenuLine {

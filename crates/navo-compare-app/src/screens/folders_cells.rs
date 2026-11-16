@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use navo_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
+use sidewise_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
 
 /// What one side of a row shows: size, time and, for a folder, its direct item count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

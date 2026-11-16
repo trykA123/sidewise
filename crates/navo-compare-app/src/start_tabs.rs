@@ -6,8 +6,8 @@ use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     FocusHandle, PaintQuad, Role, Stateful, Toggled, canvas, linear_color_stop, linear_gradient,
 };
-use navo_ui::prelude::*;
-use navo_ui::tokens;
+use sidewise_kit::prelude::*;
+use sidewise_kit::tokens;
 
 use crate::start::Side;
 use crate::start_focus::Stop;
@@ -258,7 +258,7 @@ mod start_v2_tests {
     use gpui_kit::test::TestWindowExt as _;
     use gpui_kit::{AnyWindowHandle, ElementId, Entity, TestAppContext, VisualTestContext};
     use navo_compare_profile::recent::StartRows;
-    use navo_ui::tokens::Mode;
+    use sidewise_kit::tokens::Mode;
 
     use super::*;
     use crate::start::StartScreen;

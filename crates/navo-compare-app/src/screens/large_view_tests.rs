@@ -5,8 +5,8 @@ use std::rc::Rc;
 
 use gpui_kit::base::test_support::texts;
 use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, Focusable as _, TestAppContext};
-use navo_ui::browser::{ComparePhase, CompareTotals, CompareUpdate};
-use navo_ui::tokens::Mode;
+use sidewise_kit::tokens::Mode;
+use sidewise_ui::browser::{ComparePhase, CompareTotals, CompareUpdate};
 
 use super::large_model::PhaseMeters;
 use super::large_view::{LargeEvent, LargeSnapshot, LargeView, bind_keys};

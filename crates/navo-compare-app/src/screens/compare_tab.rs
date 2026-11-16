@@ -8,15 +8,16 @@ use std::time::Duration;
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use gpui_kit::{AsyncApp, FocusHandle, Focusable, Global, Subscription, WeakEntity};
-use navo::compare::PaneCompare;
-use navo_ui::browser::Waker;
-use navo_ui::prelude::*;
-use navo_ui::window_view::CompareScreen;
+use sidewise_host::compare::pane::PaneCompare;
+use sidewise_kit::prelude::*;
+use sidewise_ui::browser::Waker;
+use sidewise_ui::window_view::CompareScreen;
 
 use super::compare_host::new_compare_screen;
 use super::compare_run::{CompareRun, RunError};
 use super::compare_tab_large::large_timer;
 use super::folders_view::FoldersView;
+use super::host_parts::NoHashes;
 use super::large_view::LargeView;
 use crate::start_tabs::StartChoice;
 
@@ -51,18 +52,21 @@ pub enum TabView {
 }
 
 /// The app's one folder-compare engine, shared by every compare tab.
-struct CompareHooks(Arc<dyn navo_ui::browser::CompareHooks>);
+struct CompareHooks(Arc<dyn sidewise_ui::browser::CompareHooks>);
 
 impl Global for CompareHooks {}
 
 /// Sets the app's one `Arc<PaneCompare>` global; `window::run` calls it once, tests call it before opening a shell.
 pub fn install_compare_hooks(cx: &mut App) {
-    cx.set_global(CompareHooks(Arc::new(PaneCompare::default())));
+    cx.set_global(CompareHooks(Arc::new(PaneCompare::new(
+        Arc::new(NoHashes),
+        sidewise_host::compare::handle::std_local(),
+    ))));
 }
 
 /// Test hook: replaces the compare engine with a scripted one.
 #[cfg(test)]
-pub(crate) fn install_test_hooks(hooks: Arc<dyn navo_ui::browser::CompareHooks>, cx: &mut App) {
+pub(crate) fn install_test_hooks(hooks: Arc<dyn sidewise_ui::browser::CompareHooks>, cx: &mut App) {
     cx.set_global(CompareHooks(hooks));
 }
 

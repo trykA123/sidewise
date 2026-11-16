@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{AnimationExt, AnyView, KeyBinding};
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 use super::keys_sheet::tokens_of;
 use crate::motion;

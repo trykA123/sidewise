@@ -1,7 +1,7 @@
 //! Tab lifecycle of the shell: the tab types, and opening, closing, switching and tracking tabs.
 //! A child module of `shell`, so it reads the shell's private fields.
 
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 use super::Shell;
 use crate::chrome::topbar_status::TopbarMode;

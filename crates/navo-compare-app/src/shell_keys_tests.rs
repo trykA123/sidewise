@@ -9,7 +9,7 @@ use gpui_kit::{
     AnyWindowHandle, AppContext as _, Entity, Modifiers, Pixels, Point, TestAppContext,
     VisualTestContext, point, px,
 };
-use navo_ui::tokens::Mode;
+use sidewise_kit::tokens::Mode;
 
 use super::shell_at;
 use crate::chrome::sidebar::DismissTip;

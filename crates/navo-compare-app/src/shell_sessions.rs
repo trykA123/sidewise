@@ -6,7 +6,7 @@ use std::path::Path;
 use gpui_kit::Global;
 use navo_compare_profile::book::{SessionBook, Visit, now_ms};
 use navo_compare_profile::recent::StartRows;
-use navo_ui::prelude::*;
+use sidewise_kit::prelude::*;
 
 use super::{Shell, TabKind};
 use crate::layers::toast;

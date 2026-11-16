@@ -4,9 +4,9 @@
 use gpui_kit::base::TestTextExt as _;
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::{FocusHandle, KeyBinding, ReadGlobal, Subscription};
-use navo_ui::commands::shown;
-use navo_ui::prelude::*;
-use navo_ui::primitives::{Kbd, TextField, TextFieldState, text_field_state};
+use sidewise_kit::prelude::*;
+use sidewise_kit::primitives::{Kbd, TextField, TextFieldState, text_field_state};
+use sidewise_kit::shown::shown;
 
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::ModeTokens;

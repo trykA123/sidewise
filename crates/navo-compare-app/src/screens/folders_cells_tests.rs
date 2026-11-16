@@ -1,6 +1,6 @@
 //! Tests for the side cells of the folder tree: cells, item counts, newer side, gutter tags.
 
-use navo_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
+use sidewise_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
 
 use super::folders_cells::{GutTag, Newer, child_counts, gut_of, newer_of};
 use super::folders_model::FolderTree;
