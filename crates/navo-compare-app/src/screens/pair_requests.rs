@@ -48,3 +48,13 @@ pub fn neighbour(session: &FolderSession, (from, step): (u64, i32)) -> Option<Pa
     let found = session.row_beside(from, step, is_stream_item)?;
     session.pair_of(found).map(pair_request)
 }
+
+/// A Stream of the one row `id` and its pair; `None` unless the row is a Stream item.
+pub fn stream_one(session: &FolderSession, id: u64) -> Option<(StreamList, Vec<PairRequest>)> {
+    let (mut list, requests) = stream_request(session);
+    let at = list.items.iter().position(|item| item.id == id)?;
+    list.items = vec![list.items.swap_remove(at)];
+    list.rules = 0;
+    let pair = requests.into_iter().find(|pair| pair.id == id)?;
+    Some((list, vec![pair]))
+}

@@ -4,7 +4,7 @@ use navo_ui::browser::{
     CompareControl, CompareKind, CompareRow, CompareSide, CompareUpdate, FolderSession, RowStatus,
 };
 
-use super::pair_requests::{neighbour, pair_request, stream_request};
+use super::pair_requests::{neighbour, pair_request, stream_one, stream_request};
 
 /// A compare control that ignores every request.
 struct Idle;
@@ -113,4 +113,21 @@ fn neighbour_stops_at_the_ends() {
     let session = session();
     assert!(neighbour(&session, (4, 1)).is_none());
     assert!(neighbour(&session, (1, -1)).is_none());
+}
+
+/// A one-card Stream holds the one row and its pair.
+#[test]
+fn stream_one_has_one_item() {
+    let (list, requests) = stream_one(&session(), 4).expect("a differing file");
+    let ids: Vec<u64> = list.items.iter().map(|item| item.id).collect();
+    assert_eq!(ids, [4]);
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].id, 4);
+}
+
+/// A same row is no Stream item, so it opens no Stream.
+#[test]
+fn stream_one_skips_a_same_row() {
+    assert!(stream_one(&session(), 2).is_none());
+    assert!(stream_one(&session(), 99).is_none());
 }

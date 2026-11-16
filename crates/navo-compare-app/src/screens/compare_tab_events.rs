@@ -10,7 +10,7 @@ use navo_ui::window_view::ScreenEvent;
 use super::compare_run::RunKind;
 use super::compare_tab::{CompareRequest, CompareTab, TabView};
 use super::folders_view::FoldersEvent;
-use super::pair_requests::{neighbour, pair_request};
+use super::pair_requests::{neighbour, pair_request, stream_one};
 
 impl CompareTab {
     /// Subscribes to the Folders view and the compare screen; for two files, opens their pair
@@ -54,12 +54,22 @@ impl CompareTab {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let FoldersEvent::OpenPair(id) = event else {
-            return;
-        };
-        let asked = self.run.session().and_then(|session| session.pair_of(*id));
-        if let Some(asked) = asked {
-            self.show_pair(pair_request(asked), window, cx);
+        match event {
+            FoldersEvent::OpenPair(id) => {
+                let asked = self.run.session().and_then(|session| session.pair_of(*id));
+                if let Some(asked) = asked {
+                    self.show_pair(pair_request(asked), window, cx);
+                }
+            }
+            FoldersEvent::OpenStream(id) => {
+                let items = self
+                    .run
+                    .session()
+                    .and_then(|session| stream_one(session, *id));
+                if let Some(items) = items {
+                    self.show_stream(items, window, cx);
+                }
+            }
         }
     }
 

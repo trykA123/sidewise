@@ -160,3 +160,20 @@ fn walk_file_opens_the_next_difference_and_stops_at_the_end(cx: &mut TestAppCont
     );
     assert_eq!(state(cx, &tab), (TabView::File, true, Some(b)));
 }
+
+/// Opening a differing row in the Stream shows the Stream.
+#[gpui_kit::test]
+fn open_stream_from_folders_shows_the_stream(cx: &mut TestAppContext) {
+    use crate::screens::folders_view::FoldersEvent;
+    let (opened, tab, _dirs) = folders(cx, "stream-one");
+    let id = tab
+        .read_with(cx, |tab, _| tab.row_id("a.txt"))
+        .expect("row");
+    let folders = tab.read_with(cx, |tab, _| tab.folders().clone());
+    cx.update_window(opened.0, |_, _, cx| {
+        folders.update(cx, |_, cx| cx.emit(FoldersEvent::OpenStream(id)));
+    })
+    .expect("window");
+    cx.run_until_parked();
+    assert_eq!(state(cx, &tab).0, TabView::Stream);
+}

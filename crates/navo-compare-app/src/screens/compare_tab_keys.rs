@@ -2,6 +2,7 @@
 //! A child of `screens`; the shell binds them through `shell_keys::bind_keys`.
 
 use gpui_kit::{App, KeyBinding};
+use navo_ui::compare_diff::{PairRequest, StreamList};
 use navo_ui::prelude::*;
 
 use super::compare_tab::{CONTEXT, CompareTab, OWN, TabView};
@@ -58,7 +59,16 @@ impl CompareTab {
         let Some(session) = self.run.session() else {
             return;
         };
-        let items = stream_request(session);
+        self.show_stream(stream_request(session), window, cx);
+    }
+
+    /// Opens `items` in the Stream and shows it; does nothing when the screen has no diff hooks.
+    pub(super) fn show_stream(
+        &mut self,
+        items: (StreamList, Vec<PairRequest>),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let opened = self
             .screen
             .update(cx, |screen, cx| screen.open_stream(items, window, cx));
