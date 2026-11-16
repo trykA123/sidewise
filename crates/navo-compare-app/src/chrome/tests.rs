@@ -61,7 +61,7 @@ fn topbar_in(
                 Topbar::new(
                     Crumbs {
                         title: "New comparison".into(),
-                        detail: "Folder · File · Git".into(),
+                        detail: "Folder · File".into(),
                     },
                     move |action, _| log.borrow_mut().push(action),
                     window,
@@ -319,6 +319,24 @@ fn shortcuts_work_from_focused_button_and_escape_does_not_trap(cx: &mut TestAppC
             "{keys} must still fire {action:?} when a pill is focused"
         );
     }
+}
+
+/// In Dark mode at the 780 px minimum width, Tab reaches Keys and Enter and Space both activate it.
+#[gpui_kit::test]
+fn dark_mode_minimum_width_reaches_keys_by_keyboard(cx: &mut TestAppContext) {
+    let (window, _view, fired) = topbar_in(cx, MIN_W, Mode::Dark);
+    cx.update_window(window, |_, window, cx| {
+        for _ in 0..3 {
+            window.press("tab", cx);
+        }
+        let keys = window.find_by_label("Keys");
+        assert_eq!(keys.focused(), Some(true), "Tab #3 must focus Keys");
+        assert!(keys.visible(), "Keys must stay visible at {MIN_W}px");
+        window.press("enter", cx);
+        window.press("space", cx);
+    })
+    .expect("window");
+    assert_eq!(fired.borrow().as_slice(), [Action::Keys, Action::Keys]);
 }
 
 /// Asserts that the visible TextField value, `Topbar::filter`, and change callback all agree.
@@ -742,18 +760,18 @@ fn assert_crumb_contract(window: &Window, width: f32, compact: bool) {
     assert_eq!(crumbs.role(), Some(Role::Label));
     assert_eq!(
         crumbs.label(),
-        Some("New comparison Folder · File · Git"),
+        Some("New comparison Folder · File"),
         "crumb accessible label must always preserve complete title and detail"
     );
     assert_single_text(window, "New comparison", Some("top-crumbs"), width);
     let detail_count = texts(window)
         .iter()
-        .filter(|e| e.text() == "Folder · File · Git")
+        .filter(|e| e.text() == "Folder · File")
         .count();
     if compact {
         assert_eq!(detail_count, 0, "compact mode hides secondary crumb detail");
     } else {
-        assert_single_text(window, "Folder · File · Git", Some("top-crumbs"), width);
+        assert_single_text(window, "Folder · File", Some("top-crumbs"), width);
     }
 }
 
@@ -885,7 +903,7 @@ fn narrow_500px_fits_start_and_folders_in_light_and_dark(cx: &mut TestAppContext
 fn host_topbar(window: &mut Window, cx: &mut gpui_kit::App) -> Entity<Topbar> {
     let crumbs = Crumbs {
         title: "New comparison".into(),
-        detail: "Folder · File · Git".into(),
+        detail: "Folder · File".into(),
     };
     cx.new(|cx| Topbar::new(crumbs, |_, _| {}, window, cx))
 }

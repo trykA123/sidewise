@@ -307,13 +307,7 @@ fn start_topbar(window: &mut Window, cx: &mut Context<Shell>) -> Entity<Topbar> 
     cx.new(|cx| {
         let mut bar = Topbar::new(crumbs, |_, _| {}, window, cx);
         bar.set_mode(TopbarMode::Start, cx);
-        for action in [
-            TopbarAction::Theme,
-            TopbarAction::Accounts,
-            TopbarAction::View,
-            TopbarAction::Keys,
-            TopbarAction::Sync,
-        ] {
+        for action in [TopbarAction::View, TopbarAction::Keys, TopbarAction::Sync] {
             bar.set_available(action, false, cx);
         }
         bar
