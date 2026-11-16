@@ -176,14 +176,28 @@ pub(crate) fn rows_script() -> Vec<CompareUpdate> {
     ]
 }
 
-/// Opens a shell whose compare engine delivers `rows_script` on the test thread and whose
-/// screens open pairs on quiet diff hooks, so no foreign thread touches the test scheduler.
-pub(crate) fn scripted_shell(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Shell>) {
+/// Installs the scripted compare engine (sending `script` on the test thread) and the quiet diff
+/// hooks, so no foreign thread touches the test scheduler.
+pub(crate) fn install_scripted(cx: &mut TestAppContext, script: Vec<CompareUpdate>) {
     TEST_DIFF_HOOKS.with_borrow_mut(|slot| *slot = Some(Arc::new(QuietDiff)));
-    let (window, view) = open(cx, Shell::new);
-    let hooks = Arc::new(Held::scripted(Arc::default(), rows_script()));
+    let hooks = Arc::new(Held::scripted(Arc::default(), script));
     cx.update(|cx| install_test_hooks(hooks, cx));
+}
+
+/// Opens a shell whose compare engine delivers `script` on the test thread and whose screens
+/// open pairs on quiet diff hooks.
+pub(crate) fn scripted_shell_with(
+    cx: &mut TestAppContext,
+    script: Vec<CompareUpdate>,
+) -> (AnyWindowHandle, Entity<Shell>) {
+    let (window, view) = open(cx, Shell::new);
+    install_scripted(cx, script);
     cx.update_window(window, |_, window, cx| window.render_frame(cx))
         .expect("window");
     (window, view)
+}
+
+/// Opens a shell scripted with the finished `rows_script` walk.
+pub(crate) fn scripted_shell(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Shell>) {
+    scripted_shell_with(cx, rows_script())
 }

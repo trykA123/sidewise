@@ -7,11 +7,11 @@ use std::time::{Duration, Instant};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext};
 
+use crate::compare_tab_script::{rows_script, scripted_shell, scripted_shell_with};
 use crate::screens::compare_run::RunError;
-use crate::screens::compare_tab::{CompareRequest, install_compare_hooks};
+use crate::screens::compare_tab::CompareRequest;
 use crate::shell::Shell;
 use crate::start_tabs::StartChoice;
-use crate::test_window::open;
 
 /// A folder made fresh under the system temp folder and removed on drop.
 pub(crate) struct TempDir(PathBuf);
@@ -38,13 +38,9 @@ impl Drop for TempDir {
     }
 }
 
-/// Opens a shell with the compare engine installed and renders one frame.
+/// Opens a shell on the scripted compare engine (rows `a.txt`, `b.txt`, `c.txt`, `sub`) and renders one frame.
 pub(crate) fn shell(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Shell>) {
-    let (window, view) = open(cx, Shell::new);
-    cx.update(install_compare_hooks);
-    cx.update_window(window, |_, window, cx| window.render_frame(cx))
-        .expect("window");
-    (window, view)
+    scripted_shell(cx)
 }
 
 /// Two folders that each hold the file `name`.
@@ -103,17 +99,14 @@ pub(crate) fn wait_for_row(
 
 #[gpui_kit::test]
 fn start_submit_turns_the_tab_into_a_compare_tab_with_rows(cx: &mut TestAppContext) {
-    let (left, right) = pair("ok", "same-file.txt");
+    let (left, right) = pair("ok", "a.txt");
     let opened = shell(cx);
     submit(cx, &opened, [left.path(), right.path()]);
     let view = &opened.1;
     let tabs = view.read_with(cx, |shell, _| (shell.tab_count(), shell.active()));
     assert_eq!(tabs, (1, 0));
     assert!(view.read_with(cx, |shell, _| shell.active_screen().is_none()));
-    assert!(
-        wait_for_row(cx, &opened, "same-file.txt"),
-        "rows reach the view"
-    );
+    assert!(wait_for_row(cx, &opened, "a.txt"), "rows reach the view");
     let toasts = view.read_with(cx, |shell, cx| shell.toast_count(cx));
     assert_eq!(toasts, 0);
 }
@@ -163,7 +156,9 @@ fn an_index_past_the_tabs_starts_no_walk(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn closing_a_compare_tab_mid_walk_is_quiet_and_the_title_names_both_sides(cx: &mut TestAppContext) {
     let (left, right) = pair("close", "a.txt");
-    let opened = shell(cx);
+    let mut script = rows_script();
+    script.pop();
+    let opened = scripted_shell_with(cx, script);
     let (window, view) = &opened;
     cx.simulate_keystrokes(*window, "ctrl-t");
     let request = CompareRequest {

@@ -11,7 +11,7 @@ use navo_compare_profile::book::{SessionBook, Visit};
 use navo_compare_profile::brand::SLUG;
 use navo_compare_profile::session_store::SessionStore;
 
-use crate::screens::compare_tab::install_compare_hooks;
+use crate::compare_tab_script::{install_scripted, rows_script};
 use crate::shell::Shell;
 use crate::start::StartEvent;
 use crate::start_tabs::StartChoice;
@@ -69,8 +69,8 @@ impl Drop for Fixture {
 
 /// Opens a shell, with the session book over `profile` when given, and renders one frame.
 fn open_shell(cx: &mut TestAppContext, profile: Option<&Path>) -> (AnyWindowHandle, Entity<Shell>) {
+    install_scripted(cx, rows_script());
     cx.update(|cx| {
-        install_compare_hooks(cx);
         if let Some(dir) = profile {
             Shell::install_sessions(Some(dir), cx).expect("book");
         }
