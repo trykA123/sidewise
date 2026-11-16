@@ -19,6 +19,8 @@ mod layers;
 mod motion;
 #[cfg(test)]
 mod motion_tests;
+#[cfg_attr(not(test), expect(dead_code, reason = "H2 mounts the compare tab"))]
+mod screens;
 mod shell;
 #[cfg(test)]
 mod shell_tests;
