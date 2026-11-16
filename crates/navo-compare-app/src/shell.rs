@@ -15,7 +15,7 @@ use crate::chrome::sidebar::{DismissTip, Sidebar, SidebarEvent, ToggleRail};
 use crate::chrome::status_bar::{StatusBar, StatusHint};
 use crate::chrome::topbar_status::{Action as TopbarAction, Crumbs, Topbar, TopbarMode};
 use crate::layers::keys_sheet;
-use crate::layers::toast::ToastHost;
+use crate::layers::toast::{self, ToastHost};
 use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
 use crate::theme_data::palettes::DIMS;
 
@@ -70,6 +70,7 @@ impl Shell {
         });
         let topbar = start_topbar(window, cx);
         let toasts = cx.new(|_| ToastHost::new());
+        toast::install_sink(&toasts, cx);
         let layers = Layers::new(window, cx);
         let shell = Self {
             tabs,

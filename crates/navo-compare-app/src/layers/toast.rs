@@ -4,7 +4,7 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui_kit::{AnimationExt, ReadGlobal, Task};
+use gpui_kit::{AnimationExt, Global, ReadGlobal, Task, WeakEntity};
 use navo_ui::prelude::*;
 
 use crate::motion;
@@ -113,6 +113,44 @@ impl ToastHost {
             cx.notify();
         }
     }
+}
+
+/// The app-wide handle to the shell's toast host (NC140), so any view can toast.
+struct ToastSink(WeakEntity<ToastHost>);
+
+impl Global for ToastSink {}
+
+/// Registers `host` as the app's toast sink; the shell calls this once it has made its host.
+pub fn install_sink(host: &Entity<ToastHost>, cx: &mut App) {
+    cx.set_global(ToastSink(host.downgrade()));
+}
+
+/// Toasts `text` on the installed host. Returns `false` when no host is up (tests, closed window).
+pub fn notify(text: impl Into<SharedString>, cx: &mut App) -> bool {
+    let text = text.into();
+    with_host(cx, |host, cx| host.push(text, cx))
+}
+
+/// Toasts `text` with a single-step Undo. Returns `false` when no host is up.
+pub fn notify_undo(
+    text: impl Into<SharedString>,
+    undo: impl Fn(&mut App) + 'static,
+    cx: &mut App,
+) -> bool {
+    let text = text.into();
+    with_host(cx, |host, cx| host.push_undo(text, undo, cx))
+}
+
+/// Runs `f` on the installed host if it is still alive; `false` when there is none.
+fn with_host(cx: &mut App, f: impl FnOnce(&mut ToastHost, &mut Context<ToastHost>)) -> bool {
+    let Some(host) = cx
+        .try_global::<ToastSink>()
+        .and_then(|sink| sink.0.upgrade())
+    else {
+        return false;
+    };
+    host.update(cx, f);
+    true
 }
 
 impl Render for ToastHost {
@@ -298,5 +336,27 @@ mod tests {
         })
         .expect("window");
         cx.update(|cx| assert_eq!(host.read(cx).len(), 2, "drawing must not consume toasts"));
+    }
+
+    /// A notification through the installed sink lands on that host.
+    #[gpui_kit::test]
+    fn notify_reaches_the_installed_host(cx: &mut TestAppContext) {
+        let host = host(cx);
+        cx.update(|cx| {
+            install_sink(&host, cx);
+            assert!(notify("hi", cx), "an installed host takes the toast");
+            assert!(notify_undo("gone", |_| {}, cx), "and the undo toast");
+        });
+        cx.update(|cx| assert_eq!(host.read(cx).len(), 2));
+    }
+
+    /// With no host installed, or a dropped one, notify reports `false`.
+    #[gpui_kit::test]
+    fn notify_without_a_host_is_false(cx: &mut TestAppContext) {
+        cx.update(|cx| assert!(!notify("nobody", cx), "no sink means no toast"));
+        let host = host(cx);
+        cx.update(|cx| install_sink(&host, cx));
+        drop(host);
+        cx.update(|cx| assert!(!notify("dropped", cx), "a dropped host means no toast"));
     }
 }
