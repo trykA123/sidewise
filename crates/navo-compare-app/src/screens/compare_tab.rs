@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
@@ -14,6 +15,9 @@ use navo_ui::prelude::*;
 use super::compare_run::{CompareRun, RunError};
 use super::folders_view::FoldersView;
 use crate::start_tabs::StartChoice;
+
+/// Pause between two wake updates, about one frame.
+const PAUSE: Duration = Duration::from_millis(16);
 
 /// Key context of the tab root; the tab keys bind inside it later.
 const CONTEXT: &str = "CompareTab";
@@ -148,13 +152,16 @@ impl CompareTab {
     }
 }
 
-/// Applies each wake to the tab until the wake channel or the tab closes.
+/// Applies wakes to the tab until the wake channel or the tab closes. Queued wakes merge into
+/// one update, and a 16 ms pause after it lets the UI paint while a large walk keeps sending.
 async fn pump(mut wakes: UnboundedReceiver<()>, this: WeakEntity<CompareTab>, cx: &mut AsyncApp) {
     while wakes.next().await.is_some() {
+        while wakes.try_recv().is_ok() {}
         // A failed upgrade means the tab closed; the walk's thread may still wake.
         if this.update(cx, |tab, cx| tab.on_wake(cx)).is_err() {
             return;
         }
+        cx.background_executor().timer(PAUSE).await;
     }
 }
 

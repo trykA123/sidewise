@@ -139,3 +139,58 @@ fn a_missing_side_keeps_start_and_shows_one_toast(cx: &mut TestAppContext) {
     assert_eq!(view.read_with(cx, |shell, cx| shell.toast_count(cx)), 1);
     assert_eq!(view.read_with(cx, |shell, _| shell.tab_count()), 1);
 }
+
+#[gpui_kit::test]
+fn an_index_past_the_tabs_starts_no_walk(cx: &mut TestAppContext) {
+    let (left, right) = pair("idx", "a.txt");
+    let opened = shell(cx);
+    let (window, view) = &opened;
+    let request = CompareRequest {
+        left: left.path().to_owned(),
+        right: right.path().to_owned(),
+        choice: StartChoice::default(),
+    };
+    let result = cx
+        .update_window(*window, |_, window, cx| {
+            view.update(cx, |shell, cx| shell.open_compare((5, request), window, cx))
+        })
+        .expect("window");
+    assert!(matches!(result, Err(RunError::Location(_))));
+    assert!(view.read_with(cx, |shell, _| shell.active_compare().is_none()));
+    assert_eq!(view.read_with(cx, |shell, cx| shell.toast_count(cx)), 1);
+}
+
+#[gpui_kit::test]
+fn closing_a_compare_tab_mid_walk_is_quiet_and_the_title_names_both_sides(cx: &mut TestAppContext) {
+    let (left, right) = pair("close", "a.txt");
+    let opened = shell(cx);
+    let (window, view) = &opened;
+    cx.simulate_keystrokes(*window, "ctrl-t");
+    let request = CompareRequest {
+        left: left.path().to_owned(),
+        right: right.path().to_owned(),
+        choice: StartChoice::default(),
+    };
+    let names = |dir: &TempDir| {
+        dir.path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    };
+    let want = format!("{} ↔ {}", names(&left), names(&right));
+    cx.update_window(*window, |_, window, cx| {
+        view.update(cx, |shell, cx| {
+            shell.open_compare((0, request), window, cx).expect("open");
+            assert_eq!(shell.tab_title(0).as_ref(), want);
+            shell.close_tab(0, window, cx);
+        });
+    })
+    .expect("window");
+    for _ in 0..5 {
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(view.read_with(cx, |shell, _| shell.tab_count()), 1);
+    assert!(view.read_with(cx, |shell, _| shell.active_compare().is_none()));
+}

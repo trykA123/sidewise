@@ -86,6 +86,12 @@ impl Shell {
         }
     }
 
+    /// The title of the tab at `index` (lets tests read it).
+    #[cfg(test)]
+    pub(crate) fn tab_title(&self, index: usize) -> SharedString {
+        self.tabs[index].title.clone()
+    }
+
     /// The compare tab when the active tab is one.
     pub(crate) fn active_compare(&self) -> Option<&Entity<CompareTab>> {
         match self.tabs.get(self.active).map(|tab| &tab.kind) {
@@ -144,9 +150,13 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<(), RunError> {
+        if index >= self.tabs.len() {
+            let error = RunError::Location(format!("no tab at index {index}"));
+            self.toast(error.to_string(), cx);
+            return Err(error);
+        }
         let started = match CompareTab::start(&request, cx) {
-            Ok(started) if index < self.tabs.len() => started,
-            Ok(_) => return Ok(()),
+            Ok(started) => started,
             Err(error) => {
                 self.toast(error.to_string(), cx);
                 return Err(error);
