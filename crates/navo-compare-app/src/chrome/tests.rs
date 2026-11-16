@@ -976,6 +976,10 @@ fn narrow_500px_fits_start_and_folders_in_light_and_dark(cx: &mut TestAppContext
         env!("CARGO_MANIFEST_DIR"),
         "/../../target/c2b-owned-text-bounds.log"
     );
+    // The evidence log lives in the repo target dir, which a custom CARGO_TARGET_DIR leaves absent.
+    if let Some(dir) = std::path::Path::new(path).parent() {
+        std::fs::create_dir_all(dir).expect("create bounds log dir");
+    }
     std::fs::write(path, log).expect("write c2b bounds log");
 }
 

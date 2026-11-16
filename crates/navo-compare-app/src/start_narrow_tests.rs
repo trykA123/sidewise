@@ -223,6 +223,10 @@ fn narrow_500px_parent_keeps_both_inputs_usable_with_not_found_chips(cx: &mut Te
         env!("CARGO_MANIFEST_DIR"),
         "/../../target/start500/bounds.log"
     );
+    // The evidence log lives in the repo target dir, which a custom CARGO_TARGET_DIR leaves absent.
+    if let Some(dir) = std::path::Path::new(path).parent() {
+        std::fs::create_dir_all(dir).expect("create bounds log dir");
+    }
     std::fs::write(path, report).expect("write start500 bounds");
 }
 
