@@ -369,7 +369,20 @@ fn topbar_in_start_mode_mounts_disabled_pills_without_search_or_sync(cx: &mut Te
             cx.update_window(window, |_, window, _| {
                 assert!(window.try_find("top-search").is_none());
                 assert!(window.try_find("top-sync").is_none());
-                for id in ["top-theme", "top-accounts", "top-view", "top-keys"] {
+                assert_eq!(
+                    window.find("top-crumbs").label(),
+                    Some("New compare Folder · File"),
+                    "alpha crumb has no Git"
+                );
+                assert!(
+                    window.try_find("top-theme").is_none(),
+                    "alpha has no themes"
+                );
+                assert!(
+                    window.try_find("top-accounts").is_none(),
+                    "alpha has no accounts"
+                );
+                for id in ["top-view", "top-keys"] {
                     let pill = window.find(id);
                     assert!(pill.visible(), "{id} visible at {width}px {mode:?}");
                     assert_eq!(
@@ -391,7 +404,7 @@ fn topbar_in_start_mode_mounts_disabled_pills_without_search_or_sync(cx: &mut Te
             })
             .expect("window");
 
-            for id in ["top-theme", "top-accounts", "top-view", "top-keys"] {
+            for id in ["top-view", "top-keys"] {
                 click_id(cx, window, id);
                 assert_eq!(
                     state(cx, &view),

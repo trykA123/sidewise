@@ -64,6 +64,7 @@ pub struct Crumbs {
 pub enum AccountConnection {
     #[default]
     Disconnected,
+    #[expect(dead_code, reason = "the Accounts pill is hidden in alpha")]
     Connected,
 }
 
@@ -153,6 +154,7 @@ impl Topbar {
     }
 
     /// Updates the Accounts connection indicator state from the caller.
+    #[expect(dead_code, reason = "the Accounts pill is hidden in alpha")]
     pub fn set_connection(&mut self, state: AccountConnection, cx: &mut Context<Self>) {
         self.connection = state;
         cx.notify();

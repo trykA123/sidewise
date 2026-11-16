@@ -15,17 +15,13 @@ use gpui_kit::{
 use navo_compare_profile::appearance::PaletteId;
 use navo_ui::tokens::Mode;
 
-use super::topbar_status::{
-    AccountConnection, Action, Crumbs, MIN_W, Topbar, TopbarMode, bind_keys,
-};
+use super::topbar_status::{Action, Crumbs, MIN_W, Topbar, TopbarMode, bind_keys};
 use crate::theme::apply_sidewise;
 use crate::theme_data::palettes::DIMS;
 
-/// The element ids of the search pill and the five action pills, in bar order.
-const IDS: [(&str, Action); 6] = [
+/// The element ids of the search pill and the three action pills, in bar order.
+const IDS: [(&str, Action); 4] = [
     ("top-search", Action::Search),
-    ("top-theme", Action::Theme),
-    ("top-accounts", Action::Accounts),
     ("top-view", Action::View),
     ("top-keys", Action::Keys),
     ("top-sync", Action::Sync),
@@ -204,31 +200,31 @@ fn the_filter_text_round_trips(cx: &mut TestAppContext) {
     .expect("window");
 }
 
-/// Pressing Tab reaches Accounts without mouse input, and Enter/Space activates it.
+/// Pressing Tab reaches Keys without mouse input, and Enter/Space activates it.
 #[gpui_kit::test]
-fn tab_reaches_accounts_and_activates_without_mouse(cx: &mut TestAppContext) {
+fn tab_reaches_keys_and_activates_without_mouse(cx: &mut TestAppContext) {
     let (window, _view, fired) = topbar(cx, 1024.);
     cx.update_window(window, |_, window, cx| {
-        let initial = window.find("top-accounts");
+        let initial = window.find("top-keys");
         assert_eq!(
             initial.role(),
             Some(Role::Button),
-            "Accounts control must expose Role::Button"
+            "Keys control must expose Role::Button"
         );
-        let accounts = window
-            .try_find_by_label("Accounts")
-            .expect("Accounts control must expose accessible label \"Accounts\"");
-        assert_eq!(accounts.focused(), Some(false), "Accounts starts unfocused");
+        let keys = window
+            .try_find_by_label("Keys")
+            .expect("Keys control must expose accessible label \"Keys\"");
+        assert_eq!(keys.focused(), Some(false), "Keys starts unfocused");
 
         let mut reached = false;
         for _ in 0..=IDS.len() {
             window.press("tab", cx);
-            if window.find_by_label("Accounts").focused() == Some(true) {
+            if window.find_by_label("Keys").focused() == Some(true) {
                 reached = true;
                 break;
             }
         }
-        assert!(reached, "Tab must reach Accounts without a mouse");
+        assert!(reached, "Tab must reach Keys without a mouse");
 
         window.press("enter", cx);
         window.press("space", cx);
@@ -237,8 +233,8 @@ fn tab_reaches_accounts_and_activates_without_mouse(cx: &mut TestAppContext) {
 
     assert_eq!(
         fired.borrow().as_slice(),
-        [Action::Accounts, Action::Accounts],
-        "Enter and Space on focused Accounts must each fire Action::Accounts once"
+        [Action::Keys, Action::Keys],
+        "Enter and Space on focused Keys must each fire Action::Keys once"
     );
 }
 
@@ -255,13 +251,11 @@ fn assert_search_tab_focus(window: &mut gpui_kit::Window, cx: &mut gpui_kit::App
     assert_eq!(search_by_label.focused(), Some(true));
 }
 
-/// Search has text-input semantics, and the five action pills have button semantics, accessible
+/// Search has text-input semantics, and the three action pills have button semantics, accessible
 /// labels, Tab/Shift-Tab focus, and Enter/Space keyboard activation.
 #[gpui_kit::test]
 fn every_control_has_button_semantics_tab_focus_and_keyboard_activation(cx: &mut TestAppContext) {
-    const BUTTONS: [(&str, &str, Action); 5] = [
-        ("top-theme", "Theme", Action::Theme),
-        ("top-accounts", "Accounts", Action::Accounts),
+    const BUTTONS: [(&str, &str, Action); 3] = [
         ("top-view", "View", Action::View),
         ("top-keys", "Keys", Action::Keys),
         ("top-sync", "Sync", Action::Sync),
@@ -297,7 +291,7 @@ fn shortcuts_work_from_focused_button_and_escape_does_not_trap(cx: &mut TestAppC
     cx.update_window(window, |_, window, cx| {
         window.press("tab", cx);
         window.press("tab", cx);
-        assert_eq!(window.find_by_label("Theme").focused(), Some(true));
+        assert_eq!(window.find_by_label("View").focused(), Some(true));
 
         window.press("escape", cx);
         assert!(
@@ -306,7 +300,7 @@ fn shortcuts_work_from_focused_button_and_escape_does_not_trap(cx: &mut TestAppC
         );
         window.press("tab", cx);
         assert_eq!(
-            window.find_by_label("Accounts").focused(),
+            window.find_by_label("Keys").focused(),
             Some(true),
             "focus must still advance after Escape"
         );
@@ -327,72 +321,6 @@ fn shortcuts_work_from_focused_button_and_escape_does_not_trap(cx: &mut TestAppC
     }
 }
 
-/// Reads the non-empty `Role::Status` accessible label of the Accounts child indicator.
-fn accounts_status_label(
-    window: &gpui_kit::Window,
-    accounts: &gpui_kit::test::ElementSnapshot,
-) -> String {
-    let status = window.find("top-accounts-status");
-    assert!(
-        status.path().starts_with(accounts.path()),
-        "status indicator must remain inside the Accounts button"
-    );
-    assert_eq!(status.role(), Some(Role::Status));
-    let label = status
-        .label()
-        .expect("Accounts status indicator must expose an accessible label");
-    assert!(
-        !label.is_empty(),
-        "status accessible label must be nonempty"
-    );
-    label.to_owned()
-}
-
-/// In Dark mode at the 780 px minimum width, Accounts keeps a stable accessible name and
-/// keyboard activation while its child `Role::Status` label changes across connection states.
-#[gpui_kit::test]
-fn dark_mode_minimum_width_reaches_accounts_by_keyboard(cx: &mut TestAppContext) {
-    let (window, view, fired) = topbar(cx, MIN_W);
-    cx.update_window(window, |_, window, cx| {
-        apply_sidewise(PaletteId::Violet, Mode::Dark, cx);
-        window.render_frame(cx);
-        for _ in 0..3 {
-            window.press("tab", cx);
-        }
-        let accounts = window.find_by_label("Accounts");
-        assert_eq!(accounts.focused(), Some(true));
-        assert!(
-            accounts.visible(),
-            "Accounts must stay visible at {MIN_W}px"
-        );
-        let disconnected_label = accounts_status_label(window, &accounts);
-        window.press("enter", cx);
-
-        view.update(cx, |bar, cx| {
-            bar.set_connection(AccountConnection::Connected, cx);
-        });
-        window.render_frame(cx);
-        let accounts = window.find_by_label("Accounts");
-        assert_eq!(accounts.focused(), Some(true));
-        assert!(
-            accounts.visible(),
-            "Accounts must stay visible at {MIN_W}px"
-        );
-        let connected_label = accounts_status_label(window, &accounts);
-        assert_ne!(
-            connected_label, disconnected_label,
-            "AccountConnection transition must change child status accessible label"
-        );
-        window.press("space", cx);
-    })
-    .expect("window");
-
-    assert_eq!(
-        fired.borrow().as_slice(),
-        [Action::Accounts, Action::Accounts]
-    );
-}
-
 /// Asserts that the visible TextField value, `Topbar::filter`, and change callback all agree.
 fn assert_filter_synced(
     window: &gpui_kit::Window,
@@ -406,7 +334,7 @@ fn assert_filter_synced(
 }
 
 /// Pressing `/` focuses the inline filter input, real typing and Ctrl+A/Backspace clearing update
-/// both `Topbar::filter` and the registered change callback, and Tab still reaches Accounts.
+/// both `Topbar::filter` and the registered change callback, and Tab still reaches Keys.
 #[gpui_kit::test]
 fn slash_focuses_filter_real_typing_and_clearing_sync_callback_and_tab_navigates(
     cx: &mut TestAppContext,
@@ -445,15 +373,12 @@ fn slash_focuses_filter_real_typing_and_clearing_sync_callback_and_tab_navigates
         assert_filter_synced(window, view.read(cx), &changes.borrow(), "");
         window.press("tab", cx);
         window.press("tab", cx);
-        assert_eq!(window.find_by_label("Accounts").focused(), Some(true));
+        assert_eq!(window.find_by_label("Keys").focused(), Some(true));
         window.press("enter", cx);
     })
     .expect("window");
 
-    assert_eq!(
-        fired.borrow().as_slice(),
-        [Action::Search, Action::Accounts]
-    );
+    assert_eq!(fired.borrow().as_slice(), [Action::Search, Action::Keys]);
 }
 
 /// At the 780 px minimum width in both Light and Dark modes, typing a long path into the inline
@@ -497,9 +422,9 @@ fn editable_filter_fits_light_and_dark_minimum_width_without_clipping(cx: &mut T
             window.press("tab", cx);
             window.press("tab", cx);
             assert_eq!(
-                window.find_by_label("Accounts").focused(),
+                window.find_by_label("Keys").focused(),
                 Some(true),
-                "{mode:?}: Tab from filter must reach Accounts at {MIN_W}px"
+                "{mode:?}: Tab from filter must reach Keys at {MIN_W}px"
             );
         })
         .expect("window");
@@ -511,24 +436,20 @@ fn editable_filter_fits_light_and_dark_minimum_width_without_clipping(cx: &mut T
 fn mode_visibility_matrix_defaults_and_crumbs(cx: &mut TestAppContext) {
     assert_eq!(TopbarMode::default(), TopbarMode::Folders);
     let expected = [
-        (TopbarMode::Start, [false, true, true, true, true, false]),
-        (TopbarMode::Folders, [true, true, true, true, true, true]),
-        (TopbarMode::File, [false, true, true, true, true, true]),
-        (TopbarMode::Git, [false, true, true, false, true, false]),
-        (TopbarMode::Stream, [false, true, true, true, true, true]),
-        (TopbarMode::Large, [false, true, true, true, true, true]),
+        (TopbarMode::Start, [false, true, true, false]),
+        (TopbarMode::Folders, [true, true, true, true]),
+        (TopbarMode::File, [false, true, true, true]),
+        (TopbarMode::Git, [false, false, true, false]),
+        (TopbarMode::Stream, [false, true, true, true]),
+        (TopbarMode::Large, [false, true, true, true]),
     ];
-    let actions = [
-        Action::Search,
-        Action::Theme,
-        Action::Accounts,
-        Action::View,
-        Action::Keys,
-        Action::Sync,
-    ];
+    let actions = [Action::Search, Action::View, Action::Keys, Action::Sync];
     for (mode, flags) in expected {
         for (action, want) in actions.into_iter().zip(flags) {
             assert_eq!(mode.shows(action), want, "{mode:?}::shows({action:?})");
+        }
+        for hidden in [Action::Theme, Action::Accounts] {
+            assert!(!mode.shows(hidden), "{mode:?}::shows({hidden:?}) in alpha");
         }
     }
 
@@ -591,27 +512,24 @@ fn start_mode_hides_search_sync_and_disabled_pills_drop_hints_and_ignore_actions
             window.render_frame(cx);
             assert_mounted(
                 window,
-                &["top-theme", "top-accounts", "top-view", "top-keys"],
-                &["top-search", "top-sync"],
+                &["top-view", "top-keys"],
+                &["top-search", "top-sync", "top-theme", "top-accounts"],
             );
-            let widths = (width_of(window, "top-view"), width_of(window, "top-theme"));
+            let widths = (width_of(window, "top-view"), width_of(window, "top-keys"));
             view.update(cx, |bar, cx| {
                 bar.set_available(Action::View, false, cx);
-                bar.set_available(Action::Theme, false, cx);
+                bar.set_available(Action::Keys, false, cx);
             });
             window.render_frame(cx);
             assert!(width_of(window, "top-view") < widths.0, "View hint omitted");
-            assert!(
-                width_of(window, "top-theme") < widths.1,
-                "Theme hint omitted"
-            );
+            assert!(width_of(window, "top-keys") < widths.1, "Keys hint omitted");
             widths
         })
         .expect("window");
     let _ = (vw, tw);
 
     click(cx, window, "top-view");
-    click(cx, window, "top-theme");
+    click(cx, window, "top-keys");
     for key in ["alt-v", "alt-s", "/"] {
         cx.simulate_keystrokes(window, key);
     }
@@ -631,8 +549,14 @@ fn git_and_file_modes_gate_sync_and_view_availability(cx: &mut TestAppContext) {
         window.render_frame(cx);
         assert_mounted(
             window,
-            &["top-theme", "top-accounts", "top-keys"],
-            &["top-search", "top-view", "top-sync"],
+            &["top-keys"],
+            &[
+                "top-search",
+                "top-view",
+                "top-sync",
+                "top-theme",
+                "top-accounts",
+            ],
         );
         view.update(cx, |bar, cx| {
             bar.set_mode(TopbarMode::File, cx);
@@ -759,18 +683,6 @@ fn assert_compact_fit(window: &Window, width: f32, expected: &[&str]) {
     for id in expected {
         assert_snap_in_bar(window, id, min_x, max_x);
     }
-    for (swatch, pill) in [
-        ("top-theme-swatch", "top-theme"),
-        ("top-accounts-status", "top-accounts"),
-    ] {
-        let sb = assert_snap_in_bar(window, swatch, min_x, max_x);
-        let pb = assert_snap_in_bar(window, pill, min_x, max_x);
-        assert!(
-            sb.origin.x >= pb.origin.x
-                && sb.origin.x + sb.size.width <= pb.origin.x + pb.size.width,
-            "{swatch} ({sb:?}) escapes parent {pill} ({pb:?})"
-        );
-    }
     for snap in snapshots(window) {
         let b = snap.bounds();
         if !snap.visible() || b.size.width <= px(0.) {
@@ -850,7 +762,7 @@ fn assert_owned_texts(window: &Window, width: f32, expect_search: bool, expected
     let labels = if expect_search {
         FOLDER_LABELS
     } else {
-        &FOLDER_LABELS[..4]
+        &FOLDER_LABELS[..2]
     };
     for (pid, label) in labels {
         assert_single_text(window, label, Some(pid), width);
@@ -919,34 +831,20 @@ fn append_bounds_report(out: &mut String, scenario: &str, window: &Window) {
     }
 }
 
-const START_IDS: &[&str] = &[
-    "top-crumbs",
-    "top-theme",
-    "top-theme-swatch",
-    "top-accounts",
-    "top-accounts-status",
-    "top-view",
-    "top-keys",
-];
+const START_IDS: &[&str] = &["top-crumbs", "top-view", "top-keys"];
 const FOLDER_IDS: &[&str] = &[
     "top-crumbs",
     "top-search",
-    "top-theme",
-    "top-theme-swatch",
-    "top-accounts",
-    "top-accounts-status",
     "top-view",
     "top-keys",
     "top-sync",
 ];
 const FOLDER_LABELS: &[(&str, &str)] = &[
-    ("top-theme", "Theme"),
-    ("top-accounts", "Accounts"),
     ("top-view", "View"),
     ("top-keys", "Keys"),
     ("top-sync", "Sync"),
 ];
-const ALL_HINTS: &[&str] = &["T", "Alt+V", "?", "Alt+S"];
+const ALL_HINTS: &[&str] = &["Alt+V", "?", "Alt+S"];
 
 /// At 500 px (780 px window - 280 px Sidebar), Start and Folders fit in both Light and Dark.
 #[gpui_kit::test]

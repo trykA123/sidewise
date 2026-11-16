@@ -302,7 +302,7 @@ impl Shell {
 fn start_topbar(window: &mut Window, cx: &mut Context<Shell>) -> Entity<Topbar> {
     let crumbs = Crumbs {
         title: "New compare".into(),
-        detail: "Folder · File · Git".into(),
+        detail: "Folder · File".into(),
     };
     cx.new(|cx| {
         let mut bar = Topbar::new(crumbs, |_, _| {}, window, cx);

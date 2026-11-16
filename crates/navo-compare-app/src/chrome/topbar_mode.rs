@@ -35,7 +35,9 @@ impl TopbarMode {
                     Self::Folders | Self::File | Self::Stream | Self::Large
                 )
             }
-            Action::Theme | Action::Accounts | Action::Keys => true,
+            Action::Keys => true,
+            // Alpha ships no themes and no accounts, so their pills stay unmounted.
+            Action::Theme | Action::Accounts => false,
         }
     }
 }
