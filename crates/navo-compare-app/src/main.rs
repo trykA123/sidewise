@@ -9,6 +9,8 @@
 )]
 mod chrome;
 #[cfg(test)]
+mod compare_tab_pair_tests;
+#[cfg(test)]
 mod compare_tab_tests;
 #[cfg_attr(not(test), expect(dead_code, reason = "U11c and the chrome read it"))]
 mod icons;

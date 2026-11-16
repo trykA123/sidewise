@@ -8,6 +8,7 @@ pub mod compare_run;
 #[cfg(test)]
 mod compare_run_phase_tests;
 pub mod compare_tab;
+mod compare_tab_events;
 pub mod folders_model;
 #[cfg(test)]
 mod folders_model_tests;

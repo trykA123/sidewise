@@ -7,11 +7,13 @@ use std::time::Duration;
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
-use gpui_kit::{AsyncApp, FocusHandle, Focusable, Global, WeakEntity};
+use gpui_kit::{AsyncApp, FocusHandle, Focusable, Global, Subscription, WeakEntity};
 use navo::compare::PaneCompare;
 use navo_ui::browser::Waker;
 use navo_ui::prelude::*;
+use navo_ui::window_view::CompareScreen;
 
+use super::compare_host::new_compare_screen;
 use super::compare_run::{CompareRun, RunError};
 use super::folders_view::FoldersView;
 use crate::start_tabs::StartChoice;
@@ -30,9 +32,9 @@ pub struct CompareRequest {
     pub choice: StartChoice,
 }
 
-/// Which screen the tab shows; only `Folders` is used until the file, stream and large screens land.
+/// Which screen the tab shows; `Large` and `Stream` wait for H4 and H5.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[expect(dead_code, reason = "H3 to H5 show the File, Stream and Large screens")]
+#[expect(dead_code, reason = "H4 and H5 show the Stream and Large screens")]
 pub enum TabView {
     Large,
     Folders,
@@ -54,15 +56,19 @@ pub fn install_compare_hooks(cx: &mut App) {
 pub struct Started {
     run: CompareRun,
     wakes: UnboundedReceiver<()>,
+    wake: Waker,
 }
 
 /// One compare tab: the run, the shown view, the Folders view, its title and focus handle.
 pub struct CompareTab {
-    run: CompareRun,
-    view: TabView,
-    folders: Entity<FoldersView>,
+    pub(super) run: CompareRun,
+    pub(super) view: TabView,
+    pub(super) folders: Entity<FoldersView>,
+    pub(super) screen: Entity<CompareScreen>,
+    pub(super) shown: Option<u64>,
     title: SharedString,
     focus: FocusHandle,
+    pub(super) subscriptions: Vec<Subscription>,
 }
 
 impl CompareTab {
@@ -81,9 +87,9 @@ impl CompareTab {
             (&request.left, &request.right),
             &request.choice,
             &*hooks,
-            wake,
+            Arc::clone(&wake),
         )?;
-        Ok(Started { run, wakes })
+        Ok(Started { run, wakes, wake })
     }
 
     /// Makes the tab over a started run and arms the wake loop.
@@ -92,16 +98,20 @@ impl CompareTab {
         request: &CompareRequest,
         cx: &mut Context<Self>,
     ) -> Self {
-        let Started { run, wakes } = started;
+        let Started { run, wakes, wake } = started;
         let folders = cx.new(FoldersView::new);
+        let screen = cx.new(|_| new_compare_screen(wake));
         cx.spawn(async move |this, cx| pump(wakes, this, cx).await)
             .detach();
         let mut tab = Self {
             run,
             view: TabView::Folders,
             folders,
+            screen,
+            shown: None,
             title: title_of(request),
             focus: cx.focus_handle(),
+            subscriptions: Vec::new(),
         };
         tab.on_wake(cx);
         tab
@@ -110,15 +120,17 @@ impl CompareTab {
     /// Starts the run and builds the tab; for a caller that already holds the entity's context.
     #[expect(
         dead_code,
-        reason = "the shell opens tabs through `start` and `from_started`"
+        reason = "the shell opens tabs through `start`, `from_started` and `attach`"
     )]
     pub fn new(
         request: CompareRequest,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<Self, RunError> {
         let started = Self::start(&request, cx)?;
-        Ok(Self::from_started(started, &request, cx))
+        let mut tab = Self::from_started(started, &request, cx);
+        tab.attach(&request, window, cx);
+        Ok(tab)
     }
 
     /// The tab's title: both folder names around an arrow.
@@ -131,24 +143,58 @@ impl CompareTab {
         &self.folders
     }
 
+    /// The compare screen entity that shows the file diff.
+    pub fn screen(&self) -> &Entity<CompareScreen> {
+        &self.screen
+    }
+
+    /// The shown view.
+    pub fn view(&self) -> TabView {
+        self.view
+    }
+
+    /// The id of the pair last opened in the file diff.
+    pub fn shown_pair(&self) -> Option<u64> {
+        self.shown
+    }
+
+    /// The id of the session row at `path`; for tests.
+    #[cfg(test)]
+    pub(crate) fn row_id(&self, path: &str) -> Option<u64> {
+        let rows = self.run.session()?.rows_under_folder();
+        rows.iter().find(|row| row.path == path).map(|row| row.id)
+    }
+
     /// Focuses the shown view's keys.
     pub fn focus_view(&self, window: &mut Window, cx: &mut Context<Self>) {
         match self.view {
             TabView::Folders => self.folders.read(cx).focus_handle(cx).focus(window, cx),
+            TabView::File => {
+                let focused = self
+                    .screen
+                    .update(cx, |screen, cx| screen.focus_file_screen(window, cx));
+                if !focused {
+                    self.focus.focus(window, cx);
+                }
+            }
             _ => self.focus.focus(window, cx),
         }
     }
 
-    /// Applies queued updates; when any changed the session, hands the rows to the Folders view.
+    /// Applies queued updates: new session rows go to the Folders view, then the compare screen
+    /// polls its diff inboxes. Notifies when either changed.
     fn on_wake(&mut self, cx: &mut Context<Self>) {
-        if !self.run.drain() {
-            return;
-        }
-        if let Some(session) = self.run.session() {
+        let drained = self.run.drain();
+        if drained && let Some(session) = self.run.session() {
             let rows = session.rows_under_folder();
             self.folders.update(cx, |view, cx| view.set_rows(rows, cx));
         }
-        cx.notify();
+        let polled = self
+            .screen
+            .update(cx, |screen, cx| screen.poll_compare_screen(false, cx));
+        if drained || polled {
+            cx.notify();
+        }
     }
 }
 
@@ -179,10 +225,14 @@ fn title_of(request: &CompareRequest) -> SharedString {
 impl Render for CompareTab {
     /// The shown view inside the tab's key context.
     fn render(&mut self, _: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let shown = match self.view {
+            TabView::Folders | TabView::Large => self.folders.clone().into_any_element(),
+            TabView::File | TabView::Stream => self.screen.clone().into_any_element(),
+        };
         div()
             .key_context(CONTEXT)
             .track_focus(&self.focus)
             .size_full()
-            .child(self.folders.clone())
+            .child(shown)
     }
 }

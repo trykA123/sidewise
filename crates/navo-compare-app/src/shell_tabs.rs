@@ -163,6 +163,7 @@ impl Shell {
             }
         };
         let tab = cx.new(|cx| CompareTab::from_started(started, &request, cx));
+        tab.update(cx, |tab, cx| tab.attach(&request, window, cx));
         self.tabs[index] = ShellTab {
             title: tab.read(cx).title(),
             kind: TabKind::Compare(tab),

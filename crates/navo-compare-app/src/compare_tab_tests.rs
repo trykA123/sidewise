@@ -14,11 +14,11 @@ use crate::start_tabs::StartChoice;
 use crate::test_window::open;
 
 /// A folder made fresh under the system temp folder and removed on drop.
-struct TempDir(PathBuf);
+pub(crate) struct TempDir(PathBuf);
 
 impl TempDir {
     /// Creates the folder from `tag` and the process id.
-    fn new(tag: &str) -> Self {
+    pub(crate) fn new(tag: &str) -> Self {
         let path = std::env::temp_dir().join(format!("sidewise-h2-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir(&path).expect("create temp dir");
@@ -26,7 +26,7 @@ impl TempDir {
     }
 
     /// The folder's path.
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.0
     }
 }
@@ -39,7 +39,7 @@ impl Drop for TempDir {
 }
 
 /// Opens a shell with the compare engine installed and renders one frame.
-fn shell(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Shell>) {
+pub(crate) fn shell(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Shell>) {
     let (window, view) = open(cx, Shell::new);
     cx.update(install_compare_hooks);
     cx.update_window(window, |_, window, cx| window.render_frame(cx))
@@ -58,7 +58,7 @@ fn pair(tag: &str, name: &str) -> (TempDir, TempDir) {
 }
 
 /// Types both sides into the start tab and submits; the hint checks finish first.
-fn submit(
+pub(crate) fn submit(
     cx: &mut TestAppContext,
     (window, view): &(AnyWindowHandle, Entity<Shell>),
     sides: [&Path; 2],
@@ -78,7 +78,7 @@ fn submit(
 }
 
 /// Waits (bounded) until the active compare tab's Folders view has its cursor on `name`.
-fn wait_for_row(
+pub(crate) fn wait_for_row(
     cx: &mut TestAppContext,
     (window, view): &(AnyWindowHandle, Entity<Shell>),
     name: &str,
