@@ -369,6 +369,9 @@ impl Render for FoldersView {
     }
 }
 
+#[cfg(test)]
+#[path = "folders_layout_tests.rs"]
+mod layout_tests;
 #[path = "folders_menu.rs"]
 mod menu;
 #[cfg(test)]

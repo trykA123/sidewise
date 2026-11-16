@@ -96,6 +96,7 @@ pub(super) fn line_view(line: &TreeLine, index: usize, ctx: &LineCtx, cx: &mut A
         .aria_selected(selected)
         .relative()
         .flex()
+        .w_full()
         .items_center()
         .h(DIMS.row_h)
         .text_size(DIMS.fs)

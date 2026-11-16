@@ -90,11 +90,10 @@ fn cell_base(id: &'static str, index: usize) -> Cell {
 /// The grey cell of a side that lacks the item: `not in left` / `not in right`.
 fn gone_cell(base: Cell, left: bool, ctx: &LineCtx) -> AnyElement {
     let text = if left { "not in left" } else { "not in right" };
-    base.px_2()
-        .bg(ctx.m.layer2)
+    base.bg(ctx.m.layer2)
         .text_color(ctx.m.muted)
         .aria_label(text)
-        .child(text)
+        .child(div().px_2().child(text))
         .into_any_element()
 }
 
@@ -134,8 +133,9 @@ pub(super) fn cell_view(
     } else {
         0.
     };
-    base.pl(px(8. + indent))
-        .aria_label(SharedString::from(label))
+    // An indent spacer, not padding: padding would make the two cells differ in width.
+    base.aria_label(SharedString::from(label))
+        .child(div().flex_none().w(px(indent)))
         .children(slot)
         .child(mark_of(line, cx))
         .child(name_view(&line.name))
