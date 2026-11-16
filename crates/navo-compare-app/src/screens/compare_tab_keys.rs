@@ -4,7 +4,7 @@
 use gpui_kit::{App, KeyBinding};
 use navo_ui::prelude::*;
 
-use super::compare_tab::{CONTEXT, CompareTab, TabView};
+use super::compare_tab::{CONTEXT, CompareTab, OWN, TabView};
 use super::pair_requests::stream_request;
 
 gpui_kit::actions!(
@@ -12,14 +12,14 @@ gpui_kit::actions!(
     [OpenFolders, OpenFile, OpenStream, OpenLarge, Back]
 );
 
-/// Binds the tab keys inside the `CompareTab` context. `1` (new tab) binds in `shell_keys`, next to
-/// `NewTab`. The digits sit above Folders and Large, which bind none.
+/// Binds the tab keys. The digits bind to `OWN`, set only while Folders or Large show, so File and
+/// Stream keep their digits. `1` (new tab) binds in `shell_keys`, next to `NewTab`; Escape binds in `CompareTab`.
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
-        KeyBinding::new("2", OpenFolders, Some(CONTEXT)),
-        KeyBinding::new("3", OpenFile, Some(CONTEXT)),
-        KeyBinding::new("4", OpenStream, Some(CONTEXT)),
-        KeyBinding::new("5", OpenLarge, Some(CONTEXT)),
+        KeyBinding::new("2", OpenFolders, Some(OWN)),
+        KeyBinding::new("3", OpenFile, Some(OWN)),
+        KeyBinding::new("4", OpenStream, Some(OWN)),
+        KeyBinding::new("5", OpenLarge, Some(OWN)),
         KeyBinding::new("escape", Back, Some(CONTEXT)),
     ]);
 }

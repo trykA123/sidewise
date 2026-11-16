@@ -6,6 +6,7 @@ use gpui_kit::{App, Context, KeyBinding, Window};
 use super::Shell;
 use crate::chrome::sidebar::{self, DismissTip, ToggleRail};
 use crate::chrome::topbar_status;
+use crate::screens::compare_tab::OWN;
 use crate::screens::{compare_tab_keys, folders_view, large_view};
 use crate::start;
 
@@ -24,7 +25,7 @@ pub fn bind_keys(cx: &mut App) {
     topbar_status::bind_keys(cx);
     cx.bind_keys([
         KeyBinding::new("ctrl-t", NewTab, Some(CONTEXT)),
-        KeyBinding::new("1", NewTab, Some("CompareTab")),
+        KeyBinding::new("1", NewTab, Some(OWN)),
         KeyBinding::new("ctrl-w", CloseTab, Some(CONTEXT)),
         KeyBinding::new("ctrl-tab", NextTab, Some(CONTEXT)),
         KeyBinding::new("ctrl-shift-tab", PrevTab, Some(CONTEXT)),

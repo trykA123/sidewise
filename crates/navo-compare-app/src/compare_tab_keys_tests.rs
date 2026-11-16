@@ -2,7 +2,9 @@
 
 use std::fs;
 
-use gpui_kit::{AnyWindowHandle, Entity, TestAppContext};
+use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext};
+
+use navo_ui::window_view::ScreenEvent;
 
 use crate::chrome::topbar_status::TopbarMode;
 use crate::compare_tab_tests::{TempDir, shell, submit, wait_for_row};
@@ -70,6 +72,12 @@ fn three_needs_an_open_pair(cx: &mut TestAppContext) {
     assert_eq!(shown(cx, &open, &tab).0, TabView::Folders, "no pair open");
     press(cx, &open, "enter");
     assert_eq!(shown(cx, &open, &tab), (TabView::File, TopbarMode::File));
+    let screen = tab.read_with(cx, |tab, _| tab.screen().clone());
+    cx.update_window(open.0, |_, _, cx| {
+        screen.update(cx, |_, cx| cx.emit(ScreenEvent::Closed { reveal: None }));
+    })
+    .expect("window");
+    cx.run_until_parked();
     press(cx, &open, "5");
     assert_eq!(shown(cx, &open, &tab).0, TabView::Large);
     press(cx, &open, "3");
@@ -98,4 +106,16 @@ fn escape_on_large_goes_to_folders_and_on_folders_stays(cx: &mut TestAppContext)
     );
     press(cx, &open, "escape");
     assert_eq!(shown(cx, &open, &tab).0, TabView::Folders);
+}
+
+#[gpui_kit::test]
+fn digits_inside_the_screen_belong_to_navo(cx: &mut TestAppContext) {
+    let (open, tab, _dirs) = opened(cx, "inside");
+    press(cx, &open, "enter");
+    assert_eq!(shown(cx, &open, &tab).0, TabView::File);
+    for key in ["2", "4", "5", "1"] {
+        press(cx, &open, key);
+    }
+    assert_eq!(shown(cx, &open, &tab).0, TabView::File);
+    assert_eq!(open.1.read_with(cx, |shell, _| shell.tab_count()), 1);
 }

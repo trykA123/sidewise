@@ -24,6 +24,13 @@ const PAUSE: Duration = Duration::from_millis(16);
 /// Key context of the tab root; the tab keys bind inside it.
 pub(super) const CONTEXT: &str = "CompareTab";
 
+/// Extra context token while the tab's own views (Folders, Large) show; the digit keys bind to it,
+/// so digits typed inside the compare screen reach Navo.
+pub(crate) const OWN: &str = "CompareTabOwn";
+
+/// The tab root's context string while `OWN` is set; keep it equal to `CONTEXT` plus `OWN`.
+const OWN_CONTEXTS: &str = "CompareTab CompareTabOwn";
+
 /// The two sides and the start choice a compare tab opens with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompareRequest {
@@ -230,8 +237,9 @@ impl Render for CompareTab {
             TabView::Large => div().into_any_element(),
             TabView::File | TabView::Stream => self.screen.clone().into_any_element(),
         };
+        let own = matches!(self.view, TabView::Folders | TabView::Large);
         let root = div()
-            .key_context(CONTEXT)
+            .key_context(if own { OWN_CONTEXTS } else { CONTEXT })
             .track_focus(&self.focus)
             .size_full()
             .child(shown);
