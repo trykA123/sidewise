@@ -68,6 +68,17 @@ pub enum ViewModePref {
     Bytes,
 }
 
+/// How a text pair is laid out: two columns, or one merged column.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LayoutPref {
+    /// Left and right side by side.
+    #[default]
+    Split,
+    /// One column with removed and added lines interleaved.
+    Unified,
+}
+
 /// The `[ui]` table: theme, sidebar and the View options of the View menu.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -84,6 +95,8 @@ pub struct UiPrefs {
     pub preset: ViewPresetPref,
     /// Kind of view a pair opens with.
     pub view_mode: ViewModePref,
+    /// Split or unified text layout.
+    pub layout: LayoutPref,
     /// Show changed words inside a line.
     pub words: bool,
     /// Show syntax colours.
@@ -108,6 +121,7 @@ impl Default for UiPrefs {
             ui_scale_pct: 100,
             preset: ViewPresetPref::Rich,
             view_mode: ViewModePref::Best,
+            layout: LayoutPref::Split,
             words: true,
             syntax: true,
             line_no: true,

@@ -5,19 +5,20 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::appearance::{
-    AppearanceMode, PaletteId, UiPrefs, ViewModePref, ViewPresetPref, load_or_default, save,
+    AppearanceMode, LayoutPref, PaletteId, UiPrefs, ViewModePref, ViewPresetPref, load_or_default,
+    save,
 };
 use crate::brand;
 use crate::paths::{Folders, Profile};
 
 /// A unique temporary folder, removed when the test ends.
-struct TempDir {
+pub(super) struct TempDir {
     path: PathBuf,
 }
 
 impl TempDir {
     /// Creates an empty folder named after the test and a counter.
-    fn new(name: &str) -> TempDir {
+    pub(super) fn new(name: &str) -> TempDir {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let count = COUNTER.fetch_add(1, Ordering::Relaxed);
         let folder = format!(
@@ -44,7 +45,7 @@ impl Drop for TempDir {
 }
 
 /// Opens a profile whose config and data folders are under `temp`.
-fn open_profile(temp: &TempDir) -> Profile {
+pub(super) fn open_profile(temp: &TempDir) -> Profile {
     Profile::open(Folders {
         config: temp.join("config"),
         data: temp.join("data"),
@@ -53,12 +54,12 @@ fn open_profile(temp: &TempDir) -> Profile {
 }
 
 /// Writes `text` as the settings file of `profile`.
-fn write_settings(profile: &Profile, text: &str) {
+pub(super) fn write_settings(profile: &Profile, text: &str) {
     fs::write(profile.settings_file(), text).expect("write settings");
 }
 
 /// Returns the text of the settings file of `profile`.
-fn settings_text(profile: &Profile) -> String {
+pub(super) fn settings_text(profile: &Profile) -> String {
     fs::read_to_string(profile.settings_file()).expect("read settings")
 }
 
@@ -166,6 +167,7 @@ fn the_view_toggles_round_trip() {
         ui_scale_pct: 125,
         preset: ViewPresetPref::Custom,
         view_mode: ViewModePref::Bytes,
+        layout: LayoutPref::Unified,
         words: false,
         syntax: false,
         line_no: false,

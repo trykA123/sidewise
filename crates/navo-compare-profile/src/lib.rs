@@ -14,6 +14,9 @@ pub mod session_store;
 mod appearance_tests;
 
 #[cfg(test)]
+mod appearance_layout_tests;
+
+#[cfg(test)]
 mod book_tests;
 
 #[cfg(test)]
