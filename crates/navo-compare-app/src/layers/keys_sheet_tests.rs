@@ -1,8 +1,14 @@
 //! Tests of the Keys sheet: key groups, the live filter, the keys that open it and focus
 //! restore on Escape.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
+use gpui_kit::base::test_support::texts;
 use gpui_kit::test::TestWindowExt;
-use gpui_kit::{AnyWindowHandle, FocusHandle, TestAppContext};
+use gpui_kit::{
+    AnyWindowHandle, FocusHandle, Modifiers, Point, TestAppContext, VisualTestContext, px,
+};
 use navo_compare_profile::appearance::PaletteId;
 use navo_ui::tokens::Mode;
 
@@ -14,12 +20,16 @@ use crate::theme::apply_sidewise;
 struct Root {
     keys: Entity<KeysSheet>,
     body: FocusHandle,
+    /// Clicks that reached the body under the sheet.
+    clicks: Rc<Cell<u32>>,
 }
 
 impl Render for Root {
     /// Wires the actions the way the shell will and mounts the sheet beside the body.
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let body = div().id("body").track_focus(&self.body).flex_1();
+        let clicks = Rc::clone(&self.clicks);
+        let body = (div().id("body").track_focus(&self.body).flex_1())
+            .on_click(move |_, _, _| clicks.set(clicks.get() + 1));
         let root = div().key_context("Shell").size_full().flex().child(body);
         wire(root, &self.keys).child(self.keys.clone())
     }
@@ -36,6 +46,7 @@ fn root(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Root>) {
         let root = Root {
             keys: cx.new(|cx| KeysSheet::new(window, cx)),
             body: cx.focus_handle(),
+            clicks: Rc::default(),
         };
         window.focus(&root.body, cx);
         root
@@ -139,7 +150,7 @@ fn a_typed_question_mark_stays_text_in_the_filter(cx: &mut TestAppContext) {
     assert_eq!(typed, "?", "the field holds the typed text");
 }
 
-/// The sheet draws open, with its scrim, card, filter and rows.
+/// The open sheet draws its title and a key row as visible text.
 #[gpui_kit::test]
 fn the_open_sheet_draws(cx: &mut TestAppContext) {
     let (window, root_view) = root(cx);
@@ -147,4 +158,31 @@ fn the_open_sheet_draws(cx: &mut TestAppContext) {
     cx.update_window(window, |_, window, cx| window.render_frame(cx))
         .expect("window");
     assert!(sheet(cx, &root_view).read_with(cx, |sheet, _| sheet.is_open()));
+    let seen = cx
+        .update_window(window, |_, window, _| texts(window))
+        .expect("window");
+    for want in ["Keyboard shortcuts", "New tab"] {
+        let found = seen.iter().find(|text| text.text() == want);
+        assert!(found.is_some_and(|text| text.visible()), "{want} is drawn");
+    }
+}
+
+/// A click on the scrim closes the sheet and never reaches the body under it.
+#[gpui_kit::test]
+fn a_click_on_the_scrim_closes_without_reaching_the_body(cx: &mut TestAppContext) {
+    let (window, root_view) = root(cx);
+    let corner = Point::new(px(10.), px(10.));
+    let click = |cx: &mut TestAppContext| {
+        VisualTestContext::from_window(window, cx).simulate_click(corner, Modifiers::none());
+        cx.run_until_parked();
+        cx.update_window(window, |_, window, cx| window.render_frame(cx))
+            .expect("window");
+    };
+    let clicks = |cx: &mut TestAppContext| root_view.read_with(cx, |root, _| root.clicks.get());
+    click(cx);
+    assert_eq!(clicks(cx), 1, "with the sheet closed the body is clicked");
+    cx.simulate_keystrokes(window, "f1");
+    click(cx);
+    assert!(!sheet(cx, &root_view).read_with(cx, |sheet, _| sheet.is_open()));
+    assert_eq!(clicks(cx), 1, "the scrim occludes the body");
 }

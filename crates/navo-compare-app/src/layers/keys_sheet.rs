@@ -1,6 +1,7 @@
 //! The Keys sheet (`?` or F1): a modal list of every shortcut with a live filter.
 //! The shell routes its actions through `wire`.
 
+use gpui_kit::base::TestTextExt as _;
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::{FocusHandle, KeyBinding, ReadGlobal, Subscription};
 use navo_ui::commands::{COMPARE_KEYMAP, Keymap, shown};
@@ -187,7 +188,7 @@ impl KeysSheet {
                     .filter_map(|(k, key)| Kbd::new(id(k), key))
                     .collect();
                 (div().flex().justify_between().gap_3().py_1())
-                    .child(row.label)
+                    .child(row.label.clone().test_text(row.label))
                     .child(div().flex().gap_1().children(kbds))
             });
             let title = div().text_color(m.muted).child(group.title);
@@ -226,7 +227,7 @@ impl Render for KeysSheet {
             .bg(m.card)
             .text_color(m.text)
             .shadow_lg()
-            .child("Keyboard shortcuts")
+            .child("Keyboard shortcuts".test_text("Keyboard shortcuts"))
             .child(TextField::new(
                 "keys-filter",
                 &self.query,
@@ -239,6 +240,7 @@ impl Render for KeysSheet {
             .flex()
             .items_center()
             .justify_center())
+        .occlude()
         .bg(m.scrim)
         .child(card)
         .into_any_element()

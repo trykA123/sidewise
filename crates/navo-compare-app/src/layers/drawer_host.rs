@@ -1,6 +1,9 @@
 //! The right-hand drawer slot: Ctrl+B opens the screen's list, Ctrl+I the details.
 //! The shell routes its actions through `wire`; the screens fill the bodies later.
 
+use std::time::{Duration, Instant};
+
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{AnimationExt, AnyView, KeyBinding};
 use navo_ui::prelude::*;
 
@@ -42,9 +45,12 @@ pub struct DrawerHost {
     list: Drawer,
     open: Option<Drawer>,
     bodies: Vec<(Drawer, AnyView)>,
-    /// Animation endpoints in pixels; `serial` changes on each toggle so the animation restarts.
+    /// Animation endpoints in pixels, when it started and how long it runs; `serial` changes
+    /// on each toggle so the animation restarts.
     from: f32,
     to: f32,
+    started: Option<Instant>,
+    dur: Duration,
     serial: u64,
 }
 
@@ -57,6 +63,8 @@ impl DrawerHost {
             bodies: Vec::new(),
             from: 0.,
             to: 0.,
+            started: None,
+            dur: Duration::ZERO,
             serial: 0,
         }
     }
@@ -85,8 +93,25 @@ impl DrawerHost {
 
     /// Opens `drawer`, swaps to it when another is open, or closes it when it is the one open.
     pub fn toggle(&mut self, drawer: Drawer, cx: &mut Context<Self>) {
+        self.toggle_at(drawer, Instant::now(), cx);
+    }
+
+    /// The width in pixels on screen at `now`: `from` eased towards `to` over `dur`.
+    fn width_at(&self, now: Instant) -> f32 {
+        let Some(start) = self.started else {
+            return self.to;
+        };
+        let run = self.dur.as_secs_f32().max(f32::EPSILON);
+        let t = (now.saturating_duration_since(start).as_secs_f32() / run).min(1.);
+        self.from + (self.to - self.from) * motion::ease_out_quint(t)
+    }
+
+    /// `toggle` with the clock passed in: the new animation starts from the width on screen.
+    fn toggle_at(&mut self, drawer: Drawer, now: Instant, cx: &mut Context<Self>) {
+        self.from = self.width_at(now);
+        self.dur = motion::side(cx);
+        self.started = Some(now);
         self.open = (self.open != Some(drawer)).then_some(drawer);
-        self.from = self.to;
         self.to = if self.open.is_some() { DRAWER_W } else { 0. };
         self.serial += 1;
         cx.notify();
@@ -120,10 +145,16 @@ impl Render for DrawerHost {
             .p_3())
         .child(div().text_color(m.muted).child(title))
         .child(content);
-        let frame = (div().h_full().flex_none().overflow_hidden().border_l_1())
-            .border_color(m.sep)
-            .bg(m.card)
-            .child(inner);
+        let frame = (div()
+            .id("drawer-frame")
+            .test_support()
+            .h_full()
+            .flex_none()
+            .overflow_hidden()
+            .border_l_1())
+        .border_color(m.sep)
+        .bg(m.card)
+        .child(inner);
         let (from, to) = (self.from, self.to);
         let id = SharedString::from(format!("drawer-{}", self.serial));
         match motion::anim(id.clone(), side.motion.side_ms, cx).filter(|_| self.serial > 0) {
