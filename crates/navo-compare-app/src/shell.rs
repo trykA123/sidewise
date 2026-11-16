@@ -3,7 +3,7 @@
 //! the sidebar toggle, F6 pane cycling and hover-tip Escape forwarding.
 
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{App, FocusHandle, KeyBinding, Subscription, WindowAppearance};
+use gpui_kit::{App, FocusHandle, Subscription, WindowAppearance};
 use navo_compare_profile::appearance::PaletteId;
 use navo_compare_profile::brand;
 use navo_compare_profile::recent::StartRows;
@@ -11,18 +11,18 @@ use navo_ui::NavoTitleBar;
 use navo_ui::prelude::*;
 use navo_ui::tokens;
 
-use crate::chrome::sidebar::{self, DismissTip, Sidebar, SidebarEvent, ToggleRail};
+use crate::chrome::sidebar::{DismissTip, Sidebar, SidebarEvent, ToggleRail};
 use crate::chrome::status_bar::{StatusBar, StatusHint};
-use crate::chrome::topbar_status::{self, Action as TopbarAction, Crumbs, Topbar, TopbarMode};
+use crate::chrome::topbar_status::{Action as TopbarAction, Crumbs, Topbar, TopbarMode};
 use crate::layers::toast::ToastHost;
-use crate::start::{self, StartScreen};
+use crate::start::StartScreen;
 use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
 use crate::theme_data::palettes::DIMS;
 
-gpui_kit::actions!(shell, [NewTab, CloseTab, NextTab, PrevTab, CyclePane]);
-
-/// Key context of the shell's root element; the tab keys are bound inside it.
-const CONTEXT: &str = "Shell";
+#[path = "shell_keys.rs"]
+mod shell_keys;
+pub use shell_keys::bind_keys;
+use shell_keys::{CONTEXT, CloseTab, CyclePane, NewTab, NextTab, PrevTab};
 
 /// What a tab shows. Only the start screen exists so far; each start tab owns its screen.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -46,23 +46,6 @@ pub struct Shell {
     toasts: Entity<ToastHost>,
     handle: FocusHandle,
     _appearance: Subscription,
-}
-
-/// Binds the shell, start screen, sidebar, and topbar keys; call once after `navo_ui::init`.
-pub fn bind_keys(cx: &mut App) {
-    start::bind_keys(cx);
-    sidebar::bind_keys(cx);
-    topbar_status::bind_keys(cx);
-    cx.bind_keys([
-        KeyBinding::new("ctrl-t", NewTab, Some(CONTEXT)),
-        KeyBinding::new("ctrl-w", CloseTab, Some(CONTEXT)),
-        KeyBinding::new("ctrl-tab", NextTab, Some(CONTEXT)),
-        KeyBinding::new("ctrl-shift-tab", PrevTab, Some(CONTEXT)),
-        KeyBinding::new("ctrl-\\", ToggleRail, Some(CONTEXT)),
-        KeyBinding::new("f6", CyclePane, Some(CONTEXT)),
-        KeyBinding::new("shift-f6", CyclePane, Some(CONTEXT)),
-        KeyBinding::new("escape", DismissTip, Some(CONTEXT)),
-    ]);
 }
 
 /// Extracts open tab titles in display order for initializing and syncing [`Sidebar`].
@@ -231,28 +214,6 @@ impl Shell {
             None => self.handle.focus(window, cx),
         }
         cx.notify();
-    }
-
-    /// F6 / Shift+F6: moves focus to the other of the two panes, the sidebar or the active start
-    /// screen. Does not resync tab data, so an overlay-only hover tip stays.
-    fn cycle_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sidebar.read(cx).contains_focus(window, cx) {
-            self.activated(window, cx);
-        } else {
-            self.sidebar
-                .update(cx, |sidebar, cx| sidebar.focus_primary(window, cx));
-            cx.notify();
-        }
-    }
-
-    /// `Escape` from Main: dismisses a shown hover tip through the sidebar, else passes on.
-    fn dismiss_tip(&mut self, cx: &mut Context<Self>) {
-        if !self
-            .sidebar
-            .update(cx, |sidebar, cx| sidebar.dismiss_tip(cx))
-        {
-            cx.propagate();
-        }
     }
 
     /// Pushes open tab titles and active index into the sidebar without touching focus.
