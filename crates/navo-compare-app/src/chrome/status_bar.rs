@@ -1,6 +1,10 @@
 //! Presentational status bar (NC66): muted summary left and non-focusable `Kbd` hints right.
 
-use gpui_kit::{RenderOnce, Role, base::TestSupportExt as _, div};
+use gpui_kit::{
+    RenderOnce, Role,
+    base::{TestSupportExt as _, TestTextExt as _},
+    div,
+};
 use navo_ui::{prelude::*, primitives::Kbd, tokens};
 
 /// One keyboard hint displayed on the right side of [`StatusBar`].
@@ -41,7 +45,7 @@ fn hint_view(hint: StatusHint, gap: Pixels) -> Option<Div> {
             .items_center()
             .gap(gap)
             .child(kbd)
-            .child(hint.label),
+            .child(hint.label.clone().test_text(hint.label)),
     )
 }
 
@@ -59,7 +63,7 @@ impl RenderOnce for StatusBar {
             .whitespace_nowrap()
             .overflow_hidden()
             .text_ellipsis()
-            .child(self.summary);
+            .child(self.summary.clone().test_text(self.summary));
         let hints = self
             .hints
             .into_iter()

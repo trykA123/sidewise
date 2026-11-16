@@ -319,6 +319,9 @@ fn shell_defaults_to_violet_without_prior_sidewise_global(cx: &mut TestAppContex
     });
 }
 
+#[path = "shell_keys_tests.rs"]
+mod keys;
+
 /// Opens a sized, themed `Shell` window in Light or Dark mode and renders one frame.
 fn shell_at(cx: &mut TestAppContext, width: f32, mode: Mode) -> (AnyWindowHandle, Entity<Shell>) {
     let (window, view) = cx.update(|cx| {
@@ -400,9 +403,9 @@ fn topbar_in_start_mode_mounts_disabled_pills_without_search_or_sync(cx: &mut Te
     }
 }
 
-/// StatusBar renders `Role::Status`, derived singular/plural summary, and only the two Shell hints.
+/// StatusBar renders `Role::Status`, derived singular/plural summary, and the three Shell hints.
 #[gpui_kit::test]
-fn status_bar_tracks_derived_summary_singular_plural_and_two_hints(cx: &mut TestAppContext) {
+fn status_bar_tracks_derived_summary_singular_plural_and_three_hints(cx: &mut TestAppContext) {
     for mode in [Mode::Light, Mode::Dark] {
         for width in [780., 1200.] {
             let s = shell_at(cx, width, mode);
@@ -414,10 +417,9 @@ fn status_bar_tracks_derived_summary_singular_plural_and_two_hints(cx: &mut Test
                     window.find("status-summary").label(),
                     Some("New compare · 1 open tab")
                 );
-                for id in ["hint-new", "hint-close"] {
+                for id in ["hint-new", "hint-close", "hint-sidebar"] {
                     assert!(window.find(id).path().starts_with(bar.path()));
                 }
-                assert!(window.try_find("hint-sidebar").is_none());
             })
             .expect("window");
 
@@ -538,7 +540,7 @@ fn assert_split_geometry(window: &mut gpui_kit::Window, width: f32) {
     );
     assert!(window.find("title-bar-title").visible());
     assert!(window.try_find("title-bar-arrow").is_none());
-    assert!(window.try_find("hint-sidebar").is_none());
+    assert!(window.try_find("hint-sidebar").is_some());
     let tab0 = window.within("tabs").find(("open-tab", 0usize)).bounds();
     assert!(tab0.origin.x >= px(16.) && tab0.origin.x + tab0.size.width <= main.origin.x - px(16.));
     for id in ["start-left", "start-swap", "start-right", "start-compare"] {

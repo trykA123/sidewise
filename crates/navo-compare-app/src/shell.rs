@@ -1,5 +1,6 @@
 //! The window's shell: the title bar, sidebar, topbar, active stage, toast host, and status bar.
-//! It owns the tab list, syncs the sidebar, and handles browser-style tab keys (NS11, NS15, NS16).
+//! It owns the tab list, syncs the sidebar, and handles browser-style tab keys (NS11, NS15, NS16),
+//! the sidebar toggle, F6 pane cycling and hover-tip Escape forwarding.
 
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{App, FocusHandle, KeyBinding, Subscription, WindowAppearance};
@@ -10,7 +11,7 @@ use navo_ui::NavoTitleBar;
 use navo_ui::prelude::*;
 use navo_ui::tokens;
 
-use crate::chrome::sidebar::{self, Sidebar, SidebarEvent};
+use crate::chrome::sidebar::{self, DismissTip, Sidebar, SidebarEvent, ToggleRail};
 use crate::chrome::status_bar::{StatusBar, StatusHint};
 use crate::chrome::topbar_status::{self, Action as TopbarAction, Crumbs, Topbar, TopbarMode};
 use crate::layers::toast::ToastHost;
@@ -18,7 +19,7 @@ use crate::start::{self, StartScreen};
 use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
 use crate::theme_data::palettes::DIMS;
 
-gpui_kit::actions!(shell, [NewTab, CloseTab, NextTab, PrevTab]);
+gpui_kit::actions!(shell, [NewTab, CloseTab, NextTab, PrevTab, CyclePane]);
 
 /// Key context of the shell's root element; the tab keys are bound inside it.
 const CONTEXT: &str = "Shell";
@@ -57,6 +58,10 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-w", CloseTab, Some(CONTEXT)),
         KeyBinding::new("ctrl-tab", NextTab, Some(CONTEXT)),
         KeyBinding::new("ctrl-shift-tab", PrevTab, Some(CONTEXT)),
+        KeyBinding::new("ctrl-\\", ToggleRail, Some(CONTEXT)),
+        KeyBinding::new("f6", CyclePane, Some(CONTEXT)),
+        KeyBinding::new("shift-f6", CyclePane, Some(CONTEXT)),
+        KeyBinding::new("escape", DismissTip, Some(CONTEXT)),
     ]);
 }
 
@@ -150,6 +155,12 @@ impl Shell {
             .collect()
     }
 
+    /// The sidebar entity (lets key tests read its rail state).
+    #[cfg(test)]
+    pub(crate) fn sidebar(&self) -> &Entity<Sidebar> {
+        &self.sidebar
+    }
+
     /// The start screen of the active tab.
     pub fn active_screen(&self) -> Option<&Entity<StartScreen>> {
         match self.tabs.get(self.active).map(|tab| &tab.kind) {
@@ -220,6 +231,28 @@ impl Shell {
             None => self.handle.focus(window, cx),
         }
         cx.notify();
+    }
+
+    /// F6 / Shift+F6: moves focus to the other of the two panes, the sidebar or the active start
+    /// screen. Does not resync tab data, so an overlay-only hover tip stays.
+    fn cycle_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.sidebar.read(cx).contains_focus(window, cx) {
+            self.activated(window, cx);
+        } else {
+            self.sidebar
+                .update(cx, |sidebar, cx| sidebar.focus_primary(window, cx));
+            cx.notify();
+        }
+    }
+
+    /// `Escape` from Main: dismisses a shown hover tip through the sidebar, else passes on.
+    fn dismiss_tip(&mut self, cx: &mut Context<Self>) {
+        if !self
+            .sidebar
+            .update(cx, |sidebar, cx| sidebar.dismiss_tip(cx))
+        {
+            cx.propagate();
+        }
     }
 
     /// Pushes open tab titles and active index into the sidebar without touching focus.
@@ -294,6 +327,11 @@ impl Shell {
                 keys: "ctrl-w".into(),
                 label: "Close tab".into(),
             },
+            StatusHint {
+                id: "hint-sidebar".into(),
+                keys: "ctrl-\\".into(),
+                label: "Sidebar".into(),
+            },
         ];
         StatusBar::new(summary, hints)
     }
@@ -336,6 +374,12 @@ impl Render for Shell {
             }))
             .on_action(cx.listener(|this, _: &NextTab, window, cx| this.next_tab(window, cx)))
             .on_action(cx.listener(|this, _: &PrevTab, window, cx| this.prev_tab(window, cx)))
+            .on_action(cx.listener(|this, _: &ToggleRail, _, cx| {
+                this.sidebar
+                    .update(cx, |sidebar, cx| sidebar.toggle_rail(cx));
+            }))
+            .on_action(cx.listener(|this, _: &CyclePane, window, cx| this.cycle_pane(window, cx)))
+            .on_action(cx.listener(|this, _: &DismissTip, _, cx| this.dismiss_tip(cx)))
             .flex()
             .flex_col()
             .size_full()
