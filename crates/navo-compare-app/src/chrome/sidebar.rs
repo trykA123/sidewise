@@ -285,6 +285,7 @@ impl Sidebar {
     }
 
     /// The footer actions, pushed to the bottom and icon-only in the rail.
+    #[expect(dead_code, reason = "the Appearance row is hidden in alpha")]
     fn footer_view(&self, m: &ModeTokens, cx: &mut Context<Self>) -> Div {
         let appearance = Entry {
             mark: Mark::Chrome(IconName::Palette),
@@ -384,7 +385,6 @@ impl Render for Sidebar {
             .pt(DIMS.inset_y)
             .gap_3()
             .children(self.sections().iter().map(|s| self.group_view(s, &m, cx)))
-            .child(self.footer_view(&m, cx))
             .children(self.rail_tip_overlay(&m, cx));
         match motion::anim("sidebar-width", side.motion.side_ms, cx) {
             Some(enter) => body
