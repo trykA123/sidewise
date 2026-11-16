@@ -33,3 +33,4 @@ mod large_view_tests;
 pub mod pair_requests;
 #[cfg(test)]
 mod pair_requests_tests;
+pub mod reveal;

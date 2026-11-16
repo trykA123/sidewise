@@ -95,11 +95,14 @@ fn right_click_selects_and_shows_the_file_menu(cx: &mut TestAppContext) {
             "Open in Stream",
             "Copy left path",
             "Copy right path",
-            "Copy name"
+            "Copy name",
+            "Reveal left in Explorer",
+            "Reveal right in Explorer"
         ]
     );
     let enabled: Vec<_> = lines.iter().map(|l| l.2).collect();
-    assert_eq!(enabled, [true, true, true, false, true]);
+    let left = cfg!(windows);
+    assert_eq!(enabled, [true, true, true, false, true, left, false]);
 }
 
 #[gpui_kit::test]

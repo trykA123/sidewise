@@ -13,7 +13,7 @@ use gpui_kit::{
 use navo_ui::browser::{CompareFilter, CompareRow};
 use navo_ui::compare_diff::map::{ChangeMap, MapEvent};
 
-use self::menu::{CopyLeftPath, ExpandAll, OpenStream, ShowMenu, menu_actions};
+use self::menu::{CopyLeftPath, ExpandAll, OpenStream, RevealLeft, ShowMenu, menu_actions};
 use super::folders_head::head_view;
 use super::folders_model::{FolderTree, TreeLine, map_hunks};
 use super::folders_row::{LineCtx, line_view, summary_bar};
@@ -45,6 +45,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", Activate, Some(CONTEXT)),
         KeyBinding::new("shift-enter", OpenStream, Some(CONTEXT)),
         KeyBinding::new("ctrl-shift-c", CopyLeftPath, Some(CONTEXT)),
+        KeyBinding::new("ctrl-shift-e", RevealLeft, Some(CONTEXT)),
         KeyBinding::new("shift-right", ExpandAll, Some(CONTEXT)),
         KeyBinding::new("shift-f10", ShowMenu, Some(CONTEXT)),
     ]);
