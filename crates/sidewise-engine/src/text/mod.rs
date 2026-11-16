@@ -1,0 +1,22 @@
+pub mod apply;
+pub mod card;
+pub mod diff;
+mod digest;
+pub mod intraline;
+pub mod large;
+pub mod normalise;
+pub mod pair;
+pub mod scan;
+pub mod side;
+
+pub use apply::{ApplyError, Direction, Picked, PickedHunk, TargetFacts, apply_hunk, apply_picked};
+pub use card::{CardLimits, CardPlan, CardRow, card};
+pub use diff::{Alignment, Fallback, Hunk, Row, diff_lines};
+pub use digest::{HUNK_DIGEST_BYTES, HunkDigest, HunkDigests};
+pub use intraline::{
+    INTRALINE_DEADLINE, INTRALINE_MAX_CHARS, Intraline, IntralineFallback, LinePair, Span,
+    SpanSide, intraline,
+};
+pub use normalise::{Options, Whitespace, normalise};
+pub use pair::{PAIR_THRESHOLD, Pair, Pairs, Subhunk, pair_lines};
+pub use side::{DIFF_TOKEN_LIMIT, Large, Line, LineEnding, TextSide, Whole, content_class, detect};

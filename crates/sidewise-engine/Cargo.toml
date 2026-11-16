@@ -1,0 +1,35 @@
+[package]
+name = "sidewise-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[features]
+test-hooks = []
+
+[dependencies]
+blake3 = { version = "=1.8.7", features = ["rayon"] }
+fastcdc = "=5.0.0"
+ignore = "=0.4.34"
+image = { version = "=0.25.10", default-features = false }
+image-compare = "=0.5.0"
+imara-diff = "=0.2.0"
+navo-core = { package = "sidewise-core", path = "../sidewise-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+similar = "=3.2.1"
+xxhash-rust = { version = "=0.8.19", features = ["xxh3"] }
+
+[dev-dependencies]
+gungraun = "=0.20.0"
+proptest = "1.12.0"
+tempfile = "=3.27.0"
+
+[[bench]]
+name = "text"
+harness = false
+required-features = ["test-hooks"]
+
+[lints]
+workspace = true

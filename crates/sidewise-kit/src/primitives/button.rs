@@ -1,0 +1,193 @@
+//! Buttons on navo's tokens: text buttons (with an optional `&` access key) and icon buttons.
+
+use std::rc::Rc;
+
+use gpui_kit::assets::IconName;
+use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
+use gpui_kit::component::{Disableable, Icon, Selectable, Sizable};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::{
+    App, ClickEvent, ElementId, FocusHandle, IntoElement, ParentElement, RenderOnce, SharedString,
+    Styled, Window,
+};
+
+use super::access_label::{access_label, plain_text};
+use crate::tokens;
+
+type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ButtonVariant {
+    #[default]
+    Secondary,
+    Primary,
+    Ghost,
+    Danger,
+}
+
+#[derive(IntoElement)]
+pub struct Button {
+    id: ElementId,
+    label: SharedString,
+    icon: Option<IconName>,
+    variant: ButtonVariant,
+    is_disabled: bool,
+    tooltip: Option<SharedString>,
+    /// Set when the label holds an `&` access-key marker; true while Alt is held.
+    show_keys: Option<bool>,
+    focus: Option<FocusHandle>,
+    on_click: Option<ClickHandler>,
+}
+
+impl Button {
+    pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            icon: None,
+            variant: ButtonVariant::default(),
+            is_disabled: false,
+            tooltip: None,
+            show_keys: None,
+            focus: None,
+            on_click: None,
+        }
+    }
+
+    /// Reads the label's `&` access-key marker and underlines the key while `show_keys` is true.
+    pub fn access_key(mut self, show_keys: bool) -> Self {
+        self.show_keys = Some(show_keys);
+        self
+    }
+
+    /// Ties the button to `focus`, so the owner can put keyboard focus on it.
+    pub fn track_focus(mut self, focus: &FocusHandle) -> Self {
+        self.focus = Some(focus.clone());
+        self
+    }
+
+    pub fn variant(mut self, variant: ButtonVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+
+    pub fn icon(mut self, icon: IconName) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn disabled(mut self, is_disabled: bool) -> Self {
+        self.is_disabled = is_disabled;
+        self
+    }
+
+    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(text.into());
+        self
+    }
+
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for Button {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let t = tokens::current(cx);
+        let button = match self.show_keys {
+            Some(show) => KitButton::new(self.id)
+                .accessibility_label(plain_text(&self.label))
+                .child(access_label(&self.label, show)),
+            None => KitButton::new(self.id).label(self.label),
+        };
+        let button = button
+            .small()
+            .font_family(t.typography.ui_font.clone())
+            .text_size(t.typography.small)
+            .disabled(self.is_disabled)
+            .when_some(self.icon, |button, icon| {
+                button.icon(Icon::new(icon).size(t.spacing.icon))
+            });
+        let button = match self.variant {
+            ButtonVariant::Primary => button.primary(),
+            ButtonVariant::Secondary => button.outline(),
+            ButtonVariant::Ghost => button.ghost(),
+            ButtonVariant::Danger => button.danger(),
+        };
+        button
+            .when_some(self.tooltip, KitButton::tooltip)
+            .when_some(self.focus, |button, focus| button.track_focus(&focus))
+            .when_some(self.on_click, |button, handler| {
+                button.on_click(move |event, window, cx| handler(event, window, cx))
+            })
+    }
+}
+
+#[derive(IntoElement)]
+pub struct IconButton {
+    id: ElementId,
+    icon: IconName,
+    label: SharedString,
+    is_selected: bool,
+    is_disabled: bool,
+    on_click: Option<ClickHandler>,
+}
+
+impl IconButton {
+    pub fn new(id: impl Into<ElementId>, icon: IconName, label: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            icon,
+            label: label.into(),
+            is_selected: false,
+            is_disabled: false,
+            on_click: None,
+        }
+    }
+
+    pub fn selected(mut self, is_selected: bool) -> Self {
+        self.is_selected = is_selected;
+        self
+    }
+
+    pub fn disabled(mut self, is_disabled: bool) -> Self {
+        self.is_disabled = is_disabled;
+        self
+    }
+
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for IconButton {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let t = tokens::current(cx);
+        let color = match (self.is_disabled, self.is_selected) {
+            (true, _) => t.colors.faint,
+            (false, true) => t.colors.text,
+            (false, false) => t.colors.muted,
+        };
+        let glyph = Icon::new(self.icon).size(t.spacing.icon);
+        KitButton::new(self.id)
+            .icon(glyph)
+            .ghost()
+            .with_size(t.spacing.icon + t.spacing.sm * 2.)
+            .text_color(color)
+            .selected(self.is_selected)
+            .disabled(self.is_disabled)
+            .accessibility_label(self.label.clone())
+            .tooltip(self.label)
+            .when_some(self.on_click, |button, handler| {
+                button.on_click(move |event, window, cx| handler(event, window, cx))
+            })
+    }
+}

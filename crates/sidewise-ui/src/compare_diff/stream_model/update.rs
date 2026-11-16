@@ -1,0 +1,139 @@
+//! How the Stream model takes worker updates, new item lists, a search and Esc (D24, D25, D30).
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use super::search::Scan;
+use super::{EscStep, Stop, StreamList, StreamModel};
+use crate::compare_diff::hooks::{Card, StreamUpdate};
+
+impl StreamModel {
+    /// Takes a worker update. One tagged with another generation, or an old query, is dropped.
+    pub fn apply(&mut self, update: &StreamUpdate) {
+        match update {
+            StreamUpdate::Card {
+                generation,
+                id,
+                card,
+            } if *generation == self.generation => {
+                if self.items.iter().any(|i| i.id == *id) {
+                    self.take_card(*id, card);
+                }
+            }
+            StreamUpdate::Detail {
+                generation,
+                id,
+                detail,
+            } if *generation == self.generation => {
+                // A detail belongs to the card it was read for; without one it draws nowhere.
+                if self.items.iter().any(|i| i.id == *id) && self.cards.contains_key(id) {
+                    self.details.insert(*id, detail.clone());
+                }
+            }
+            StreamUpdate::Evicted { generation, id } if *generation == self.generation => {
+                self.cards.remove(id);
+                self.details.remove(id);
+            }
+            StreamUpdate::Viewed { id, viewed } => self.mark_viewed(*id, *viewed),
+            StreamUpdate::Progress {
+                generation,
+                built,
+                total,
+            } if *generation == self.generation => {
+                self.progress = (*built, *total);
+            }
+            StreamUpdate::Hits {
+                generation,
+                query,
+                hits,
+                searched,
+                total,
+                done,
+            } if *generation == self.generation && *query == self.query && self.searching() => {
+                self.take_hits(hits);
+                self.scan = Scan {
+                    searched: *searched,
+                    total: *total,
+                    done: *done,
+                };
+            }
+            _ => {}
+        }
+        self.fix_cursor();
+    }
+
+    /// Stores a new card. Its detail goes with the card it was read for: other content under the
+    /// same id means the held detail is about bytes that are gone. The Viewed mark of the same
+    /// content already on screen wins over the card's, so a rebuild keeps what V set here (D28).
+    fn take_card(&mut self, id: u64, card: &Arc<Card>) {
+        let same = self
+            .cards
+            .get(&id)
+            .is_some_and(|old| old.viewed_key == card.viewed_key);
+        if !same {
+            self.details.remove(&id);
+            self.mark_viewed(id, card.viewed);
+        }
+        self.cards.insert(id, card.clone());
+    }
+
+    /// Sets the Viewed mark of `id`; a change puts its fold back to the default.
+    fn mark_viewed(&mut self, id: u64, viewed: bool) {
+        let changed = if viewed {
+            self.viewed.insert(id)
+        } else {
+            self.viewed.remove(&id)
+        };
+        if changed {
+            self.toggled.remove(&id);
+        }
+    }
+
+    /// Replaces the items for a new `generation`; the cursor stays on the same item id.
+    /// Cards of items still listed stay until the app sends new ones, with their details.
+    pub fn set_items(&mut self, generation: u64, list: StreamList) {
+        let kept = self.items.get(self.cursor.item).map(|i| i.id);
+        self.generation = generation;
+        self.items = list.items;
+        self.rules = list.rules;
+        let ids: HashSet<u64> = self.items.iter().map(|i| i.id).collect();
+        self.cards.retain(|id, _| ids.contains(id));
+        self.details.retain(|id, _| ids.contains(id));
+        self.cursor = match kept.and_then(|id| self.items.iter().position(|i| i.id == id)) {
+            Some(item) => Stop {
+                item,
+                hunk: self.cursor.hunk,
+            },
+            None => Stop {
+                item: self.cursor.item.min(self.items.len().saturating_sub(1)),
+                hunk: None,
+            },
+        };
+        self.fix_cursor();
+    }
+
+    /// Starts narrowing to search `query`, a new tag per typed text; hits arrive as
+    /// `StreamUpdate::Hits`. Until they do, nothing matches.
+    pub fn begin_search(&mut self, query: u64) {
+        self.query = query;
+        self.hits = Some(HashMap::new());
+        self.scan = Scan::default();
+        self.replace_hits = false;
+        self.fix_cursor();
+    }
+
+    /// Esc: closes the search, then the outline, then leaves the Stream.
+    pub fn esc(&mut self) -> EscStep {
+        if self.searching() {
+            self.clear_search();
+            EscStep::ClearSearch
+        } else if std::mem::take(&mut self.outline_open) {
+            EscStep::CloseOutline
+        } else {
+            EscStep::Leave
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

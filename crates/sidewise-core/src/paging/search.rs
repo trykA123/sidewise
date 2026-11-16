@@ -1,0 +1,262 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use aho_corasick::AhoCorasick;
+use memchr::memmem;
+use serde::{Deserialize, Serialize};
+
+use super::{ByteSource, TextLayout, read_full, span};
+
+pub const SEARCH_CHUNK: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Needle {
+    Text { text: String, match_case: bool },
+    Bytes(Vec<u8>),
+}
+
+impl Needle {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Text { text, .. } => text.is_empty(),
+            Self::Bytes(bytes) => bytes.is_empty(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Search {
+    pub needle: Needle,
+    pub from: u64,
+    pub backward: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Found {
+    At(u64),
+    NotFound,
+    Cancelled,
+}
+
+pub fn parse_hex(input: &str) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    for word in input.split_whitespace() {
+        if !word.len().is_multiple_of(2) || !word.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(format!("Not hex bytes: {word}"));
+        }
+        for pair in word.as_bytes().chunks(2) {
+            let digits = std::str::from_utf8(pair).map_err(|error| error.to_string())?;
+            bytes.push(u8::from_str_radix(digits, 16).map_err(|error| error.to_string())?);
+        }
+    }
+    if bytes.is_empty() {
+        return Err("Type hex bytes, like 4D 5A.".to_owned());
+    }
+    Ok(bytes)
+}
+
+pub(super) struct Matcher {
+    kind: Kind,
+    unit: usize,
+    width: usize,
+}
+
+enum Kind {
+    Exact(Vec<u8>),
+    Fold(AhoCorasick),
+}
+
+impl Matcher {
+    pub(super) fn new(
+        needle: &Needle,
+        layout: &TextLayout,
+    ) -> Result<Option<(Self, usize)>, String> {
+        let (bytes, fold, unit) = match needle {
+            Needle::Text { text, match_case } => {
+                let Some(bytes) = layout.encode(text) else {
+                    return Ok(None);
+                };
+                let fold = !match_case && (!layout.is_wide() || text.is_ascii());
+                (bytes, fold, layout.unit())
+            }
+            Needle::Bytes(bytes) => (bytes.clone(), false, 1),
+        };
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+        let width = bytes.len();
+        let kind = if fold {
+            let built = AhoCorasick::builder()
+                .ascii_case_insensitive(true)
+                .build([&bytes])
+                .map_err(|error| error.to_string())?;
+            Kind::Fold(built)
+        } else {
+            Kind::Exact(bytes)
+        };
+        Ok(Some((Self { kind, unit, width }, width)))
+    }
+
+    fn is_aligned(&self, start: usize) -> bool {
+        start.is_multiple_of(self.unit)
+    }
+
+    fn first(&self, hay: &[u8]) -> Option<usize> {
+        match &self.kind {
+            Kind::Exact(needle) => self.first_exact(hay, needle),
+            Kind::Fold(automaton) => automaton
+                .find_overlapping_iter(hay)
+                .map(|found| found.start())
+                .find(|start| self.is_aligned(*start)),
+        }
+    }
+
+    fn first_exact(&self, hay: &[u8], needle: &[u8]) -> Option<usize> {
+        let mut from = 0;
+        loop {
+            let found = from + memmem::find(&hay[from..], needle)?;
+            if self.is_aligned(found) {
+                return Some(found);
+            }
+            from = found + 1;
+        }
+    }
+
+    pub(super) fn starts(&self, hay: &[u8]) -> Vec<usize> {
+        match &self.kind {
+            Kind::Exact(needle) if self.unit == 1 => memmem::find_iter(hay, needle).collect(),
+            Kind::Fold(automaton) if self.unit == 1 => automaton
+                .find_iter(hay)
+                .map(|found| found.start())
+                .collect(),
+            _ => self.aligned_starts(hay),
+        }
+    }
+
+    fn aligned_starts(&self, hay: &[u8]) -> Vec<usize> {
+        let mut starts: Vec<usize> = Vec::new();
+        let mut from = 0;
+        while let Some(found) = self.first(&hay[from..]).map(|found| from + found) {
+            starts.push(found);
+            from = found + self.width;
+        }
+        starts
+    }
+
+    fn last(&self, hay: &[u8]) -> Option<usize> {
+        match &self.kind {
+            Kind::Exact(needle) => self.last_exact(hay, needle),
+            Kind::Fold(automaton) => automaton
+                .find_overlapping_iter(hay)
+                .map(|found| found.start())
+                .filter(|start| self.is_aligned(*start))
+                .last(),
+        }
+    }
+
+    fn last_exact(&self, hay: &[u8], needle: &[u8]) -> Option<usize> {
+        let mut end = hay.len();
+        loop {
+            let found = memmem::rfind(&hay[..end], needle)?;
+            if self.is_aligned(found) {
+                return Some(found);
+            }
+            end = found + needle.len() - 1;
+        }
+    }
+}
+
+pub fn find<S: ByteSource + ?Sized>(
+    src: &S,
+    search: &Search,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(u64),
+) -> Result<Found, String> {
+    if cancel.load(Ordering::Relaxed) {
+        return Ok(Found::Cancelled);
+    }
+    let layout = src.layout();
+    let Some((matcher, width)) = Matcher::new(&search.needle, &layout)? else {
+        return Ok(Found::NotFound);
+    };
+    let scan = Scan {
+        matcher: &matcher,
+        extra: width as u64 - 1,
+        from: layout.align(search.from.min(src.len())),
+        cancel,
+    };
+    if search.backward {
+        scan.backward(src, progress)
+    } else {
+        scan.forward(src, progress)
+    }
+}
+
+struct Scan<'a> {
+    matcher: &'a Matcher,
+    extra: u64,
+    from: u64,
+    cancel: &'a AtomicBool,
+}
+
+impl Scan<'_> {
+    fn forward<S: ByteSource + ?Sized>(
+        &self,
+        src: &S,
+        progress: &mut dyn FnMut(u64),
+    ) -> Result<Found, String> {
+        let len = src.len();
+        let mut buf = Vec::new();
+        let mut at = self.from;
+        while at < len {
+            if self.cancel.load(Ordering::Relaxed) {
+                return Ok(Found::Cancelled);
+            }
+            let stop = (at + SEARCH_CHUNK as u64 + self.extra).min(len);
+            let hay = fill(src, at, stop, &mut buf)?;
+            if let Some(found) = self.matcher.first(hay) {
+                return Ok(Found::At(at + found as u64));
+            }
+            at = (at + SEARCH_CHUNK as u64).min(len);
+            progress(at - self.from);
+        }
+        Ok(Found::NotFound)
+    }
+
+    fn backward<S: ByteSource + ?Sized>(
+        &self,
+        src: &S,
+        progress: &mut dyn FnMut(u64),
+    ) -> Result<Found, String> {
+        let len = src.len();
+        let mut buf = Vec::new();
+        let mut end = self.from;
+        while end > 0 {
+            if self.cancel.load(Ordering::Relaxed) {
+                return Ok(Found::Cancelled);
+            }
+            let low = end.saturating_sub(SEARCH_CHUNK as u64);
+            let stop = (end + self.extra).min(len);
+            let hay = fill(src, low, stop, &mut buf)?;
+            let before = span(low, end);
+            let found = self.matcher.last(hay).filter(|start| *start < before);
+            if let Some(found) = found {
+                return Ok(Found::At(low + found as u64));
+            }
+            end = low;
+            progress(self.from - end);
+        }
+        Ok(Found::NotFound)
+    }
+}
+
+pub(super) fn fill<'b, S: ByteSource + ?Sized>(
+    src: &S,
+    from: u64,
+    to: u64,
+    buf: &'b mut Vec<u8>,
+) -> Result<&'b [u8], String> {
+    buf.resize(span(from, to), 0);
+    let count = read_full(src, from, buf)?;
+    Ok(&buf[..count])
+}
