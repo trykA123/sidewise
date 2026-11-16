@@ -45,6 +45,9 @@ mod screens;
 mod shell;
 #[cfg(test)]
 mod shell_layers_tests;
+mod shell_prefs;
+#[cfg(test)]
+mod shell_prefs_tests;
 #[cfg(test)]
 mod shell_tests;
 mod start;

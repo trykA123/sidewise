@@ -24,6 +24,9 @@ pub fn run(opening: Opening) -> std::process::ExitCode {
         if let Err(message) = Shell::install_sessions(profile.as_deref(), cx) {
             report(&message);
         }
+        if let Err(message) = crate::shell_prefs::install_prefs(profile.as_deref(), cx) {
+            report(&message);
+        }
         let opened = initialised
             .map_err(|error| error.to_string())
             .and_then(|()| open(cx, pair));
