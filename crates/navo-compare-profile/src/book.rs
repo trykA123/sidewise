@@ -82,6 +82,29 @@ impl SessionBook {
             respect_gitignore: session.rules.respect_gitignore,
         })
     }
+    /// Deletes unnamed session `id` from the profile, refreshes and returns it. Fails with `"Named sessions are not removed from Recent."` or `"Could not remove this session from Recent: …"`.
+    pub fn forget(&mut self, id: &str, now_s: i64) -> Result<Session, String> {
+        let remove_text = |error: &StoreError| {
+            format!(
+                "Could not remove this session from Recent: {}.",
+                store_text(error)
+            )
+        };
+        let session = self.store.load(id).map_err(|error| remove_text(&error))?;
+        if session.name.is_some() {
+            return Err("Named sessions are not removed from Recent.".to_string());
+        }
+        self.store.delete(id).map_err(|error| remove_text(&error))?;
+        self.refresh(now_s)?;
+        Ok(session)
+    }
+    /// Saves `session` back under its own id (the undo of `forget`) and refreshes, without pruning. Fails with `"Could not restore this session: …"`.
+    pub fn restore(&mut self, session: &Session, now_s: i64) -> Result<(), String> {
+        self.store
+            .save(session)
+            .map_err(|error| format!("Could not restore this session: {}.", store_text(&error)))?;
+        self.refresh(now_s)
+    }
     /// Reads the stored sessions at `now_s` and rebuilds the start rows, keeping them on error.
     pub fn refresh(&mut self, now_s: i64) -> Result<(), String> {
         let sessions = self

@@ -273,3 +273,56 @@ fn a_newer_profile_is_refused_and_kept() {
         b"version = 9\n"
     );
 }
+
+#[test]
+fn forget_removes_one_recent_row() {
+    let temp = TempDir::new("forget");
+    let mut book = open_book(&temp);
+    book.record(&visit(&temp, "a", "b", false), T)
+        .expect("record");
+    let id = SessionStore::open(temp.join("sessions"))
+        .list()
+        .expect("list")[0]
+        .id
+        .clone();
+    let session = book.forget(&id, 1_700_000_000).expect("forget");
+    assert_eq!(session.id, id);
+    assert!(book.rows().recent.is_empty());
+    assert!(
+        SessionStore::open(temp.join("sessions"))
+            .list()
+            .expect("list")
+            .is_empty()
+    );
+}
+
+#[test]
+fn forget_refuses_a_named_session() {
+    let temp = TempDir::new("forget-named");
+    let mut book = open_book(&temp);
+    let mut named = pair("a-1");
+    named.name = Some("Keep me".to_string());
+    SessionStore::open(temp.join("sessions"))
+        .save(&named)
+        .expect("save");
+    let error = book.forget("a-1", 1_700_000_000).expect_err("refused");
+    assert_eq!(error, "Named sessions are not removed from Recent.");
+    assert!(
+        SessionStore::open(temp.join("sessions"))
+            .load("a-1")
+            .is_ok()
+    );
+}
+
+#[test]
+fn restore_brings_the_same_id_back() {
+    let temp = TempDir::new("restore");
+    let mut book = open_book(&temp);
+    book.record(&visit(&temp, "a", "b", false), T)
+        .expect("record");
+    let id = book.rows().recent[0].id.clone();
+    let session = book.forget(&id, 1_700_000_000).expect("forget");
+    book.restore(&session, 1_700_000_000).expect("restore");
+    assert_eq!(book.rows().recent.len(), 1);
+    assert_eq!(book.rows().recent[0].id, id);
+}
