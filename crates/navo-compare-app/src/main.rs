@@ -9,6 +9,8 @@
 )]
 mod chrome;
 #[cfg(test)]
+mod enter_keys_tests;
+#[cfg(test)]
 mod compare_tab_keys_tests;
 #[cfg(test)]
 mod compare_tab_large_tests;
