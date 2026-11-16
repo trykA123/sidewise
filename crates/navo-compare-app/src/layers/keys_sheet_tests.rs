@@ -12,6 +12,7 @@ use gpui_kit::{
 use navo_compare_profile::appearance::PaletteId;
 use sidewise_kit::tokens::Mode;
 
+use super::super::keys_sheet_compare::{compare_groups, groups_from, translated};
 use super::*;
 use crate::test_window::open;
 use crate::theme::apply_sidewise;
@@ -74,7 +75,7 @@ fn labels(query: &str) -> Vec<SharedString> {
 #[gpui_kit::test]
 fn the_groups_list_the_keys_that_exist_now(_cx: &mut TestAppContext) {
     let groups = key_groups();
-    let titles: Vec<_> = groups.iter().map(|group| group.title).collect();
+    let titles: Vec<&str> = groups.iter().map(|group| group.title.as_ref()).collect();
     assert_eq!(titles[0], "Window", "Sidewise keys come first");
     assert!(
         ["Compare tab", "Folders", "Large"]
@@ -91,12 +92,38 @@ fn the_groups_list_the_keys_that_exist_now(_cx: &mut TestAppContext) {
                 .flat_map(|row| row.keys.iter().map(String::as_str))
         })
         .collect();
-    for want in ["?", "f1", "ctrl-t", "f6", "alt-v", "5", "enter", "left"] {
+    for want in ["?", "f1", "ctrl-t", "f6", "alt-down", "5", "enter", "left"] {
         assert!(keys.contains(&want), "missing {want}");
     }
     for dropped in ["t", "shift-t", "6"] {
         assert!(!keys.contains(&dropped), "{dropped} must not be listed");
     }
+}
+
+/// Every compare binding that has a label shows as a row, with a translated label.
+#[gpui_kit::test]
+fn the_keys_sheet_lists_every_compare_binding(_cx: &mut TestAppContext) {
+    use sidewise_ui::compare_keys::{COMPARE_LABELS, compare_keys};
+    let keys = compare_keys().expect("the compare key file parses");
+    let labelled = keys
+        .iter()
+        .filter(|key| COMPARE_LABELS.iter().any(|(name, _)| *name == key.command))
+        .count();
+    assert_eq!(labelled, keys.len(), "every bound command has a label");
+    let shown = (keys.iter())
+        .filter_map(|key| COMPARE_LABELS.iter().find(|(name, _)| *name == key.command))
+        .filter(|(_, id)| translated(id).is_some())
+        .count();
+    let rows: Vec<KeyRow> = (compare_groups().into_iter())
+        .flat_map(|group| group.rows)
+        .collect();
+    assert_eq!(rows.len(), shown, "rows without Fluent text are skipped");
+    assert!(rows.len() >= 10, "{} rows", rows.len());
+    let next = sidewise_l10n::tr("cmd-compare-next-difference");
+    assert!(!next.is_empty() && next != "cmd-compare-next-difference");
+    assert!(rows.iter().any(|row| row.label == next));
+    let skipped = groups_from(&keys, &[], translated);
+    assert!(skipped.is_empty(), "unlabelled commands are skipped");
 }
 
 /// The filter matches labels and shown keys, case-insensitively, and drops empty groups.

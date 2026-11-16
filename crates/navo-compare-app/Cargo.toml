@@ -27,6 +27,7 @@ sidewise-engine = { path = "../sidewise-engine" }
 sidewise-fs = { path = "../sidewise-fs" }
 sidewise-host = { path = "../sidewise-host" }
 sidewise-kit = { path = "../sidewise-kit" }
+sidewise-l10n = { path = "../sidewise-l10n" }
 sidewise-ui = { path = "../sidewise-ui" }
 toml = "1.2.1"
 

@@ -8,6 +8,7 @@ use sidewise_kit::prelude::*;
 use sidewise_kit::primitives::{Kbd, TextField, TextFieldState, text_field_state};
 use sidewise_kit::shown::shown;
 
+use super::keys_sheet_compare::compare_groups;
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::ModeTokens;
 
@@ -19,7 +20,7 @@ const SHEET: &str = "KeysSheet";
 type Row = (&'static str, &'static [&'static str]);
 
 /// The keys that exist now, as `(group title, rows)`; a row is a label and its keys in gpui form.
-const GROUPS: [(&str, &[Row]); 5] = [
+const GROUPS: [(&str, &[Row]); 4] = [
     (
         "Window",
         &[
@@ -52,13 +53,6 @@ const GROUPS: [(&str, &[Row]); 5] = [
         ],
     ),
     ("Large", &[("Show Folders", &["enter"])]),
-    (
-        "File and Stream",
-        &[(
-            "View menu, and Esc to go back (Navo's own keys)",
-            &["alt-v", "escape"],
-        )],
-    ),
 ];
 
 /// One line of the sheet: a command's label and its keys in gpui form.
@@ -71,7 +65,7 @@ pub struct KeyRow {
 /// A titled run of rows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyGroup {
-    pub title: &'static str,
+    pub title: SharedString,
     pub rows: Vec<KeyRow>,
 }
 
@@ -92,19 +86,17 @@ pub fn wire(root: Div, keys: &Entity<KeysSheet>) -> Div {
     })
 }
 
-/// The keys that really exist now, grouped; File and Stream keep Navo's own keys on one row.
+/// The static groups, then the compare groups read from `sidewise-ui` (NC114).
 pub fn key_groups() -> Vec<KeyGroup> {
     let row = |(label, keys): &Row| KeyRow {
         label: (*label).to_owned().into(),
         keys: keys.iter().map(|key| (*key).to_owned()).collect(),
     };
-    GROUPS
-        .iter()
-        .map(|(title, rows)| KeyGroup {
-            title,
-            rows: rows.iter().map(row).collect(),
-        })
-        .collect()
+    let fixed = GROUPS.iter().map(|(title, rows)| KeyGroup {
+        title: (*title).into(),
+        rows: rows.iter().map(row).collect(),
+    });
+    fixed.chain(compare_groups()).collect()
 }
 
 /// The rows whose label or shown keys contain `query` (case-insensitive); empty groups drop out.
@@ -122,7 +114,7 @@ pub fn filter_groups(groups: &[KeyGroup], query: &str) -> Vec<KeyGroup> {
         .filter_map(|group| {
             let rows: Vec<KeyRow> = group.rows.iter().filter(|row| hit(row)).cloned().collect();
             (!rows.is_empty()).then_some(KeyGroup {
-                title: group.title,
+                title: group.title.clone(),
                 rows,
             })
         })
@@ -203,7 +195,7 @@ impl KeysSheet {
                     .child(row.label.clone().test_text(row.label))
                     .child(div().flex().gap_1().children(kbds))
             });
-            let title = div().text_color(m.muted).child(group.title);
+            let title = div().text_color(m.muted).child(group.title.clone());
             div().pb_3().child(title).children(rows)
         };
         let items = groups.into_iter().enumerate().map(group_view);
