@@ -79,6 +79,19 @@ pub enum LayoutPref {
     Unified,
 }
 
+/// The update check preference of a profile (NC180).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateCheck {
+    /// Ask before checking GitHub for a new version.
+    #[default]
+    Ask,
+    /// Check GitHub without asking.
+    On,
+    /// Never check GitHub.
+    Off,
+}
+
 /// The `[ui]` table: theme, sidebar and the View options of the View menu.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -109,6 +122,8 @@ pub struct UiPrefs {
     pub wrap_lines: bool,
     /// Ignore whitespace when comparing.
     pub ignore_whitespace: bool,
+    /// Whether Sidewise may check GitHub for a new version (NC180).
+    pub update_check: UpdateCheck,
 }
 
 impl Default for UiPrefs {
@@ -128,6 +143,7 @@ impl Default for UiPrefs {
             fold_unchanged: true,
             wrap_lines: false,
             ignore_whitespace: false,
+            update_check: UpdateCheck::Ask,
         }
     }
 }
@@ -223,3 +239,7 @@ fn io(path: &Path, error: std::io::Error) -> AppearanceError {
         error,
     }
 }
+
+#[cfg(test)]
+#[path = "appearance_update_tests.rs"]
+mod update_tests;

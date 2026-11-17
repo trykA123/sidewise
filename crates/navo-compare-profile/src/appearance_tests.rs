@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::appearance::{
-    AppearanceMode, LayoutPref, PaletteId, UiPrefs, ViewModePref, ViewPresetPref, load_or_default,
-    save,
+    AppearanceMode, LayoutPref, PaletteId, UiPrefs, UpdateCheck, ViewModePref, ViewPresetPref,
+    load_or_default, save,
 };
 use crate::brand;
 use crate::paths::{Folders, Profile};
@@ -174,6 +174,7 @@ fn the_view_toggles_round_trip() {
         fold_unchanged: false,
         wrap_lines: true,
         ignore_whitespace: true,
+        update_check: UpdateCheck::On,
     };
     save(&profile, &prefs).expect("save");
     assert_eq!(
