@@ -93,8 +93,7 @@ impl Shell {
         self.set_view_menu(Some((menu, sub)), cx);
     }
 
-    /// Closes the View menu and gives the focus back to the active tab (Escape, the pill, a
-    /// click outside).
+    /// Closes the View menu and refocuses the active tab (Escape, the pill, a click outside).
     fn close_view_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_view_menu(None, cx);
         self.activated(window, cx);

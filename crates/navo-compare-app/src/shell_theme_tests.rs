@@ -1,7 +1,10 @@
 //! Tests of TH6: the Theme picker hosted by the shell, its save and apply, and the rate gate.
 
 use gpui_kit::test::TestWindowExt as _;
-use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, ReadGlobal as _, TestAppContext};
+use gpui_kit::{
+    AnyWindowHandle, AppContext as _, Entity, Modifiers, MouseButton, ReadGlobal as _,
+    TestAppContext, VisualTestContext,
+};
 use navo_compare_profile::appearance::PaletteId;
 
 use crate::chrome::topbar_status::Action;
@@ -133,4 +136,32 @@ fn alt_t_from_a_text_field_opens_the_picker(cx: &mut TestAppContext) {
     assert!(side.is_some(), "a start field has focus");
     cx.simulate_keystrokes(opened.0, "alt-t");
     assert!(opened.1.read_with(cx, |s, _| s.theme_open()), "opens");
+}
+
+/// A mouse-down outside the open picker closes it and returns focus to the tab, as Escape does.
+#[gpui_kit::test]
+fn a_click_outside_closes_the_picker(cx: &mut TestAppContext) {
+    let (opened, _profile) = rig(cx, "th6b-outside");
+    let focus = |cx: &mut TestAppContext| {
+        cx.update_window(opened.0, |_, window, cx| window.focused(cx))
+            .expect("window")
+    };
+    let before = focus(cx);
+    act(cx, &opened, Action::Theme);
+    assert!(opened.1.read_with(cx, |s, _| s.theme_open()), "opens");
+    let pane = cx
+        .update_window(opened.0, |_, window, _| window.find("main-pane").bounds())
+        .expect("window");
+    let at = gpui_kit::point(
+        pane.left() + gpui_kit::px(8.),
+        pane.bottom() - gpui_kit::px(8.),
+    );
+    VisualTestContext::from_window(opened.0, cx).simulate_mouse_down(
+        at,
+        MouseButton::Left,
+        Modifiers::none(),
+    );
+    cx.run_until_parked();
+    assert!(!opened.1.read_with(cx, |s, _| s.theme_open()), "closes");
+    assert_eq!(focus(cx), before, "focus returns to the tab");
 }

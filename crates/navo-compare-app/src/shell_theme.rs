@@ -1,7 +1,10 @@
 //! The shell's Theme picker host (NC152, NC153): opens the picker, saves a pick, and applies the
 //! palette and mode through the rate gate. A child of `shell_layers`, so it reads the shell's fields.
 
-use gpui_kit::{AnyView, AnyWindowHandle, App, Subscription, Task, WeakEntity};
+use gpui_kit::{
+    AnyElement, AnyView, AnyWindowHandle, App, MouseButton, MouseDownEvent, Subscription, Task,
+    WeakEntity, deferred,
+};
 use sidewise_kit::prelude::*;
 
 use super::Shell;
@@ -58,6 +61,25 @@ impl Shell {
         });
         menu.update(cx, |menu, cx| menu.focus(window, cx));
         self.set_theme_menu(Some((menu, sub)), cx);
+    }
+
+    /// While the picker is open: a full-window layer under it that swallows a mouse-down outside
+    /// the card, closes the picker and returns focus to the tab, as the View menu does.
+    pub(in crate::shell) fn theme_backdrop(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        self.layers.theme.menu.as_ref()?;
+        let dismiss =
+            |this: &mut Self, _: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>| {
+                this.set_theme_menu(None, cx);
+                this.activated(window, cx);
+            };
+        let layer = div()
+            .id("theme-backdrop")
+            .absolute()
+            .inset_0()
+            .occlude()
+            .on_mouse_down(MouseButton::Left, cx.listener(dismiss))
+            .on_mouse_down(MouseButton::Right, cx.listener(dismiss));
+        Some(deferred(layer).into_any_element())
     }
 
     /// Stores the picker (or None) and hands it to the topbar as `(Action::Theme, view)`.
