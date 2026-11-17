@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use gpui_kit::{Action, ClipboardItem};
 use gpui_kit::{Context, Div, InteractiveElement as _, Pixels, Point, Window};
+use sidewise_l10n::t;
 
 use super::{Activate, FoldersEvent, FoldersView};
 use crate::layers::toast;
@@ -125,8 +126,23 @@ impl FoldersView {
         }
     }
 
+    /// On a Git side there is no file on disk: toasts why and returns `true`.
+    fn git_side_toast(&self, side: usize, cx: &mut Context<Self>) -> bool {
+        let rev = self.roots().and_then(|roots| roots[side].rev.clone());
+        match rev {
+            Some(rev) => {
+                toast::notify(t!("git-side-no-file", rev = rev), cx);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Copies the absolute path of the cursor line on side `side` (0 left, 1 right) and toasts.
     fn copy_side(&mut self, side: usize, cx: &mut Context<Self>) {
+        if self.git_side_toast(side, cx) {
+            return;
+        }
         let Some((_, line)) = self.current() else {
             return;
         };
@@ -146,6 +162,9 @@ impl FoldersView {
 
     /// Reveals the cursor line on side `side` in Explorer; a failure or non-Windows toasts why.
     fn reveal_side(&mut self, side: usize, cx: &mut Context<Self>) {
+        if self.git_side_toast(side, cx) {
+            return;
+        }
         let Some((_, line)) = self.current() else {
             return;
         };

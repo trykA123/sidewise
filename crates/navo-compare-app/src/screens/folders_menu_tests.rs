@@ -10,8 +10,10 @@ use gpui_kit::{
 
 use super::tests::{shown, view_with};
 use super::{FoldersView, bind_keys};
+use crate::layers::toast::{self, ToastHost};
 use crate::menu_host::{bind_menu_keys, menu_view};
 use crate::screens::folders_head::SideRoot;
+use sidewise_l10n::t;
 
 /// A focused view over the fixture with roots `/left` and `/right`, menu keys bound.
 fn setup(cx: &mut TestAppContext) -> (AnyWindowHandle, gpui_kit::Entity<FoldersView>) {
@@ -123,6 +125,35 @@ fn copy_left_path_writes_the_absolute_path(cx: &mut TestAppContext) {
     let text = cx.read_from_clipboard().and_then(|item| item.text());
     let want = abs_root("left").join("a").join("x.txt");
     assert_eq!(text.as_deref(), want.to_str());
+}
+
+/// A Git side (`app@v1`) on the left: Copy left path and Reveal left toast and copy nothing.
+#[gpui_kit::test]
+fn a_git_side_toasts_instead_of_copying_or_revealing(cx: &mut TestAppContext) {
+    let roots = [
+        SideRoot {
+            path: abs_root("app"),
+            rev: Some("v1".into()),
+        },
+        SideRoot::folder(abs_root("right")),
+    ];
+    let (window, view, _) = view_with(cx, move |cx| FoldersView::new(cx).with_roots(roots));
+    cx.update(|cx| {
+        bind_keys(cx);
+        bind_menu_keys(cx);
+    });
+    let host = cx.new(|_| ToastHost::new());
+    cx.update(|cx| {
+        toast::install_sink(&host, cx);
+        view.update(cx, |this, cx| this.select_path("a/x.txt", cx));
+    });
+    cx.simulate_keystrokes(window, "ctrl-shift-c");
+    cx.simulate_keystrokes(window, "ctrl-shift-e");
+    cx.run_until_parked();
+    let want = t!("git-side-no-file", rev = "v1");
+    let got = host.read_with(cx, |host, _| host.messages());
+    assert_eq!(got, [want.clone(), want]);
+    assert!(cx.read_from_clipboard().is_none());
 }
 
 #[gpui_kit::test]
