@@ -9,6 +9,7 @@ pub mod pick;
 pub mod recent;
 pub mod session;
 pub mod session_store;
+pub mod update_state;
 
 #[cfg(test)]
 mod appearance_tests;

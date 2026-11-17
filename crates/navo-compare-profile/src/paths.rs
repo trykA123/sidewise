@@ -166,6 +166,11 @@ impl Profile {
     pub fn crashes_dir(&self) -> PathBuf {
         self.folders.data.join("crashes")
     }
+
+    /// Returns the update check state file, `data/update-check.toml`.
+    pub fn update_state_file(&self) -> PathBuf {
+        self.folders.data.join("update-check.toml")
+    }
 }
 
 /// Reads the marker version, or `None` when the file does not exist.
