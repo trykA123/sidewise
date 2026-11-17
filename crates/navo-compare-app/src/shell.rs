@@ -32,7 +32,7 @@ mod shell_menus;
 #[path = "shell_tabs.rs"]
 mod shell_tabs;
 pub use shell_keys::bind_keys;
-use shell_keys::{CONTEXT, CloseTab, CyclePane, NewTab, NextTab, PrevTab};
+use shell_keys::{CONTEXT, CloseTab, CyclePane, NewTab, NextTab, PrevTab, ThemeMenu};
 use shell_layers::{Layers, topbar_router};
 use shell_menus::CloseOthers;
 pub use shell_tabs::ShellTab;
@@ -228,6 +228,11 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &DismissTip, _, cx| this.dismiss_tip(cx)))
             .on_action(cx.listener(|this, _: &TopbarViewKey, window, cx| {
                 this.on_view_key(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ThemeMenu, window, cx| {
+                if this.topbar.read(cx).is_available(TopbarAction::Theme) {
+                    this.toggle_theme_menu(window, cx);
+                }
             }))
             .flex()
             .flex_col()

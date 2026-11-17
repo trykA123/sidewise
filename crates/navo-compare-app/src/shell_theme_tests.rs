@@ -103,3 +103,34 @@ fn escape_closes_and_returns_focus(cx: &mut TestAppContext) {
     assert!(!opened.1.read_with(cx, |s, _| s.theme_open()));
     assert_eq!(focus(cx), before, "focus returns to the tab");
 }
+
+#[gpui_kit::test]
+fn alt_t_opens_and_closes_the_picker(cx: &mut TestAppContext) {
+    let (opened, _profile) = rig(cx, "th8-toggle");
+    cx.simulate_keystrokes(opened.0, "alt-t");
+    assert!(opened.1.read_with(cx, |s, _| s.theme_open()), "opens");
+    cx.simulate_keystrokes(opened.0, "alt-t");
+    assert!(!opened.1.read_with(cx, |s, _| s.theme_open()), "closes");
+}
+
+#[gpui_kit::test]
+fn alt_t_from_a_text_field_opens_the_picker(cx: &mut TestAppContext) {
+    let (opened, _profile) = rig(cx, "th8-field");
+    cx.update_window(opened.0, |_, window, cx| {
+        opened.1.update(cx, |shell, cx| shell.new_tab(window, cx))
+    })
+    .expect("window");
+    cx.run_until_parked();
+    let side = cx
+        .update_window(opened.0, |_, window, cx| {
+            opened
+                .1
+                .read(cx)
+                .active_screen()
+                .and_then(|screen| screen.read(cx).focused_side(window, cx))
+        })
+        .expect("window");
+    assert!(side.is_some(), "a start field has focus");
+    cx.simulate_keystrokes(opened.0, "alt-t");
+    assert!(opened.1.read_with(cx, |s, _| s.theme_open()), "opens");
+}

@@ -11,7 +11,10 @@ use crate::screens::compare_tab::OWN;
 use crate::screens::{compare_tab_keys, folders_view, large_view};
 use crate::start;
 
-gpui_kit::actions!(shell, [NewTab, CloseTab, NextTab, PrevTab, CyclePane]);
+gpui_kit::actions!(
+    shell,
+    [NewTab, CloseTab, NextTab, PrevTab, CyclePane, ThemeMenu]
+);
 
 /// Key context of the shell's root element; the tab keys are bound inside it.
 pub(super) const CONTEXT: &str = "Shell";
@@ -37,6 +40,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-f6", CyclePane, Some(CONTEXT)),
         KeyBinding::new("escape", DismissTip, Some(CONTEXT)),
         KeyBinding::new("alt-v", topbar_status::ViewMenu, Some(CONTEXT)),
+        KeyBinding::new("alt-t", ThemeMenu, Some(CONTEXT)),
     ]);
 }
 
