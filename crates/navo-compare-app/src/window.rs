@@ -65,7 +65,7 @@ fn open(cx: &mut App, pair: Option<(SideSpec, SideSpec)>) -> Result<(), String> 
                     (
                         0,
                         CompareRequest {
-                            left: left,
+                            left,
                             right,
                             choice: StartChoice::default(),
                         },
