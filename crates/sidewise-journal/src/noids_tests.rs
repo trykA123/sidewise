@@ -12,45 +12,93 @@ use sidewise_fs::durable::{Disk, DiskFile, Meta, RealDisk, ReplaceError};
 
 use crate::{Expect, JobKind, Journal, WriteError};
 
-const OLD: &[u8] = b"old bytes";
+pub(crate) const OLD: &[u8] = b"old bytes";
 /// Other bytes of the same length as `OLD`.
 const SWAP: &[u8] = b"his bytes";
-const NEW: &[u8] = b"the new bytes";
+pub(crate) const NEW: &[u8] = b"the new bytes";
 /// On a 2 s boundary, so exFAT's write-time granularity keeps it exact.
 const OLD_MS: i64 = 1_700_000_002_000;
 
-/// A disk over `inner` that reports no identity, like exFAT. `stable` says whether the volume
-/// claims stable ids anyway (an unknown identity there must still be refused). With `swap`,
-/// the first `meta` of that path after a `.bak` was made rewrites it with `SWAP` and puts its
-/// modified time back: a same-size, same-time edit between backup and replace.
-struct NoIds {
+/// A disk over `inner` that reports no identity, like exFAT (or, with `Ids::Kept`, the real
+/// one). With `swap`, it plays a same-size, same-time edit; `replaced` counts the replaces
+/// of the swapped path after the edit.
+pub(crate) struct NoIds {
     inner: Arc<dyn Disk>,
-    stable: bool,
-    swap: Option<PathBuf>,
-    armed: Mutex<bool>,
+    ids: Ids,
+    swap: Option<Swap>,
+    state: Mutex<SwapState>,
+}
+
+/// What `NoIds` reports as the identity of a file.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Ids {
+    /// The inner disk's identity and volume flag.
+    Kept,
+    /// None, on a volume without stable ids.
+    Hidden,
+    /// None, though the volume claims stable ids (an unknown identity there must be refused).
+    HiddenOnStable,
+}
+
+/// Once armed, the first created file whose name passes `on` primes the swap; the next
+/// `meta` of `path` then rewrites it in place with `bytes` and puts its modified time back.
+pub(crate) struct Swap {
+    pub(crate) path: PathBuf,
+    pub(crate) bytes: &'static [u8],
+    pub(crate) on: fn(&str) -> bool,
+}
+
+/// The progress of a `Swap`, and the replaces of its path after it happened.
+#[derive(Default)]
+pub(crate) struct SwapState {
+    armed: bool,
+    primed: bool,
+    swapped: bool,
+    pub(crate) replaced: usize,
+}
+
+/// True for a backup name, `<item>.bak`.
+pub(crate) fn is_backup(name: &str) -> bool {
+    name.ends_with(".bak")
 }
 
 /// `inner` on a volume without stable ids.
 fn no_ids(inner: Arc<dyn Disk>) -> Arc<dyn Disk> {
-    Arc::new(NoIds {
-        inner,
-        stable: false,
-        swap: None,
-        armed: Mutex::new(false),
-    })
+    Arc::new(NoIds::new(inner, Ids::Hidden, None))
 }
 
 impl NoIds {
-    /// Rewrites the swap target once, if armed and `path` is it.
+    /// A disk over `inner`; its swap waits for `arm`.
+    pub(crate) fn new(inner: Arc<dyn Disk>, ids: Ids, swap: Option<Swap>) -> Self {
+        Self {
+            inner,
+            ids,
+            swap,
+            state: Mutex::default(),
+        }
+    }
+
+    /// Arms the swap: from now on, the next matching create primes it.
+    pub(crate) fn arm(&self) {
+        self.state().unwrap().armed = true;
+    }
+
+    /// The locked swap state.
+    pub(crate) fn state(&self) -> io::Result<std::sync::MutexGuard<'_, SwapState>> {
+        self.state.lock().map_err(|_| io::Error::other("poisoned"))
+    }
+
+    /// Rewrites the swap target once, if primed and `path` is it.
     fn maybe_swap(&self, path: &Path) -> io::Result<()> {
-        let mut armed = self
-            .armed
-            .lock()
-            .map_err(|_| io::Error::other("poisoned"))?;
-        if *armed && self.swap.as_deref() == Some(path) {
-            *armed = false;
-            fs::write(path, SWAP)?;
-            RealDisk.set_modified(path, OLD_MS)?;
+        let Some(swap) = self.swap.as_ref().filter(|swap| swap.path == path) else {
+            return Ok(());
+        };
+        let mut state = self.state()?;
+        if state.primed && !state.swapped {
+            state.swapped = true;
+            let ms = RealDisk.meta(path)?.and_then(|meta| meta.modified_ms);
+            fs::write(path, swap.bytes)?;
+            RealDisk.set_modified(path, ms.ok_or_else(|| io::Error::other("no mtime"))?)?;
         }
         Ok(())
     }
@@ -58,11 +106,12 @@ impl NoIds {
 
 impl Disk for NoIds {
     fn create_new(&self, path: &Path) -> io::Result<Box<dyn DiskFile>> {
-        if path.extension().is_some_and(|ext| ext == "bak") {
-            *self
-                .armed
-                .lock()
-                .map_err(|_| io::Error::other("poisoned"))? = true;
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if let Some(swap) = &self.swap {
+            let mut state = self.state()?;
+            if state.armed && !state.primed && (swap.on)(&name) {
+                state.primed = true;
+            }
         }
         self.inner.create_new(path)
     }
@@ -74,10 +123,13 @@ impl Disk for NoIds {
     }
     fn meta(&self, path: &Path) -> io::Result<Option<Meta>> {
         self.maybe_swap(path)?;
-        Ok(self.inner.meta(path)?.map(|meta| Meta {
-            identity: None,
-            no_stable_ids: !self.stable,
-            ..meta
+        Ok(self.inner.meta(path)?.map(|meta| match self.ids {
+            Ids::Kept => meta,
+            hidden => Meta {
+                identity: None,
+                no_stable_ids: hidden == Ids::Hidden,
+                ..meta
+            },
         }))
     }
     fn set_modified(&self, path: &Path, ms: i64) -> io::Result<()> {
@@ -87,6 +139,12 @@ impl Disk for NoIds {
         self.inner.copy_mode(from, to)
     }
     fn replace(&self, staged: &Path, target: &Path, old: &Path) -> Result<(), ReplaceError> {
+        if self.swap.as_ref().is_some_and(|swap| swap.path == target) {
+            let mut state = self.state().map_err(ReplaceError::Unchanged)?;
+            if state.swapped {
+                state.replaced += 1;
+            }
+        }
         self.inner.replace(staged, target, old)
     }
     fn rename_new(&self, from: &Path, to: &Path) -> io::Result<()> {
@@ -111,13 +169,13 @@ impl Disk for NoIds {
 
 /// A journal folder and `count` targets holding `OLD` at `OLD_MS`; the targets go in `at`
 /// when given, else beside the journal.
-struct Files {
-    journal: tempfile::TempDir,
+pub(crate) struct Files {
+    pub(crate) journal: tempfile::TempDir,
     _targets: tempfile::TempDir,
-    targets: Vec<PathBuf>,
+    pub(crate) targets: Vec<PathBuf>,
 }
 
-fn files(count: usize, at: Option<&Path>) -> Files {
+pub(crate) fn files(count: usize, at: Option<&Path>) -> Files {
     let journal = tempfile::tempdir().unwrap();
     let dir = match at {
         Some(at) => tempfile::tempdir_in(at).unwrap(),
@@ -138,13 +196,13 @@ fn files(count: usize, at: Option<&Path>) -> Files {
 }
 
 /// The bytes and modified time of `path`.
-fn state(path: &Path) -> (Vec<u8>, Option<i64>) {
+pub(crate) fn state(path: &Path) -> (Vec<u8>, Option<i64>) {
     let meta = RealDisk.meta(path).unwrap().unwrap();
     (fs::read(path).unwrap(), meta.modified_ms)
 }
 
 /// The names in the targets' folder that end in the temp suffix.
-fn temps(files: &Files) -> Vec<String> {
+pub(crate) fn temps(files: &Files) -> Vec<String> {
     let dir = files.targets[0].parent().unwrap();
     fs::read_dir(dir)
         .unwrap()
@@ -153,7 +211,7 @@ fn temps(files: &Files) -> Vec<String> {
         .collect()
 }
 
-fn write_new(out: &mut dyn Write) -> Result<(), String> {
+pub(crate) fn write_new(out: &mut dyn Write) -> Result<(), String> {
     out.write_all(NEW).map_err(|error| error.to_string())
 }
 
@@ -197,12 +255,13 @@ fn a_real_disk_overwrite_and_undo_work_and_exfat_reports_no_ids() {
 fn a_same_size_same_time_swap_before_the_replace_is_refused_by_hash() {
     let files = files(1, None);
     let target = files.targets[0].clone();
-    let disk = Arc::new(NoIds {
-        inner: Arc::new(RealDisk),
-        stable: false,
-        swap: Some(target.clone()),
-        armed: Mutex::new(false),
-    });
+    let swap = Swap {
+        path: target.clone(),
+        bytes: SWAP,
+        on: is_backup,
+    };
+    let disk = Arc::new(NoIds::new(Arc::new(RealDisk), Ids::Hidden, Some(swap)));
+    disk.arm();
     let journal = Journal::open_raw(files.journal.path(), disk).unwrap();
     let mut job = journal.begin(JobKind::Copy, "Copy", None).unwrap();
     let result = job.overwrite(&target, Expect::default(), None, &mut write_new);
@@ -218,12 +277,7 @@ fn a_same_size_same_time_swap_before_the_replace_is_refused_by_hash() {
 #[test]
 fn an_unknown_identity_on_a_volume_with_stable_ids_is_still_refused() {
     let files = files(1, None);
-    let disk = Arc::new(NoIds {
-        inner: Arc::new(RealDisk),
-        stable: true,
-        swap: None,
-        armed: Mutex::new(false),
-    });
+    let disk = Arc::new(NoIds::new(Arc::new(RealDisk), Ids::HiddenOnStable, None));
     let journal = Journal::open_raw(files.journal.path(), disk).unwrap();
     let mut job = journal.begin(JobKind::Copy, "Copy", None).unwrap();
     let result = job.overwrite(&files.targets[0], Expect::default(), None, &mut write_new);

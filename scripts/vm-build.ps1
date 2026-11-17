@@ -50,6 +50,7 @@ if ($want -contains 'clippy') {
 }
 if ($want -contains 'test') {
   # C: is NTFS: the NTFS-only fixture tests must run here, never skip.
+  # SIDEWISE_REQUIRE_NTFS=1 makes a run with TEMP on exFAT panic in those tests, not skip.
   $env:SIDEWISE_REQUIRE_NTFS = '1'
   Step test { cmd /c "cargo test --workspace --locked 2>&1" }
 }

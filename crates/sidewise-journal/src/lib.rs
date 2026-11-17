@@ -33,6 +33,8 @@ mod recover_tests;
 #[cfg(test)]
 mod rollback_crash_tests;
 #[cfg(test)]
+mod swap_tests;
+#[cfg(test)]
 mod time_tests;
 
 pub use error::{JournalError, WriteError};

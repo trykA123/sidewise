@@ -79,30 +79,20 @@ impl Journal {
             .begin(JobKind::Undo, "Undo", Some(job.clone()))
             .map_err(UndoError::Journal)?;
         for item in items.iter().rev() {
+            // The hash makes the overwrite refuse an edit that kept size and time before the
+            // target is replaced, never after (NC160).
             let expect = Expect {
                 size: Some(item.new.size),
                 modified_ms: item.new.modified_ms,
+                hash: Some(item.new.hash),
             };
             let backup = backup_path(&dir, item.item);
             let mut fill = |out: &mut dyn Write| stream_backup(disk, &backup, &item.old, out);
-            let index = undo
-                .overwrite(&item.target, expect, item.old.modified_ms, &mut fill)
+            undo.overwrite(&item.target, expect, item.old.modified_ms, &mut fill)
                 .map_err(|error| match error {
                     WriteError::Changed => UndoError::Changed(item.target.clone()),
                     other => UndoError::Write(other),
                 })?;
-            // NC160 checks size, time and identity only: the backup's hash proves the bytes
-            // just replaced were the job's, not an edit that kept both.
-            if undo.backed(index).map(|old| old.hash) != Some(item.new.hash) {
-                let rolled = undo.abort("the target changed during the undo");
-                return Err(match rolled.failed {
-                    0 => UndoError::Changed(item.target.clone()),
-                    failed => UndoError::Write(WriteError::NotRolledBack {
-                        cause: Box::new(WriteError::Changed),
-                        failed,
-                    }),
-                });
-            }
         }
         undo.commit().map_err(UndoError::Journal)?;
         Ok(items.into_iter().map(|item| item.target).collect())

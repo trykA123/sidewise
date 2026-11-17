@@ -78,6 +78,7 @@ pub(crate) fn copy_between(
     let expect = Expect {
         size: Some(seen.size),
         modified_ms: Some(modified_ms),
+        hash: None,
     };
     let job = write_job(journal, &target_path, expect, &composed)?;
     Ok(Committed { job, target })

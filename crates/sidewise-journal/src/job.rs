@@ -5,7 +5,6 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use navo_core::FileStamp;
 use sidewise_fs::durable::DiskFile;
 
 use crate::error::{JournalError, WriteError, classify, journal_io};
@@ -86,14 +85,6 @@ impl Job {
         &self.id
     }
 
-    /// The stamp of the old bytes item `item` backed up, once its `Backed` line is durable.
-    pub(crate) fn backed(&self, item: u32) -> Option<FileStamp> {
-        self.records.iter().find_map(|record| match record {
-            Record::Backed { item: found, old } if *found == item => Some(*old),
-            _ => None,
-        })
-    }
-
     /// Writes `fill`'s bytes over the existing file `target` (absolute) in the NC144 order,
     /// with a durable backup of the old bytes first. `restore_mtime_ms` sets the new file's
     /// modified time; `None` keeps the write time. Returns the item number. On any error the
@@ -151,7 +142,7 @@ impl Job {
         let new = stage(disk.as_ref(), &staged, request, fill)?;
         self.append(Record::Staged { item, new })?;
         let backup = backup_path(&self.dir, item);
-        let old = back_up(disk.as_ref(), target, &backup, &before)?;
+        let old = back_up(disk.as_ref(), request, &backup, &before)?;
         disk.sync_dir(&self.dir)
             .map_err(|error| classify("sync job folder", &error))?;
         self.append(Record::Backed { item, old })?;

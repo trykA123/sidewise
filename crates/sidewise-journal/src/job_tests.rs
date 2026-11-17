@@ -156,6 +156,7 @@ fn job_change_between_expect_and_backup_gives_changed_with_no_write() {
     let expect = Expect {
         size: Some(OLD.len() as u64),
         modified_ms: Some(OLD_MS),
+        hash: None,
     };
     let result = job.overwrite(&target, expect, None, &mut fill);
     assert_eq!(result, Err(WriteError::Changed));
@@ -178,6 +179,7 @@ fn job_expect_mismatch_is_changed_before_any_intent() {
     let expect = Expect {
         size: Some(OLD.len() as u64),
         modified_ms: Some(OLD_MS - 1),
+        hash: None,
     };
     let result = job.overwrite(&fixture.targets[0], expect, None, &mut write_new);
     assert_eq!(result, Err(WriteError::Changed));

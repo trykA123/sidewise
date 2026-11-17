@@ -18,6 +18,8 @@ pub struct Expect {
     pub size: Option<u64>,
     /// Last write time in ms since the Unix epoch.
     pub modified_ms: Option<i64>,
+    /// Blake3 hash of the bytes; the backup copy must match it before the replace.
+    pub hash: Option<[u8; 32]>,
 }
 
 /// The fill callback of `Job::overwrite`: writes the new bytes, or fails with a reason.
@@ -117,15 +119,16 @@ pub(crate) fn stage(
     })
 }
 
-/// NC144 step 5: checks the target still matches `before`, then copies it to `backup` while
-/// hashing it and syncs the copy. Fails with `Changed` when the target moved or its length
-/// differs from what was copied.
+/// NC144 step 5: checks the request's target still matches `before`, then copies it to
+/// `backup` while hashing it and syncs the copy. Fails with `Changed` when the target moved,
+/// or the copy's length is not `before`'s or its hash not the expected one: nothing is replaced.
 pub(crate) fn back_up(
     disk: &dyn Disk,
-    target: &Path,
+    request: &Request<'_>,
     backup: &Path,
     before: &Meta,
 ) -> Result<FileStamp, WriteError> {
+    let (target, want_hash) = (request.target, request.expect.hash);
     check_same(
         before,
         disk.meta(target)
@@ -133,7 +136,7 @@ pub(crate) fn back_up(
     )?;
     let (len, hash) = copy_hashed(disk, target, backup, || Ok(()))
         .map_err(|error| classify("back up target", &error))?;
-    if len != before.size {
+    if len != before.size || want_hash.is_some_and(|want| want != hash) {
         return Err(WriteError::Changed);
     }
     Ok(FileStamp {
