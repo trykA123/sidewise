@@ -28,7 +28,8 @@ const TRASH: &str = ".trash";
 pub struct Swept {
     /// Jobs taken out of the journal: their Undo is gone.
     pub removed: u32,
-    /// Logical bytes of the job folders left, unreadable folders not counted.
+    /// Logical bytes of the job folders left, plus those of removals whose delete failed this
+    /// time; unreadable folders and older trash not counted.
     pub bytes_left: u64,
     /// Folders that could not be read, owners that could not be checked, and removals that
     /// did not finish; each is kept or left as `*.trash` for the next start.
@@ -101,6 +102,7 @@ fn sweep(inner: &Inner, now_ms: u64) -> Result<Swept, JournalError> {
                 swept.removed += 1;
                 swept.failed += 1;
                 total -= entry.bytes;
+                swept.bytes_left += entry.bytes;
             }
             Removal::Gone => {
                 swept.removed += 1;
@@ -108,14 +110,16 @@ fn sweep(inner: &Inner, now_ms: u64) -> Result<Swept, JournalError> {
             }
         }
     }
-    swept.bytes_left = total;
+    swept.bytes_left += total;
     Ok(swept)
 }
 
 /// Reads a job folder's rule, age and logical bytes. Fails when the folder or a file in it
-/// cannot be read (a symlink fails too), so the folder is kept and not counted.
+/// cannot be read, or the folder is a symlink or junction, so it is kept and not counted.
 fn read_entry(disk: &dyn Disk, root: &Path, id: JobId) -> io::Result<Entry> {
     let dir = root.join(id.as_str());
+    // `meta` refuses a link on Linux and Windows; `list` alone would read through it.
+    disk.meta(&dir)?;
     let mut bytes = 0;
     for name in disk.list(&dir)? {
         bytes += disk.meta(&dir.join(name))?.map_or(0, |meta| meta.size);

@@ -87,7 +87,10 @@ impl Journal {
             let mut fill = |out: &mut dyn Write| stream_backup(disk, &backup, &item.old, out);
             let index = undo
                 .overwrite(&item.target, expect, item.old.modified_ms, &mut fill)
-                .map_err(UndoError::Write)?;
+                .map_err(|error| match error {
+                    WriteError::Changed => UndoError::Changed(item.target.clone()),
+                    other => UndoError::Write(other),
+                })?;
             // NC160 checks size, time and identity only: the backup's hash proves the bytes
             // just replaced were the job's, not an edit that kept both.
             if undo.backed(index).map(|old| old.hash) != Some(item.new.hash) {

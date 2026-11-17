@@ -64,12 +64,12 @@ impl Journal {
 
     /// Opens the journal in `dir` (see `open_raw`), then rolls back every incomplete job of a
     /// dead owner (NC145), removes the lock files of dead owners whose jobs are all complete,
-    /// and runs the retention sweep (NC141). Fails when the journal cannot open or its folders
-    /// cannot be listed (writes stay off); sweep counts are dropped, the next start retries.
+    /// and runs the retention sweep (NC141), whose counts are in `Recovered::swept`. Fails when
+    /// the journal cannot open or its folders cannot be listed (writes stay off).
     pub fn open(dir: &Path, disk: Arc<dyn Disk>) -> Result<(Self, Recovered), JournalError> {
         let journal = Self::open_raw(dir, disk)?;
-        let recovered = recover_with(&journal.inner, || {})?;
-        journal.sweep(now_ms().cast_unsigned())?;
+        let mut recovered = recover_with(&journal.inner, || {})?;
+        recovered.swept = journal.sweep(now_ms().cast_unsigned())?;
         Ok((journal, recovered))
     }
 

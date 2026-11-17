@@ -13,7 +13,7 @@ use sidewise_fs::durable::{FaultDisk, Plan, RealDisk, Tail};
 
 use crate::job_tests::{Fixture, NEW, OLD, OLD_MS, mtime_ms, only_log, run, write_new};
 use crate::recover_crash_tests::check_settled;
-use crate::{Expect, ItemMode, JobId, JobKind, Journal, Record, Recovered, encode};
+use crate::{Expect, ItemMode, JobId, JobKind, Journal, Record, Recovered, Swept, encode};
 
 /// Writes `NEW` over the first `count` targets in one job, then loses power with every change
 /// kept, so the job stays open and its owner is dead.
@@ -28,9 +28,12 @@ pub(crate) fn crashed_open_job(fixture: &Fixture, count: usize) {
     disk.crash_with(|_| true, |_| Tail::Kept).unwrap();
 }
 
-/// Opens the journal with `RealDisk` and returns what recovery did.
+/// Opens the journal with `RealDisk` and returns what recovery did, sweep counts zeroed
+/// (`sweep_tests` checks them).
 fn open(fixture: &Fixture) -> (Journal, Recovered) {
-    Journal::open(&fixture.journal_dir(), Arc::new(RealDisk)).unwrap()
+    let (journal, recovered) = Journal::open(&fixture.journal_dir(), Arc::new(RealDisk)).unwrap();
+    let swept = Swept::default();
+    (journal, Recovered { swept, ..recovered })
 }
 
 /// The log path of the only job.

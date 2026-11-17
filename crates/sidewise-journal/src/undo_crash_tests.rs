@@ -15,7 +15,7 @@ use super::UndoError;
 use super::tests::copied;
 use crate::job_crash_tests::{PATTERNS, Pattern};
 use crate::job_tests::{Fixture, NEW, OLD, OLD_MS, mtime_ms};
-use crate::{JobKind, Journal, JournalError, Record, Recovered, decode};
+use crate::{JobKind, Journal, JournalError, Record, Recovered, Swept, decode};
 
 /// What an undo run left: the fixture and each target's time after the copy.
 struct Undone {
@@ -112,7 +112,17 @@ fn recover_and_check(undone: &Undone, case: &str) -> Result<bool, String> {
     let committed = check_settled(undone, case)?;
     let (_journal, again) =
         Journal::open(&dir, Arc::new(RealDisk)).map_err(|e| format!("{case}: reopen: {e}"))?;
-    if again != Recovered::default() {
+    // Only the bytes of the jobs left may be non-zero: nothing restored, swept or failed.
+    let idle = Swept {
+        bytes_left: again.swept.bytes_left,
+        ..Swept::default()
+    };
+    if again
+        != (Recovered {
+            swept: idle,
+            ..Recovered::default()
+        })
+    {
         return Err(format!("{case}: second recovery did work: {again:?}"));
     }
     check_settled(undone, &format!("{case}, second recovery"))?;

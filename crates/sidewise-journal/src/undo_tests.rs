@@ -277,19 +277,34 @@ fn undo_of_a_read_only_target_writes_nothing() {
     assert_eq!(fs::read(target).unwrap(), NEW);
 }
 
-/// `RealDisk`, except that once `armed`, making a backup first rewrites `target` in place
-/// with other bytes of the same length and puts its modified time back: only a hash can tell.
-struct EditOnBackup {
+/// `RealDisk`, except that once `armed`, making a file whose name ends in `at` first rewrites
+/// `target` in place with `x` bytes: `extra` more than it had, with its modified time put back.
+/// With no extra byte, only a hash can tell.
+struct EditOn {
     target: PathBuf,
     armed: AtomicBool,
+    at: &'static str,
+    extra: u64,
 }
 
-impl Disk for EditOnBackup {
+impl EditOn {
+    fn new(target: PathBuf, at: &'static str, extra: u64) -> Arc<Self> {
+        let armed = AtomicBool::new(false);
+        Arc::new(Self {
+            target,
+            armed,
+            at,
+            extra,
+        })
+    }
+}
+
+impl Disk for EditOn {
     fn create_new(&self, path: &Path) -> io::Result<Box<dyn DiskFile>> {
-        let is_backup = path.extension().is_some_and(|ext| ext == "bak");
-        if is_backup && self.armed.swap(false, Ordering::SeqCst) {
+        let hit = path.to_string_lossy().ends_with(self.at);
+        if hit && self.armed.swap(false, Ordering::SeqCst) {
             let ms = mtime_ms(&self.target);
-            let len = fs::metadata(&self.target)?.len();
+            let len = fs::metadata(&self.target)?.len() + self.extra;
             let mut file = OpenOptions::new().write(true).open(&self.target)?;
             file.write_all(&vec![b'x'; usize::try_from(len).unwrap()])?;
             drop(file);
@@ -339,10 +354,7 @@ impl Disk for EditOnBackup {
 fn undo_of_a_target_edited_between_check_and_backup_keeps_the_edit() {
     let fixture = Fixture::new(1);
     let target = fixture.targets[0].clone();
-    let disk = Arc::new(EditOnBackup {
-        target: target.clone(),
-        armed: AtomicBool::new(false),
-    });
+    let disk = EditOn::new(target.clone(), ".bak", 0);
     let journal = Journal::open_raw(&fixture.journal_dir(), disk.clone()).unwrap();
     let id = copied(&journal, &fixture).unwrap();
     disk.armed.store(true, Ordering::SeqCst);
@@ -354,4 +366,23 @@ fn undo_of_a_target_edited_between_check_and_backup_keeps_the_edit() {
         "the edit made during the undo is kept"
     );
     assert!(fixture.temps().is_empty(), "no temp left");
+}
+
+#[test]
+fn undo_of_a_target_grown_after_the_check_is_changed_and_keeps_the_edit() {
+    let fixture = Fixture::new(1);
+    let target = fixture.targets[0].clone();
+    // The undo job's log is made after the check and before the write's own check.
+    let disk = EditOn::new(target.clone(), "/log", 1);
+    let journal = Journal::open_raw(&fixture.journal_dir(), disk.clone()).unwrap();
+    let id = copied(&journal, &fixture).unwrap();
+    disk.armed.store(true, Ordering::SeqCst);
+    let result = journal.undo(&id);
+    assert_eq!(result, Err(UndoError::Changed(target.clone())));
+    assert_eq!(fs::read(&target).unwrap(), vec![b'x'; NEW.len() + 1]);
+    let logs = undo_logs(&fixture);
+    assert!(matches!(
+        logs[0].records.last(),
+        Some(Record::Aborted { .. })
+    ));
 }

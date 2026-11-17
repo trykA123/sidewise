@@ -243,3 +243,89 @@ fn open_settles_a_sweep_that_crashed_at_every_op() {
         }
     }
 }
+
+#[test]
+fn open_reports_what_the_sweep_did() {
+    let (dir, _old, young, _log) = crash_fixture();
+    let (_journal, recovered) =
+        Journal::open(&dir.path().join("journal"), Arc::new(RealDisk)).unwrap();
+    let want = Swept {
+        removed: 1,
+        bytes_left: bytes(&young),
+        failed: 0,
+    };
+    assert_eq!(recovered.swept, want);
+}
+
+#[test]
+fn sweep_removes_the_old_job_of_a_dead_owner_whose_lock_file_is_left() {
+    let (_dir, journal) = journal();
+    let root = journal.root().to_path_buf();
+    let lock = root.join("owners").join(format!("{DEAD}.lock"));
+    fs::write(&lock, b"").unwrap();
+    let old = fake_job(&root, NOW - 15 * DAY, (DEAD, End::Commit), 10);
+    let swept = journal.sweep(NOW).unwrap();
+    assert_eq!((swept.removed, swept.failed), (1, 0));
+    assert!(!old.exists());
+    assert!(lock.exists(), "the sweep never deletes a lock file");
+}
+
+#[test]
+fn sweep_never_reads_or_removes_a_job_folder_that_is_a_link() {
+    let (dir, journal) = journal();
+    let root = journal.root().to_path_buf();
+    let job = fake_job(&root, NOW - 15 * DAY, (DEAD, End::Commit), 10);
+    let outside = dir.path().join("outside");
+    fs::rename(&job, &outside).unwrap();
+    std::os::unix::fs::symlink(&outside, &job).unwrap();
+    let swept = journal.sweep(NOW).unwrap();
+    let want = Swept {
+        removed: 0,
+        bytes_left: 0,
+        failed: 1,
+    };
+    assert_eq!(swept, want);
+    assert!(
+        fs::symlink_metadata(&job).unwrap().is_symlink(),
+        "link kept"
+    );
+    assert_eq!(names(&outside), ["0.bak", "log"]);
+}
+
+#[test]
+fn sweep_removes_a_trash_link_but_not_the_folder_it_points_at() {
+    let (dir, journal) = journal();
+    let root = journal.root().to_path_buf();
+    let outside = dir.path().join("outside");
+    fs::create_dir_all(outside.join("inner")).unwrap();
+    fs::write(outside.join("inner/keep.txt"), b"user data").unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("x.trash")).unwrap();
+    let swept = journal.sweep(NOW).unwrap();
+    assert_eq!(swept.failed, 0);
+    assert_eq!(names(&root), ["owners"]);
+    let kept = fs::read(outside.join("inner/keep.txt")).unwrap();
+    assert_eq!(kept, b"user data");
+}
+
+#[test]
+fn sweep_counts_the_bytes_of_a_removal_whose_delete_failed() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_dir, journal) = journal();
+    let root = journal.root().to_path_buf();
+    let old = fake_job(&root, NOW - 15 * DAY, (DEAD, End::Commit), 10);
+    let want = bytes(&old);
+    // No write permission inside: the rename works, deleting its files does not.
+    fs::set_permissions(&old, fs::Permissions::from_mode(0o555)).unwrap();
+    let swept = journal.sweep(NOW).unwrap();
+    let trash = root.join(format!(
+        "{}.trash",
+        old.file_name().unwrap().to_str().unwrap()
+    ));
+    fs::set_permissions(&trash, fs::Permissions::from_mode(0o755)).unwrap();
+    let want = Swept {
+        removed: 1,
+        bytes_left: want,
+        failed: 1,
+    };
+    assert_eq!(swept, want);
+}

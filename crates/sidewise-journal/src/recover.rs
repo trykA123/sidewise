@@ -13,6 +13,7 @@ use crate::files::remove_if_present;
 use crate::journal::{Inner, still_named};
 use crate::record::{JobId, Record, decode, encode};
 use crate::rollback::roll_back;
+use crate::sweep::Swept;
 
 /// The job log, the rewrite that closes it, and where a failed Windows replace moves it.
 const LOG: &str = "log";
@@ -30,6 +31,9 @@ pub struct Recovered {
     pub failed: u32,
     /// Job logs with a bad complete line: left untouched, folder and backups kept.
     pub damaged: u32,
+    /// What the retention sweep after recovery did; a `failed` count that stays above zero on
+    /// every start means the journal may grow past its cap (NC141).
+    pub swept: Swept,
 }
 
 /// A job folder as recovery reads it, before any write.
