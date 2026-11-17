@@ -160,3 +160,50 @@ fn a_missing_file_fails_to_open_with_its_reason() {
         Err(CopyRefusal::Failed(_))
     ));
 }
+
+#[test]
+fn a_target_that_grew_before_the_change_is_refused_changed() {
+    let (work, request) = fixture(LEFT, RIGHT, Direction::LeftToRight);
+    fs::write(work.path().join("right.txt"), b"new\na\nB\nc\n").unwrap();
+    assert_eq!(compose(&request), Err(CopyRefusal::Changed));
+}
+
+#[test]
+fn a_source_edited_to_the_same_length_is_refused_changed() {
+    let (work, request) = fixture(LEFT, RIGHT, Direction::LeftToRight);
+    fs::write(work.path().join("left.txt"), b"a\nZ\nc\n").unwrap();
+    assert_eq!(compose(&request), Err(CopyRefusal::Changed));
+}
+
+#[test]
+fn an_edit_that_moves_the_change_is_refused_changed() {
+    let (work, request) = fixture(LEFT, RIGHT, Direction::RightToLeft);
+    fs::write(work.path().join("right.txt"), b"a\nBB\nc\n").unwrap();
+    assert_eq!(compose(&request), Err(CopyRefusal::Changed));
+}
+
+#[test]
+fn a_same_length_edit_inside_the_change_is_refused_changed() {
+    let (work, request) = fixture(LEFT, RIGHT, Direction::LeftToRight);
+    fs::write(work.path().join("right.txt"), b"a\nX\nc\n").unwrap();
+    assert_eq!(compose(&request), Err(CopyRefusal::Changed));
+}
+
+#[test]
+fn a_one_sided_pair_is_refused_not_copyable() {
+    let (_work, mut request) = fixture(LEFT, RIGHT, Direction::LeftToRight);
+    request.pair.left = None;
+    assert_eq!(ends_of(&request), Err(CopyRefusal::NotCopyable));
+}
+
+#[test]
+fn every_refusal_has_a_status_line_text() {
+    for refusal in [
+        CopyRefusal::ReadOnly,
+        CopyRefusal::NotCopyable,
+        CopyRefusal::Changed,
+        CopyRefusal::Failed("disk full".to_owned()),
+    ] {
+        assert!(!refusal.text().starts_with("compare-copy"), "{refusal:?}");
+    }
+}
