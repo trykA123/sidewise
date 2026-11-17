@@ -11,12 +11,13 @@ use navo_compare_profile::book::{SessionBook, Visit};
 use navo_compare_profile::brand::SLUG;
 use navo_compare_profile::session_store::SessionStore;
 
-use sidewise_kit::context_menu::ContextMenuEvent;
+use sidewise_kit::context_menu::{ContextMenu, ContextMenuEvent};
 
 use crate::compare_tab_script::{install_scripted, rows_script};
 use crate::menu_host::menu_view;
 use crate::shell::Shell;
 use crate::start::StartEvent;
+use crate::start_menu::ForgetSelected;
 use crate::start_tabs::StartChoice;
 use crate::test_window::open;
 
@@ -205,10 +206,8 @@ fn forget_then_undo_restores_the_row(cx: &mut TestAppContext) {
     assert_eq!(fixture.stored().len(), 1);
 }
 
-/// B5: a right click on a sidebar Recent entry opens the start row menu, and its Remove line
-/// forgets the row through the same handler, with the Undo toast.
-#[gpui_kit::test]
-fn a_sidebar_recent_entry_has_the_row_menu(cx: &mut TestAppContext) {
+/// A fixture whose book holds one recent visit of its two sides.
+fn recorded() -> Fixture {
     let fixture = Fixture::new();
     let mut book = SessionBook::open(Some(&fixture.profile()), 0).expect("book");
     let visit = Visit {
@@ -217,6 +216,18 @@ fn a_sidebar_recent_entry_has_the_row_menu(cx: &mut TestAppContext) {
         respect_gitignore: false,
     };
     book.record(&visit, 1_000).expect("record");
+    fixture
+}
+
+/// Opens a shell over `fixture` (menu keys bound) and right-clicks sidebar Recent entry 0;
+/// returns the shell and the open menu.
+fn open_recent_menu(
+    cx: &mut TestAppContext,
+    fixture: &Fixture,
+) -> ((AnyWindowHandle, Entity<Shell>), Entity<ContextMenu>) {
+    cx.update(|cx| {
+        crate::menu_host::bind_menu_keys(cx);
+    });
     let (window, shell) = open_shell(cx, Some(&fixture.profile()));
     cx.update_window(window, |_, window, cx| {
         let right = ClickOptions::new().with_button(MouseButton::Right);
@@ -226,15 +237,27 @@ fn a_sidebar_recent_entry_has_the_row_menu(cx: &mut TestAppContext) {
     .expect("right click");
     cx.run_until_parked();
     let menu = shell.read_with(cx, |shell, _| menu_view(&shell.menu));
-    let menu = menu.expect("open menu");
+    ((window, shell), menu.expect("open menu"))
+}
+
+/// Chooses line `index` of `menu`, as a click or Enter would, and settles.
+fn choose(cx: &mut TestAppContext, menu: &Entity<ContextMenu>, index: usize) {
+    let id = menu.read_with(cx, |menu, _| menu.menu().items[index].id.clone());
+    menu.update(cx, |_, cx| cx.emit(ContextMenuEvent::Chosen(id)));
+    cx.run_until_parked();
+}
+
+/// B5: a right click on a sidebar Recent entry opens the start row menu, and its Remove line
+/// forgets the row through the same handler, with the Undo toast.
+#[gpui_kit::test]
+fn a_sidebar_recent_entry_has_the_row_menu(cx: &mut TestAppContext) {
+    let fixture = recorded();
+    let ((_, shell), menu) = open_recent_menu(cx, &fixture);
     let items = menu.read_with(cx, |menu, _| menu.menu().items.clone());
     let texts: Vec<_> = items.iter().map(|item| item.text.as_str()).collect();
     assert_eq!(texts, ["Open", "Copy paths", "Remove from recent"]);
     assert!(items.iter().all(|item| item.enabled));
-    menu.update(cx, |_, cx| {
-        cx.emit(ContextMenuEvent::Chosen(items[2].id.clone()))
-    });
-    cx.run_until_parked();
+    choose(cx, &menu, 2);
     let sidebar = shell.read_with(cx, |shell, _| shell.sidebar().clone());
     assert_eq!(
         sidebar.read_with(cx, |sidebar, _| sidebar.rows().recent.len()),
@@ -242,4 +265,38 @@ fn a_sidebar_recent_entry_has_the_row_menu(cx: &mut TestAppContext) {
     );
     assert!(fixture.stored().is_empty());
     assert_eq!(shell.read_with(cx, |shell, cx| shell.toast_count(cx)), 1);
+}
+
+/// B5 follow-up: after Escape closes the Recent menu, a stray Remove at the shell root forgets
+/// nothing (the remembered row is cleared).
+#[gpui_kit::test]
+fn escape_on_the_recent_menu_leaves_no_row_to_remove(cx: &mut TestAppContext) {
+    let fixture = recorded();
+    let ((window, shell), _menu) = open_recent_menu(cx, &fixture);
+    cx.simulate_keystrokes(window, "escape");
+    cx.run_until_parked();
+    assert!(shell.read_with(cx, |shell, _| menu_view(&shell.menu).is_none()));
+    cx.update_window(window, |_, window, cx| {
+        let handle = shell.read(cx).handle.clone();
+        handle.dispatch_action(&ForgetSelected, window, cx);
+    })
+    .expect("window");
+    cx.run_until_parked();
+    assert_eq!(
+        fixture.stored().len(),
+        1,
+        "a dismissed menu forgot a session"
+    );
+}
+
+/// B5 follow-up: Copy paths on a sidebar Recent entry puts its two sides on the clipboard.
+#[gpui_kit::test]
+fn copy_paths_on_a_recent_entry_fills_the_clipboard(cx: &mut TestAppContext) {
+    let fixture = recorded();
+    let ((_, shell), menu) = open_recent_menu(cx, &fixture);
+    let sidebar = shell.read_with(cx, |shell, _| shell.sidebar().clone());
+    let row = sidebar.read_with(cx, |sidebar, _| sidebar.rows().recent[0].clone());
+    choose(cx, &menu, 1);
+    let copied = cx.read_from_clipboard().and_then(|item| item.text());
+    assert_eq!(copied, Some(format!("{}\n{}", row.left, row.right)));
 }
