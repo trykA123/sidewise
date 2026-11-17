@@ -178,3 +178,18 @@ fn the_rows_have_radio_roles_and_labels(cx: &mut TestAppContext) {
     })
     .expect("window");
 }
+
+/// The High contrast row's tag reads exactly "AAA", not a key name.
+#[gpui_kit::test]
+fn the_high_contrast_tag_reads_aaa(cx: &mut TestAppContext) {
+    let (window, _menu, _events, _sub) = window_rig(cx);
+    cx.update_window(window, |_, window, _| {
+        let tag = window.find(("theme-key", 4usize));
+        assert_eq!(tag.label(), Some("AAA contrast"));
+        let found = gpui_kit::base::test_support::texts(window)
+            .into_iter()
+            .any(|t| t.visible() && t.text() == "AAA");
+        assert!(found, "no visible text reads AAA");
+    })
+    .expect("window");
+}

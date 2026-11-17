@@ -1,10 +1,10 @@
 //! Drawing and keys of the Theme picker (NC150, NC151, NC153): palette rows with swatches, mode
 //! rows and the popover card, on Sidewise tokens only.
 
-use gpui_kit::base::{ObservedElement, TestSupportExt as _};
+use gpui_kit::base::{ObservedElement, TestSupportExt as _, TestTextExt as _};
 use gpui_kit::{AnimationExt, KeyDownEvent, ReadGlobal, Role, Stateful, transparent_black};
 use sidewise_kit::prelude::*;
-use sidewise_kit::primitives::Kbd;
+use sidewise_kit::tokens;
 
 use super::{ITEMS, Pick, ThemeMenu};
 use crate::layers::menu_parts::{Look, card_shadow, heading, mark, toggled};
@@ -33,6 +33,27 @@ impl ThemeMenu {
             .gap_1()
             .child(dot(tokens.accent))
             .child(dot(tokens.surface))
+    }
+
+    /// The "AAA" tag of the High contrast row, styled like a key cap but plain text.
+    fn contrast_tag(cx: &App) -> impl IntoElement {
+        sidewise_kit::assets::load_mono_fonts(cx);
+        let t = tokens::current(cx);
+        div()
+            .id(("theme-key", 4usize))
+            .role(Role::Label)
+            .aria_label("AAA contrast")
+            .test_support()
+            .flex_none()
+            .px_1()
+            .font_family(t.typography.mono_font.clone())
+            .text_size(t.typography.key)
+            .font_weight(FontWeight::MEDIUM)
+            .rounded(t.radii.sm)
+            .border_1()
+            .border_color(t.colors.line)
+            .text_color(t.colors.muted)
+            .child(div().test_text("AAA").child("AAA"))
     }
 
     /// One row at `ix`: mark, swatch (palettes), label and hint, ringed when keyboard-active.
@@ -74,11 +95,7 @@ impl ThemeMenu {
                     .text_ellipsis()
                     .child(label),
             )
-            .children(
-                (ix == 4)
-                    .then(|| Kbd::new(("theme-key", 4usize), "AAA"))
-                    .flatten(),
-            )
+            .when(ix == 4, |el| el.child(Self::contrast_tag(cx)))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.active = ix;
                 this.apply(pick, cx);
