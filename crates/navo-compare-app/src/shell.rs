@@ -19,6 +19,7 @@ use crate::chrome::topbar_status::{
 use crate::layers::keys_sheet;
 use crate::layers::toast::{self, ToastHost};
 use crate::menu_host::{MenuSlot, menu_view};
+use crate::shell_prefs::theme_choice;
 use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
 use crate::theme_data::palettes::DIMS;
 
@@ -55,13 +56,17 @@ pub struct Shell {
 }
 
 impl Shell {
-    /// Applies the active Sidewise palette (defaulting to Violet) in the appearance's mode.
+    /// Applies the saved palette and mode (NC152); with no saved preferences, the current Sidewise
+    /// palette (Violet if none) in the OS `appearance` mode.
     pub(crate) fn apply_appearance(appearance: WindowAppearance, cx: &mut App) {
-        let palette = cx
-            .try_global::<SidewiseTheme>()
-            .map(|theme| theme.palette)
-            .unwrap_or(PaletteId::Violet);
-        apply_sidewise(palette, mode_of(appearance), cx);
+        let (palette, mode) = theme_choice(appearance, cx).unwrap_or_else(|| {
+            let palette = cx
+                .try_global::<SidewiseTheme>()
+                .map(|theme| theme.palette)
+                .unwrap_or(PaletteId::Violet);
+            (palette, mode_of(appearance))
+        });
+        apply_sidewise(palette, mode, cx);
     }
 
     /// Makes a shell with one start tab and focuses that tab's left field.

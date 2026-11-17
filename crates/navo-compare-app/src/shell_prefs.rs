@@ -3,10 +3,16 @@
 use std::path::Path;
 
 use gpui_kit::Global;
-use navo_compare_profile::appearance::{AppearanceError, UiPrefs, load_or_default, save};
+use gpui_kit::WindowAppearance;
+use navo_compare_profile::appearance::{
+    AppearanceError, AppearanceMode, PaletteId, UiPrefs, load_or_default, save,
+};
 use navo_compare_profile::book::profile_text;
 use navo_compare_profile::paths::{Profile, open_profile};
 use sidewise_kit::prelude::*;
+use sidewise_kit::tokens::{Mode, ThemeChoice};
+
+use crate::theme::mode_of;
 
 /// The View preferences and the profile they save to; `profile` is None when no profile opened.
 struct Prefs {
@@ -81,6 +87,23 @@ pub(crate) fn save_prefs(prefs: UiPrefs, cx: &mut App) -> Result<(), String> {
             appearance_text(&error)
         )
     })
+}
+
+/// The saved palette and the mode it resolves to under the OS `appearance`: System follows the OS,
+/// Light and Dark pin it (NC152). `None` when no preferences global is installed (unit tests).
+pub(crate) fn theme_choice(appearance: WindowAppearance, cx: &App) -> Option<(PaletteId, Mode)> {
+    let stored = cx.try_global::<Prefs>()?;
+    let mode = choice_of(stored.prefs.mode).resolve(mode_of(appearance));
+    Some((stored.prefs.palette, mode))
+}
+
+/// Maps the saved mode one-to-one onto the kit's theme choice.
+fn choice_of(mode: AppearanceMode) -> ThemeChoice {
+    match mode {
+        AppearanceMode::System => ThemeChoice::System,
+        AppearanceMode::Light => ThemeChoice::Light,
+        AppearanceMode::Dark => ThemeChoice::Dark,
+    }
 }
 
 /// Describes an appearance error as the I/O error and the path it happened on.

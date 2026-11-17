@@ -4,12 +4,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use gpui_kit::TestAppContext;
-use navo_compare_profile::appearance::UiPrefs;
+use gpui_kit::{TestAppContext, WindowAppearance};
+use navo_compare_profile::appearance::{AppearanceMode, PaletteId, UiPrefs};
 use navo_compare_profile::brand::SLUG;
 use navo_compare_profile::paths::open_profile;
 
-use crate::shell_prefs::{install_prefs, prefs, save_prefs};
+use sidewise_kit::tokens::Mode;
+
+use crate::shell::Shell;
+use crate::shell_prefs::{install_prefs, prefs, save_prefs, theme_choice};
+use crate::test_window::open;
+use crate::theme::SidewiseTheme;
 
 static COUNT: AtomicUsize = AtomicUsize::new(0);
 
@@ -78,4 +83,61 @@ fn saved_prefs_survive_a_reinstall(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn missing_global_gives_the_defaults(cx: &mut TestAppContext) {
     assert_eq!(cx.update(|cx| prefs(cx)), UiPrefs::default());
+}
+
+/// With no preferences global there is no saved theme choice.
+#[gpui_kit::test]
+fn theme_choice_is_none_without_prefs(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        assert_eq!(theme_choice(WindowAppearance::Dark, cx), None);
+    });
+}
+
+/// System follows the OS appearance; Light and Dark pin the mode whatever the OS says.
+#[gpui_kit::test]
+fn system_follows_the_os_and_light_and_dark_pin(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        let cases = [
+            (AppearanceMode::System, WindowAppearance::Light, Mode::Light),
+            (AppearanceMode::System, WindowAppearance::Dark, Mode::Dark),
+            (AppearanceMode::Light, WindowAppearance::Light, Mode::Light),
+            (AppearanceMode::Light, WindowAppearance::Dark, Mode::Light),
+            (AppearanceMode::Dark, WindowAppearance::Light, Mode::Dark),
+            (AppearanceMode::Dark, WindowAppearance::Dark, Mode::Dark),
+        ];
+        for (mode, os, wanted) in cases {
+            let saved = UiPrefs {
+                palette: PaletteId::Ember,
+                mode,
+                ..UiPrefs::default()
+            };
+            save_prefs(saved, cx).expect("save");
+            assert_eq!(
+                theme_choice(os, cx),
+                Some((PaletteId::Ember, wanted)),
+                "{mode:?} under {os:?}"
+            );
+        }
+    });
+}
+
+/// A new shell opens in the saved palette and mode, and an OS change keeps them.
+#[gpui_kit::test]
+fn a_new_shell_opens_in_the_saved_theme(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        let saved = UiPrefs {
+            palette: PaletteId::Ember,
+            mode: AppearanceMode::Dark,
+            ..UiPrefs::default()
+        };
+        save_prefs(saved, cx).expect("save");
+    });
+    let _window = open(cx, Shell::new);
+    cx.update(|cx| {
+        let theme = *cx.global::<SidewiseTheme>();
+        assert_eq!((theme.palette, theme.mode), (PaletteId::Ember, Mode::Dark));
+        Shell::apply_appearance(WindowAppearance::Light, cx);
+        let theme = *cx.global::<SidewiseTheme>();
+        assert_eq!((theme.palette, theme.mode), (PaletteId::Ember, Mode::Dark));
+    });
 }
