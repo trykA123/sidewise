@@ -31,7 +31,7 @@ impl DiffSlot {
 fn note_of(result: &CopyResult) -> Note {
     let (text, error) = match result {
         CopyResult::Copied => (tr("compare-undone"), false),
-        CopyResult::Refused(text) => (text.clone(), true),
+        CopyResult::Refused(text) | CopyResult::Unconfirmed(text) => (text.clone(), true),
     };
     Note {
         text: text.into(),
@@ -99,7 +99,7 @@ impl ScreenOwner {
         let note = note_of(&done.result);
         let text = note.text.to_string();
         copy.note = Some(note);
-        if done.result == CopyResult::Copied {
+        if done.result.may_have_written() {
             self.reload_targets(&done.targets);
         }
         cx.emit(ScreenEvent::Wrote {

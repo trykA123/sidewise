@@ -86,7 +86,7 @@ fn note_of(done: &CopyDone, removing: bool) -> Note {
             undo: false,
             error: false,
         },
-        CopyResult::Refused(text) => Note {
+        CopyResult::Refused(text) | CopyResult::Unconfirmed(text) => Note {
             text: text.clone().into(),
             undo: false,
             error: true,
@@ -242,9 +242,9 @@ impl ScreenOwner {
         }
     }
 
-    /// Takes the ends of copies. A copied pair and its Stream card reload, so they show the
-    /// files as they are now; a refusal reloads nothing. A copied pair opens on the change that
-    /// took the copied one's place.
+    /// Takes the ends of copies. A copied or unconfirmed pair and its Stream card reload, so
+    /// they show the files as they are now; a refusal reloads nothing. A copied pair opens on
+    /// the change that took the copied one's place.
     /// Returns whether anything arrived.
     pub(super) fn poll_copies(&mut self, cx: &mut Context<Self>) -> bool {
         let done = std::mem::take(
@@ -262,7 +262,7 @@ impl ScreenOwner {
         !done.is_empty() | self.poll_undos(cx)
     }
 
-    /// Shows the note for `done` and, when it copied, reloads the one pair it touched.
+    /// Shows the note for `done` and, when it may have written, reloads the one pair it touched.
     fn finish_copy(&mut self, done: &CopyDone, cx: &mut Context<Self>) {
         let copy = &mut self.compare.diff.copy;
         (copy.inflight, copy.hover) = (false, None);
@@ -274,19 +274,26 @@ impl ScreenOwner {
             });
         }
         copy.note = Some(note);
-        let at = copy.reopen_at.take();
+        let at = copy
+            .reopen_at
+            .take()
+            .filter(|_| done.result == CopyResult::Copied);
         let Some(screen) = self.compare.screen.as_mut() else {
             return;
         };
         if let Some(file) = screen
             .file
             .as_mut()
-            .filter(|f| f.request.id == done.request && done.result == CopyResult::Copied)
+            .filter(|f| f.request.id == done.request && done.result.may_have_written())
         {
             file.at = at;
             file.refresh();
         }
-        if let (Some(stream), CopyResult::Copied) = (screen.stream.as_mut(), &done.result) {
+        if let Some(stream) = screen
+            .stream
+            .as_mut()
+            .filter(|_| done.result.may_have_written())
+        {
             stream.reload_item(done.request);
         }
     }

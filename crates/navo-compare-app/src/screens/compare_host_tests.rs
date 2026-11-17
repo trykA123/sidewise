@@ -15,13 +15,14 @@ use super::compare_host::{action_name, bind_compare_keys, look_of, new_compare_s
 use super::compare_run::location_of;
 use super::host_parts::compare_files;
 
-/// Every compare key that names a registered action binds; the count matches those keys.
+/// Every compare key that names a registered action binds, plus Ctrl+Z in the two compare
+/// contexts; the count matches those keys.
 #[gpui_kit::test]
 fn bind_compare_keys_binds_every_compare_key(cx: &mut gpui_kit::TestAppContext) {
     let (added, expected, failed_compare) = cx.update(|cx| {
         gpui_kit::init(cx);
         let added = bind_compare_keys(cx);
-        let mut expected = 0;
+        let mut expected = 2;
         let mut failed_compare = Vec::new();
         for entry in compare_keys().expect("the compare key file parses") {
             let builds = action_name(&entry.command)

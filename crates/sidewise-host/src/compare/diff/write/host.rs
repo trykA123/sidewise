@@ -207,7 +207,15 @@ fn copy_with(state: &State, changes: &[CopyChange]) -> CopyResult {
             state.push(committed);
             CopyResult::Copied
         }
-        Err(refusal) => CopyResult::Refused(refusal.text()),
+        Err(refusal) => result_of(&refusal),
+    }
+}
+
+/// The answer for a refused copy: `Unconfirmed` when the target may hold new bytes (NC168).
+fn result_of(refusal: &CopyRefusal) -> CopyResult {
+    match refusal {
+        CopyRefusal::Unconfirmed => CopyResult::Unconfirmed(refusal.text()),
+        other => CopyResult::Refused(other.text()),
     }
 }
 
@@ -223,7 +231,7 @@ fn undo_now(state: &State, entry: Committed) -> UndoDone {
         }
         UndoError::Journal(JournalError::InDoubt(_))
         | UndoError::Write(WriteError::NotRolledBack { .. }) => {
-            CopyResult::Refused(CopyRefusal::Unconfirmed.text())
+            result_of(&CopyRefusal::Unconfirmed)
         }
         other => undo_refused(&other.to_string()),
     };

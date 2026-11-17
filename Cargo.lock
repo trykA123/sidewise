@@ -4632,11 +4632,13 @@ dependencies = [
  "sidewise-engine",
  "sidewise-fs",
  "sidewise-host",
+ "sidewise-journal",
  "sidewise-kit",
  "sidewise-l10n",
  "sidewise-ui",
  "sidewise-update",
  "toml 1.2.1+spec-1.1.0",
+ "tracing",
  "windows-sys 0.61.2",
 ]
 

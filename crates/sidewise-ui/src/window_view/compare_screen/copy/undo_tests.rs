@@ -189,3 +189,42 @@ fn finished_copy_emits_wrote_with_undo(cx: &mut TestAppContext) {
     );
     let _ = fake;
 }
+
+/// An undo that may have written (NC168) reloads the target, shows the text as an error and
+/// still tells the window.
+#[gpui_kit::test]
+fn unconfirmed_undo_refreshes_the_target(cx: &mut TestAppContext) {
+    let (fake, _, screen, seen) = screen_with_pair(cx);
+    fake.set_undoable(true);
+    let before = fake.refreshes().len();
+    assert!(undo(cx, &screen));
+    (fake.undo_sink())(UndoDone {
+        targets: vec![place("b.txt")],
+        result: CopyResult::Unconfirmed("unsure".into()),
+    });
+    assert!(poll(cx, &screen));
+    assert_eq!(fake.refreshes().len(), before + 1, "the target is reloaded");
+    let note = screen.read_with(cx, |s, _| s.copy_note());
+    assert_eq!(note, Some(("unsure".into(), false, true)));
+    assert_eq!(seen.lock().expect("events").len(), 1);
+}
+
+/// A copy that may have written (NC168) reloads its pair and shows the text as an error, with
+/// no `Wrote`: there is nothing to undo.
+#[gpui_kit::test]
+fn unconfirmed_copy_refreshes_the_pair(cx: &mut TestAppContext) {
+    use crate::compare_diff::{CopyDirection, CopyDone};
+    let (fake, _, screen, seen) = screen_with_pair(cx);
+    let before = fake.refreshes().len();
+    let sink = cx.update(|cx| screen.update(cx, |s, _| s.compare.diff.copy_sink()));
+    sink(CopyDone {
+        request: 0,
+        direction: CopyDirection::ToRight,
+        result: CopyResult::Unconfirmed("unsure".into()),
+    });
+    assert!(poll(cx, &screen));
+    assert_eq!(fake.refreshes().len(), before + 1, "the pair is reloaded");
+    let note = screen.read_with(cx, |s, _| s.copy_note());
+    assert_eq!(note, Some(("unsure".into(), false, true)));
+    assert!(seen.lock().expect("events").is_empty());
+}

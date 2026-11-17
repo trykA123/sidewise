@@ -6,10 +6,12 @@ use std::sync::Arc;
 
 use gpui_kit::{App, KeyBinding, KeyBindingContextPredicate};
 use navo_compare_profile::appearance::{LayoutPref, UiPrefs, ViewPresetPref};
+use sidewise_host::compare::diff::copy_port::CopyHost;
 use sidewise_host::compare::diff::hooks::DiffBackend;
 use sidewise_ui::browser::Waker;
 use sidewise_ui::compare_diff::{CompareOptions, DiffHooks, Layout};
 use sidewise_ui::compare_keys::compare_keys;
+use sidewise_ui::list_actions::UndoLast;
 use sidewise_ui::window_view::{CompareScreen, DiffSlot, LookDefaults, LookPreset};
 
 use super::host_parts::compare_files;
@@ -21,13 +23,23 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// The diff hooks a new screen uses: the in-memory backend, or the test seam's hooks.
+/// The diff hooks a new screen uses: the in-memory backend with the journal's copy host when
+/// it opened (else copies are refused), or the test seam's hooks.
 fn diff_hooks() -> Arc<dyn DiffHooks> {
     #[cfg(test)]
     if let Some(hooks) = TEST_DIFF_HOOKS.with_borrow(Clone::clone) {
         return hooks;
     }
-    Arc::new(DiffBackend::default())
+    let host = crate::writes::host().map(|host| host as Arc<dyn CopyHost>);
+    Arc::new(hooks_with(host))
+}
+
+/// The default diff backend, writing copies through `host` when there is one.
+pub(crate) fn hooks_with(host: Option<Arc<dyn CopyHost>>) -> DiffBackend {
+    match host {
+        Some(host) => DiffBackend::default().with_copy_host(host),
+        None => DiffBackend::default(),
+    }
 }
 
 /// The screen's look defaults for the saved View preferences: preset, words, wrap and layout
@@ -61,8 +73,9 @@ pub fn new_compare_screen(wake: Waker, look: LookDefaults) -> CompareScreen {
     screen
 }
 
-/// Binds Navo's compare keys (contexts `CompareView`, `CompareStream`); returns how many bindings
-/// it added. A bind whose action or keystroke does not load is skipped.
+/// Binds Navo's compare keys (contexts `CompareView`, `CompareStream`) and Ctrl+Z to undo the
+/// last copy there; returns how many bindings it added. A bind whose action or keystroke does
+/// not load is skipped.
 pub fn bind_compare_keys(cx: &mut App) -> usize {
     let Ok(keys) = compare_keys() else {
         return 0;
@@ -84,6 +97,10 @@ pub fn bind_compare_keys(cx: &mut App) -> usize {
                 all.push(binding);
             }
         }
+    }
+    // The key file's `files.undo` names no action; Ctrl+Z undoes the last copy (NC148).
+    for context in ["CompareView", "CompareStream"] {
+        all.push(KeyBinding::new("ctrl-z", UndoLast, Some(context)));
     }
     let count = all.len();
     cx.bind_keys(all);

@@ -11,6 +11,7 @@ use super::compare_run::RunKind;
 use super::compare_tab::{CompareRequest, CompareTab, TabView};
 use super::folders_view::FoldersEvent;
 use super::pair_requests::{neighbour, pair_request, stream_one};
+use crate::layers::toast;
 
 impl CompareTab {
     /// Subscribes to the Folders view and the compare screen; for two files, opens their pair
@@ -73,7 +74,8 @@ impl CompareTab {
         }
     }
 
-    /// The compare screen closed or asked to walk; settings and resync have no place in the alpha.
+    /// The compare screen closed, asked to walk or wrote a file; settings and resync have no
+    /// place in the alpha.
     fn on_screen_event(
         &mut self,
         event: &ScreenEvent,
@@ -99,8 +101,24 @@ impl CompareTab {
                     self.show_pair(pair, window, cx);
                 }
             }
-            ScreenEvent::OpenSettings(_) | ScreenEvent::Resync | ScreenEvent::Wrote { .. } => {}
+            ScreenEvent::Wrote { text, undoable } => self.toast_write(text, *undoable, cx),
+            ScreenEvent::OpenSettings(_) | ScreenEvent::Resync => {}
         }
+    }
+
+    /// Toasts a finished copy or undo; a copy's toast has Undo, which undoes on this tab's
+    /// screen (NC148).
+    fn toast_write(&self, text: &str, undoable: bool, cx: &mut Context<Self>) {
+        if !undoable {
+            toast::notify(text.to_owned(), cx);
+            return;
+        }
+        let screen = self.screen.downgrade();
+        let undo = move |cx: &mut App| {
+            // A closed tab has nothing left to undo from here; Ctrl+Z in another tab still can.
+            let _ = screen.update(cx, |screen, cx| screen.undo_last_write(cx));
+        };
+        toast::notify_undo(text.to_owned(), undo, cx);
     }
 
     /// Opens `request` in the file diff and shows it; the screen moves focus to the diff.

@@ -27,6 +27,7 @@ pub fn run(opening: Opening) -> std::process::ExitCode {
         if let Err(message) = crate::shell_prefs::install_prefs(profile.as_deref(), cx) {
             report(&message);
         }
+        let writes = crate::writes::install_writes(profile.as_deref());
         let opened = initialised
             .map_err(|error| error.to_string())
             .and_then(|()| open(cx, pair));
@@ -35,6 +36,7 @@ pub fn run(opening: Opening) -> std::process::ExitCode {
             run_failed.store(true, std::sync::atomic::Ordering::SeqCst);
             cx.quit();
         }
+        crate::writes::announce(writes, cx);
     });
     if failed.load(std::sync::atomic::Ordering::SeqCst) {
         std::process::ExitCode::FAILURE

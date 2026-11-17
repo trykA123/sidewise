@@ -257,11 +257,20 @@ pub struct CopyChange {
     pub lines: Option<BTreeSet<usize>>,
 }
 
-/// How a copy ended. A refusal carries the text for the status line; nothing was written.
+/// How a copy or an undo ended. A refusal carries the text for the status line; nothing was
+/// written. `Unconfirmed` carries its text too, but the target may hold new bytes (NC168).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CopyResult {
     Copied,
     Refused(String),
+    Unconfirmed(String),
+}
+
+impl CopyResult {
+    /// Whether the target may have changed on disk, so the screen reloads it.
+    pub fn may_have_written(&self) -> bool {
+        !matches!(self, Self::Refused(_))
+    }
 }
 
 /// The end of one copy, for the pair whose `request` id was sent.

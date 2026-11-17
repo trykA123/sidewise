@@ -88,6 +88,9 @@ mod ui_matrix_tests;
 #[expect(dead_code, reason = "U9 wires the check and U10 the notice")]
 mod updates;
 mod window;
+mod writes;
+#[cfg(test)]
+mod writes_tests;
 
 use std::process::ExitCode;
 

@@ -1,0 +1,273 @@
+//! Tests of the app's write wiring (P1 A1): the `Wrote` toast and its Undo, Ctrl+Z in the file
+//! diff, the copy host in the diff hooks, and the journal's start-up outcomes.
+
+use std::fs;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+
+use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, SharedString, TestAppContext};
+use sidewise_host::compare::diff::copy_port::CopyHost;
+use sidewise_journal::Recovered;
+use sidewise_ui::compare_diff::{
+    CompareOptions, CopyChange, CopyDirection, CopyDone, CopyResult, CopySink, DiffHooks, DiffSink,
+    PairControl, PairRequest, SheetPlanSink, SheetSink, StreamControl, StreamSink, UndoSink,
+};
+use sidewise_ui::window_view::ScreenEvent;
+
+use crate::compare_tab_script::scripted_shell;
+use crate::compare_tab_tests::{TempDir, submit, wait_for_row};
+use crate::screens::compare_host::{TEST_DIFF_HOOKS, bind_compare_keys, hooks_with};
+use crate::screens::compare_tab::{CompareTab, TabView};
+use crate::shell::Shell;
+use crate::writes::{open_writes, recovery_note};
+
+type Opened = (AnyWindowHandle, Entity<Shell>);
+
+/// Diff hooks over the quiet test hooks that count `undo_last` calls and always have one.
+struct UndoProbe {
+    inner: Arc<dyn DiffHooks>,
+    undos: Arc<AtomicUsize>,
+}
+
+impl DiffHooks for UndoProbe {
+    /// Opens the pair on the quiet hooks.
+    fn open_pair(
+        &self,
+        request: PairRequest,
+        options: &CompareOptions,
+        sink: DiffSink,
+    ) -> Box<dyn PairControl> {
+        self.inner.open_pair(request, options, sink)
+    }
+
+    /// Opens the stream on the quiet hooks.
+    fn open_stream(&self, options: &CompareOptions, sink: StreamSink) -> Box<dyn StreamControl> {
+        self.inner.open_stream(options, sink)
+    }
+
+    /// Counts the call and says an undo started; it never ends.
+    fn undo_last(&self, _done: UndoSink) -> bool {
+        self.undos.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+}
+
+/// A shell with a submitted folder compare whose screens use the undo probe; returns the
+/// shell, its compare tab, the undo count and the folders.
+fn opened(
+    cx: &mut TestAppContext,
+    tag: &str,
+) -> (Opened, Entity<CompareTab>, Arc<AtomicUsize>, [TempDir; 2]) {
+    let left = TempDir::new(&format!("{tag}-l"));
+    let right = TempDir::new(&format!("{tag}-r"));
+    fs::write(left.path().join("a.txt"), "one").expect("write left");
+    fs::write(right.path().join("a.txt"), "two").expect("write right");
+    let opened = scripted_shell(cx);
+    let undos = Arc::new(AtomicUsize::new(0));
+    let inner = TEST_DIFF_HOOKS
+        .with_borrow(Clone::clone)
+        .expect("quiet hooks");
+    let probe = UndoProbe {
+        inner,
+        undos: Arc::clone(&undos),
+    };
+    TEST_DIFF_HOOKS.with_borrow_mut(|slot| *slot = Some(Arc::new(probe)));
+    submit(cx, &opened, [left.path(), right.path()]);
+    assert!(wait_for_row(cx, &opened, "a.txt"), "rows reach the view");
+    let tab = opened
+        .1
+        .read_with(cx, |shell, _| shell.active_compare().cloned())
+        .expect("compare tab");
+    (opened, tab, undos, [left, right])
+}
+
+/// Emits `event` from the tab's compare screen, as a finished copy or undo does.
+fn emit(
+    cx: &mut TestAppContext,
+    (window, _): &Opened,
+    tab: &Entity<CompareTab>,
+    event: ScreenEvent,
+) {
+    let screen = tab.read_with(cx, |tab, _| tab.screen().clone());
+    cx.update_window(*window, |_, _, cx| {
+        screen.update(cx, |_, cx| cx.emit(event));
+    })
+    .expect("window");
+    cx.run_until_parked();
+}
+
+/// The texts of the shell's toasts.
+fn toasts(cx: &mut TestAppContext, (_, shell): &Opened) -> Vec<SharedString> {
+    shell.read_with(cx, |shell, cx| shell.toast_host().read(cx).messages())
+}
+
+/// Presses the newest toast's Undo.
+fn press_toast_undo(cx: &mut TestAppContext, (_, shell): &Opened) {
+    let host = shell.read_with(cx, |shell, _| shell.toast_host());
+    cx.update(|cx| host.update(cx, |host, cx| host.undo(cx)));
+    cx.run_until_parked();
+}
+
+/// A finished copy toasts its text with Undo, and the toast's Undo undoes on the screen.
+#[gpui_kit::test]
+fn a_copy_toasts_with_undo_and_undo_reaches_the_screen(cx: &mut TestAppContext) {
+    let (open, tab, undos, _dirs) = opened(cx, "wrote-undo");
+    let copied = ScreenEvent::Wrote {
+        text: "Copied to the right".into(),
+        undoable: true,
+    };
+    emit(cx, &open, &tab, copied);
+    assert_eq!(toasts(cx, &open), ["Copied to the right"]);
+    press_toast_undo(cx, &open);
+    assert_eq!(
+        undos.load(Ordering::SeqCst),
+        1,
+        "Undo calls undo_last_write"
+    );
+    assert!(toasts(cx, &open).is_empty(), "the Undo toast is dismissed");
+}
+
+/// A finished undo toasts its text with no Undo.
+#[gpui_kit::test]
+fn an_undo_toasts_without_undo(cx: &mut TestAppContext) {
+    let (open, tab, undos, _dirs) = opened(cx, "wrote-plain");
+    let undone = ScreenEvent::Wrote {
+        text: "Undid the copy".into(),
+        undoable: false,
+    };
+    emit(cx, &open, &tab, undone);
+    assert_eq!(toasts(cx, &open), ["Undid the copy"]);
+    press_toast_undo(cx, &open);
+    assert_eq!(undos.load(Ordering::SeqCst), 0, "the toast has no Undo");
+    assert_eq!(toasts(cx, &open), ["Undid the copy"]);
+}
+
+/// Ctrl+Z in the file diff asks the hooks to undo the last copy.
+#[gpui_kit::test]
+fn ctrl_z_in_the_file_diff_undoes(cx: &mut TestAppContext) {
+    let (open, tab, undos, _dirs) = opened(cx, "ctrl-z");
+    cx.update(bind_compare_keys);
+    cx.simulate_keystrokes(open.0, "enter");
+    cx.run_until_parked();
+    assert_eq!(tab.read_with(cx, |tab, _| tab.view()), TabView::File);
+    cx.simulate_keystrokes(open.0, "ctrl-z");
+    cx.run_until_parked();
+    assert_eq!(undos.load(Ordering::SeqCst), 1);
+}
+
+/// A copy host that records the copies it was given and answers each as copied.
+#[derive(Default)]
+struct RecordingHost {
+    copies: Mutex<Vec<u64>>,
+}
+
+impl CopyHost for RecordingHost {
+    /// Records the pair id and answers `Copied`.
+    fn copy_change(&self, change: CopyChange, done: CopySink) {
+        self.copies.lock().expect("copies").push(change.pair.id);
+        done(CopyDone {
+            request: change.pair.id,
+            direction: change.direction,
+            result: CopyResult::Copied,
+        });
+    }
+    /// Unused here.
+    fn copy_changes(&self, _changes: Vec<CopyChange>, _done: CopySink) {}
+    /// Unused here.
+    fn plan_sheet(&self, _changes: Vec<CopyChange>, _planned: SheetPlanSink) {}
+    /// Unused here.
+    fn run_sheet(&self, _done: SheetSink) {}
+}
+
+/// One change of pair 7, copied to the right.
+fn change() -> CopyChange {
+    CopyChange {
+        pair: PairRequest {
+            id: 7,
+            path: "a.txt".into(),
+            left: None,
+            right: None,
+        },
+        left_bytes: 0..1,
+        right_bytes: 0..1,
+        digest: [0; 16],
+        direction: CopyDirection::ToRight,
+        lines: None,
+    }
+}
+
+/// The answer `hooks` gives for one copy.
+fn copy_through(hooks: &dyn DiffHooks) -> CopyResult {
+    let answer = Arc::new(Mutex::new(None));
+    let sink_answer = Arc::clone(&answer);
+    let sink: CopySink = Arc::new(move |done| *sink_answer.lock().expect("answer") = Some(done));
+    hooks.copy_change(change(), sink);
+    let done = answer.lock().expect("answer").take().expect("one answer");
+    done.result
+}
+
+/// With a host the diff hooks copy through it; without one they refuse (read-only).
+#[test]
+fn diff_hooks_copy_through_the_host_or_refuse() {
+    let host = Arc::new(RecordingHost::default());
+    let with = hooks_with(Some(Arc::clone(&host) as Arc<dyn CopyHost>));
+    assert_eq!(copy_through(&with), CopyResult::Copied);
+    assert_eq!(*host.copies.lock().expect("copies"), [7]);
+    let without = hooks_with(None);
+    assert!(matches!(copy_through(&without), CopyResult::Refused(_)));
+}
+
+/// A fresh profile opens the journal with nothing to report.
+#[test]
+fn a_fresh_profile_opens_writes_quietly() {
+    let profile = TempDir::new("writes-fresh");
+    let (_host, note) = open_writes(Some(profile.path())).expect("journal opens");
+    assert_eq!(note, None);
+}
+
+/// A journal folder that is a file turns copying off with its reason (fail closed).
+#[test]
+fn a_journal_folder_that_is_a_file_turns_copying_off() {
+    let profile = TempDir::new("writes-off");
+    let journal = navo_compare_profile::paths::open_profile(Some(profile.path()))
+        .expect("profile")
+        .journal_dir();
+    fs::remove_dir_all(&journal).expect("remove journal folder");
+    fs::write(&journal, b"not a folder").expect("journal file");
+    let Err(text) = open_writes(Some(profile.path())) else {
+        panic!("a journal folder that is a file must not open");
+    };
+    assert!(text.starts_with("Copying is off: "), "{text}");
+}
+
+/// The recovery note counts restored files, then names the journal folder when anything was
+/// left; a clean recovery says nothing.
+#[test]
+fn the_recovery_note_counts_and_names_the_folder() {
+    let dir = std::path::Path::new("/j");
+    assert_eq!(recovery_note(&Recovered::default(), dir), None);
+    let restored = Recovered {
+        restored: 1,
+        ..Recovered::default()
+    };
+    assert_eq!(
+        recovery_note(&restored, dir).as_deref(),
+        Some("Sidewise restored 1 file after an interrupted copy")
+    );
+    let left = Recovered {
+        restored: 2,
+        kept: 1,
+        failed: 2,
+        damaged: 1,
+        ..Recovered::default()
+    };
+    assert_eq!(
+        recovery_note(&left, dir).as_deref(),
+        Some(
+            "Sidewise restored 2 files after an interrupted copy. 1 file changed since the \
+             interrupted copy and was kept as is. 2 files could not be restored now; Sidewise \
+             tries again at the next start. 1 damaged journal entry was left untouched. The \
+             backups stay in /j"
+        )
+    );
+}

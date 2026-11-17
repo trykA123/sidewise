@@ -26,11 +26,13 @@ sidewise-core = { path = "../sidewise-core" }
 sidewise-engine = { path = "../sidewise-engine" }
 sidewise-fs = { path = "../sidewise-fs" }
 sidewise-host = { path = "../sidewise-host" }
+sidewise-journal = { path = "../sidewise-journal" }
 sidewise-kit = { path = "../sidewise-kit" }
 sidewise-l10n = { path = "../sidewise-l10n" }
 sidewise-ui = { path = "../sidewise-ui" }
 sidewise-update = { path = "../sidewise-update" }
 toml = "1.2.1"
+tracing = "0.1.44"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }

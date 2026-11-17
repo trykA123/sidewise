@@ -168,6 +168,11 @@ fn refused(refusal: &CopyRefusal) -> CopyResult {
     CopyResult::Refused(refusal.text())
 }
 
+/// The answer for a write that may have landed (NC168): the UI reloads the target for it.
+fn unconfirmed() -> CopyResult {
+    CopyResult::Unconfirmed(CopyRefusal::Unconfirmed.text())
+}
+
 fn undo_changed() -> CopyResult {
     CopyResult::Refused(navo_l10n::tr("compare-undo-changed"))
 }
@@ -380,7 +385,7 @@ fn clean_ops() -> (u64, u64, u64) {
 fn one_fault_at_any_op_keeps_the_file_whole_and_the_copy_undoable() {
     let (opened, copied, undone) = clean_ops();
     assert!(copied > opened && undone > copied);
-    let unconfirmed = refused(&CopyRefusal::Unconfirmed);
+    let unconfirmed = unconfirmed();
     let (mut copies_in_doubt, mut undos_in_doubt) = (0, 0);
     for n in opened + 1..=undone {
         let f = Fixture::new(NEW, OLD, Plan::FailAt(n, io::ErrorKind::Other));
@@ -442,7 +447,7 @@ fn a_lasting_fault_never_leaves_a_refused_copy_undoable() {
         // are never answered as "not copied".
         if now == NEW {
             left_new += 1;
-            assert_eq!(result, refused(&CopyRefusal::Unconfirmed), "op {n}");
+            assert_eq!(result, unconfirmed(), "op {n}");
         }
         assert!(
             f.undo().is_none(),
