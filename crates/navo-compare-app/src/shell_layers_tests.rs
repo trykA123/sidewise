@@ -224,3 +224,64 @@ fn changing_the_view_updates_an_open_compare_tab(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(opened.0, "up enter");
     assert_eq!(tab_look(cx, &opened).preset, LookPreset::Simple);
 }
+
+/// The bounds of the element `id` in the last frame.
+fn bounds_of(
+    cx: &mut TestAppContext,
+    window: AnyWindowHandle,
+    id: &'static str,
+) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+    cx.update_window(window, |_, window, _| window.find(id).bounds())
+        .expect("window")
+}
+
+/// B4: at 1200 x 760 the open View menu floats under the View pill, right-aligned to it, and
+/// the main pane keeps the full window height.
+#[gpui_kit::test]
+fn the_view_menu_drops_under_the_view_pill_and_leaves_the_layout_alone(cx: &mut TestAppContext) {
+    let profile = TempDir::new("view-anchor");
+    let opened = shell(cx);
+    cx.update(|cx| install_prefs(Some(profile.path()), cx))
+        .expect("install");
+    VisualTestContext::from_window(opened.0, cx)
+        .simulate_resize(gpui_kit::size(gpui_kit::px(1200.), gpui_kit::px(760.)));
+    cx.run_until_parked();
+    let pane = bounds_of(cx, opened.0, "main-pane");
+    cx.simulate_keystrokes(opened.0, "alt-v");
+    cx.update_window(opened.0, |_, window, cx| window.render_frame(cx))
+        .expect("window");
+    assert_eq!(open_state(cx, &opened), (false, true), "alt-v opens it");
+    let pill = bounds_of(cx, opened.0, "top-view");
+    let menu = bounds_of(cx, opened.0, "view-menu");
+    let near = |a: gpui_kit::Pixels, b: gpui_kit::Pixels| (a - b).abs() <= gpui_kit::px(8.);
+    assert!(
+        near(menu.top(), pill.bottom()),
+        "menu {menu:?} under pill {pill:?}"
+    );
+    assert!(
+        near(menu.right(), pill.right()),
+        "menu {menu:?} right-aligned to {pill:?}"
+    );
+    assert_eq!(
+        bounds_of(cx, opened.0, "main-pane"),
+        pane,
+        "the pane keeps its bounds"
+    );
+    assert_eq!(
+        pane.bottom(),
+        gpui_kit::px(760.),
+        "the pane reaches the window bottom"
+    );
+    let simple = cx
+        .update_window(opened.0, |_, window, _| {
+            window.find(("view-item", 0usize)).bounds().center()
+        })
+        .expect("window");
+    VisualTestContext::from_window(opened.0, cx).simulate_click(simple, Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|cx| prefs(cx)).preset,
+        ViewPresetPref::Simple,
+        "a click reaches it"
+    );
+}

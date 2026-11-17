@@ -1,7 +1,7 @@
 //! The shell's overlay layers: the Keys sheet and the View menu, and how the topbar reaches them.
 //! A child module of `shell`. The drawer host stays unmounted (NC119).
 
-use gpui_kit::{App, Subscription, WeakEntity};
+use gpui_kit::{AnyView, App, Subscription, WeakEntity};
 use sidewise_kit::prelude::*;
 
 use super::Shell;
@@ -54,7 +54,7 @@ impl Shell {
                     .update(cx, |keys, cx| keys.toggle(window, cx));
             }
             Action::View if self.layers.view.is_some() => {
-                self.layers.view = None;
+                self.set_view_menu(None, cx);
                 self.activated(window, cx);
             }
             Action::View => self.open_view_menu(window, cx),
@@ -83,13 +83,25 @@ impl Shell {
                 this.apply_look(cx);
             }
             ViewMenuEvent::Dismissed => {
-                this.layers.view = None;
+                this.set_view_menu(None, cx);
                 this.activated(window, cx);
             }
         });
         let handle = menu.clone();
         handle.update(cx, |menu, cx| menu.focus(window, cx));
-        self.layers.view = Some((menu, sub));
+        self.set_view_menu(Some((menu, sub)), cx);
+    }
+
+    /// Stores the open View menu (or `None`) and hands it to the topbar, which floats it under
+    /// the View pill instead of the shell laying it out (B4).
+    fn set_view_menu(
+        &mut self,
+        view: Option<(Entity<ViewMenu>, Subscription)>,
+        cx: &mut Context<Self>,
+    ) {
+        let menu = view.as_ref().map(|(menu, _)| AnyView::from(menu.clone()));
+        self.topbar.update(cx, |bar, cx| bar.set_menu(menu, cx));
+        self.layers.view = view;
         cx.notify();
     }
 
@@ -99,11 +111,6 @@ impl Shell {
         for tab in self.compare_tabs() {
             tab.update(cx, |tab, cx| tab.set_look(look, cx));
         }
-    }
-
-    /// The open View menu, for the render.
-    pub(super) fn view_menu(&self) -> Option<Entity<ViewMenu>> {
-        self.layers.view.as_ref().map(|(menu, _)| menu.clone())
     }
 
     /// Whether the Keys sheet shows; for tests.

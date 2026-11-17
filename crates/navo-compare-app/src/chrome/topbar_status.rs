@@ -40,6 +40,8 @@ pub fn bind_keys(cx: &mut App) {
     ]);
 }
 
+#[path = "topbar_menu.rs"]
+mod menu;
 #[path = "topbar_mode.rs"]
 mod mode;
 
@@ -82,6 +84,7 @@ pub struct Topbar {
     on_action: OnAction,
     on_filter_change: Option<OnFilterChange>,
     handle: FocusHandle,
+    menu: Option<gpui_kit::AnyView>,
 }
 
 impl Topbar {
@@ -117,6 +120,7 @@ impl Topbar {
             on_action: Rc::new(on_action),
             on_filter_change: None,
             handle: cx.focus_handle(),
+            menu: None,
         }
     }
 
@@ -384,7 +388,7 @@ impl Render for Topbar {
         let pills: Vec<AnyElement> = PILLS
             .iter()
             .filter(|pill| self.mode.shows(pill.action))
-            .map(|pill| self.pill_view(pill, &m, cx))
+            .map(|pill| self.with_menu(pill.action, self.pill_view(pill, &m, cx)))
             .collect();
         div()
             .relative()
