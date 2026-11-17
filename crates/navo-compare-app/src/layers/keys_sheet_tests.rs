@@ -126,6 +126,17 @@ fn the_keys_sheet_lists_every_compare_binding(_cx: &mut TestAppContext) {
     assert!(skipped.is_empty(), "unlabelled commands are skipped");
 }
 
+/// Every id in the compare label table has a catalog message, so no row is skipped.
+#[gpui_kit::test]
+fn every_compare_label_id_has_a_catalog_message(_cx: &mut TestAppContext) {
+    use sidewise_ui::compare_keys::COMPARE_LABELS;
+    let missing: Vec<&str> = (COMPARE_LABELS.iter())
+        .map(|(_, id)| *id)
+        .filter(|id| translated(id).is_none())
+        .collect();
+    assert!(missing.is_empty(), "no catalog message for {missing:?}");
+}
+
 /// The filter matches labels and shown keys, case-insensitively, and drops empty groups.
 #[gpui_kit::test]
 fn the_filter_matches_labels_and_keys(_cx: &mut TestAppContext) {

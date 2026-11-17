@@ -2,6 +2,12 @@
 
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- The Keys sheet lists all viewer keys (line and page scrolling, find results, undo).
+
 ## [0.1.0-alpha.2] — 2026-11-17
 
 Sidewise now builds its compare engine, file layer and compare screen from its own crates (`crates/sidewise-*`, imported with their history from Navo). It no longer fetches Navo at build time.
