@@ -5,5 +5,6 @@
 pub mod fixture;
 pub mod index;
 pub mod location;
+mod pointers;
 pub mod repo;
 pub mod side;

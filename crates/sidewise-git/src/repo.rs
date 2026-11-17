@@ -80,7 +80,8 @@ impl Repo {
 
     /// Opens `path` without the owner check (reads run no program), objects capped at
     /// `MAX_BLOB`, no config source that needs the `git` program to locate it, and no
-    /// `include`/`includeIf` files (a hostile one can name an SMB share).
+    /// `include`/`includeIf` files (a hostile one can name an SMB share). Pointer files that
+    /// name a network path are refused before gix reads them (`pointers::check`).
     fn open_with(path: &Path, mut permissions: gix::open::Permissions) -> Result<Repo, GitProblem> {
         // On Windows, gix finds the system config by running `git config --show-origin`.
         permissions.config.system = false;
@@ -92,6 +93,7 @@ impl Repo {
             .permissions(permissions)
             .bail_if_untrusted(false)
             .config_overrides([format!("gitoxide.objects.allocLimit={MAX_BLOB}")]);
+        crate::pointers::check(path)?;
         let opened = catch_unwind(AssertUnwindSafe(|| options.open(path)));
         let shared = opened
             .map_err(|_| GitProblem::Broken)?
