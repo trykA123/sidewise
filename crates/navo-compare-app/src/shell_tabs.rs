@@ -153,8 +153,8 @@ impl Shell {
             StartEvent::Compare { .. } => return,
         };
         let request = CompareRequest {
-            left: left.clone(),
-            right: right.clone(),
+            left: SideSpec::Path(left.clone()),
+            right: SideSpec::Path(right.clone()),
             choice: *choice,
         };
         self.open_recorded((index, request), window, cx);

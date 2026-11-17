@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 
+use navo_compare_cli::args::SideSpec;
 use sidewise_core::{Location, ProviderPath};
 use sidewise_ui::browser::{CompareHooks, CompareSink, CompareUpdate, FolderSession, Waker};
 use sidewise_ui::compare_diff::CompareOptions;
@@ -96,11 +97,16 @@ impl CompareRun {
     /// Classifies the roots and starts the walk for two folders; two files start no walk.
     /// `wake` is called after each update is queued; a bad root returns `RunError`.
     pub fn start(
-        (left, right): (&Path, &Path),
+        (left, right): (&SideSpec, &SideSpec),
         choice: &StartChoice,
         hooks: &dyn CompareHooks,
         wake: Waker,
     ) -> Result<Self, RunError> {
+        let (SideSpec::Path(left), SideSpec::Path(right)) = (left, right) else {
+            return Err(RunError::Location(
+                "Git compare is not in this alpha".into(),
+            ));
+        };
         let kind = classify(left, right)?;
         let roots = [location_of(left)?, location_of(right)?];
         let (sender, updates) = mpsc::channel();
@@ -299,7 +305,10 @@ mod tests {
         }
         let (wake, wakes) = counting_wake();
         let mut run = CompareRun::start(
-            (left.path(), right.path()),
+            (
+                &SideSpec::Path(left.path().to_path_buf()),
+                &SideSpec::Path(right.path().to_path_buf()),
+            ),
             &StartChoice::default(),
             &PaneCompare::new(Arc::new(NoHashes), std_local()),
             wake,
@@ -342,7 +351,10 @@ mod tests {
 
         let (wake, wakes) = counting_wake();
         let mut run = CompareRun::start(
-            (&left_file, &right_file),
+            (
+                &SideSpec::Path(left_file.clone()),
+                &SideSpec::Path(right_file.clone()),
+            ),
             &StartChoice::default(),
             &PaneCompare::new(Arc::new(NoHashes), std_local()),
             wake,

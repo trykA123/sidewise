@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use navo_compare_cli::args::SideSpec;
 use sidewise_core::Location;
 use sidewise_ui::browser::{
     CompareControl, CompareHooks, ComparePhase, CompareSink, CompareUpdate, Waker,
@@ -71,8 +72,16 @@ fn drain_feeds_phase_meters() {
         total: None,
     }]);
     let wake: Waker = Arc::new(|| {});
-    let mut run = CompareRun::start((&left, &right), &StartChoice::default(), &hooks, wake)
-        .expect("start the scripted run");
+    let mut run = CompareRun::start(
+        (
+            &SideSpec::Path(left.clone()),
+            &SideSpec::Path(right.clone()),
+        ),
+        &StartChoice::default(),
+        &hooks,
+        wake,
+    )
+    .expect("start the scripted run");
 
     assert!(run.drain());
     assert_eq!(

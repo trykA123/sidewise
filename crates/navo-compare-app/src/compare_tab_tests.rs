@@ -1,5 +1,6 @@
 //! View tests of the Start to compare tab flow: a good submit swaps the tab, a bad side toasts once.
 
+use navo_compare_cli::args::SideSpec;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -122,8 +123,8 @@ fn a_missing_side_keeps_start_and_shows_one_toast(cx: &mut TestAppContext) {
     let opened = shell(cx);
     let (window, view) = &opened;
     let request = CompareRequest {
-        left: left.path().to_owned(),
-        right: gone,
+        left: SideSpec::Path(left.path().to_owned()),
+        right: SideSpec::Path(gone),
         choice: StartChoice::default(),
     };
     let result = cx
@@ -143,8 +144,8 @@ fn an_index_past_the_tabs_starts_no_walk(cx: &mut TestAppContext) {
     let opened = shell(cx);
     let (window, view) = &opened;
     let request = CompareRequest {
-        left: left.path().to_owned(),
-        right: right.path().to_owned(),
+        left: SideSpec::Path(left.path().to_owned()),
+        right: SideSpec::Path(right.path().to_owned()),
         choice: StartChoice::default(),
     };
     let result = cx
@@ -166,8 +167,8 @@ fn closing_a_compare_tab_mid_walk_is_quiet_and_the_title_names_both_sides(cx: &m
     let (window, view) = &opened;
     cx.simulate_keystrokes(*window, "ctrl-t");
     let request = CompareRequest {
-        left: left.path().to_owned(),
-        right: right.path().to_owned(),
+        left: SideSpec::Path(left.path().to_owned()),
+        right: SideSpec::Path(right.path().to_owned()),
         choice: StartChoice::default(),
     };
     let names = |dir: &TempDir| {

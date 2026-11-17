@@ -3,6 +3,7 @@
 //! box always spans its half, so the check measures the row's drawn text (its label) at the
 //! test text system's column width, 0.6 of the font size.
 
+use navo_compare_cli::args::SideSpec;
 use std::fs;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -48,8 +49,8 @@ fn open_binary_pair(cx: &mut TestAppContext) -> (AnyWindowHandle, TempDir) {
     let (window, view) = scripted_shell(cx);
     TEST_DIFF_HOOKS.with_borrow_mut(|slot| *slot = Some(Arc::new(DiffBackend::default())));
     let request = CompareRequest {
-        left: l,
-        right: r,
+        left: SideSpec::Path(l),
+        right: SideSpec::Path(r),
         choice: StartChoice::default(),
     };
     cx.update_window(window, |_, window, cx| {

@@ -1,6 +1,7 @@
 //! Tests of L1: the Keys sheet and the View menu mounted in the shell, opened from the topbar and
 //! the keys, and the View action's availability by screen.
 
+use navo_compare_cli::args::SideSpec;
 use std::fs;
 use std::sync::Arc;
 
@@ -93,8 +94,8 @@ fn on_compare(cx: &mut TestAppContext, tag: &str, files: bool) -> (Opened, [Temp
         fs::write(&left, "one").expect("write");
         fs::write(&right, "two").expect("write");
         let request = CompareRequest {
-            left,
-            right,
+            left: SideSpec::Path(left),
+            right: SideSpec::Path(right),
             choice: StartChoice::default(),
         };
         let (window, view) = &opened;

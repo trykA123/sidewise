@@ -1,13 +1,14 @@
 //! The compare tab: owns one `CompareRun`, drains its updates on the UI thread and shows the
 //! Folders view over the rows. The shell mounts it in place of the Start tab (H2).
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use gpui_kit::{AsyncApp, FocusHandle, Focusable, Global, Subscription, WeakEntity};
+use navo_compare_cli::args::SideSpec;
 use sidewise_host::compare::pane::PaneCompare;
 use sidewise_kit::prelude::*;
 use sidewise_ui::browser::Waker;
@@ -37,8 +38,8 @@ const OWN_CONTEXTS: &str = "CompareTab CompareTabOwn";
 /// The two sides and the start choice a compare tab opens with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompareRequest {
-    pub left: PathBuf,
-    pub right: PathBuf,
+    pub left: SideSpec,
+    pub right: SideSpec,
     pub choice: StartChoice,
 }
 
@@ -127,7 +128,10 @@ impl CompareTab {
         cx: &mut Context<Self>,
     ) -> Self {
         let Started { run, wakes, wake } = started;
-        let roots = [request.left.clone(), request.right.clone()];
+        let roots = [
+            path_of(&request.left).to_path_buf(),
+            path_of(&request.right).to_path_buf(),
+        ];
         let folders = cx.new(|cx| FoldersView::new(cx).with_roots(roots));
         let large = cx.new(LargeView::new);
         let look = look_of(&crate::shell_prefs::prefs(cx));
@@ -264,9 +268,18 @@ async fn pump(mut wakes: UnboundedReceiver<()>, this: WeakEntity<CompareTab>, cx
     }
 }
 
+/// The path of a `Path` side, or the repository of a `GitRev` side.
+pub(super) fn path_of(spec: &SideSpec) -> &Path {
+    match spec {
+        SideSpec::Path(path) => path,
+        SideSpec::GitRev { repo, .. } => repo,
+    }
+}
+
 /// `"<left name> ↔ <right name>"` from the last path segment of each side.
 fn title_of(request: &CompareRequest) -> SharedString {
-    let name = |path: &PathBuf| {
+    let name = |spec: &SideSpec| {
+        let path = path_of(spec);
         path.file_name().map_or_else(
             || path.display().to_string(),
             |n| n.to_string_lossy().into_owned(),

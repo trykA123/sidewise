@@ -1,6 +1,7 @@
 //! View tests of H3: a Folders row opens its pair in the compare screen, two files open at
 //! once, the screen's Closed and WalkFile events move the tab.
 
+use navo_compare_cli::args::SideSpec;
 use std::fs;
 use std::time::{Duration, Instant};
 
@@ -104,8 +105,8 @@ fn two_files_open_their_pair_at_once(cx: &mut TestAppContext) {
     fs::write(&right, "two").expect("write");
     let opened = scripted_shell(cx);
     let request = CompareRequest {
-        left,
-        right,
+        left: SideSpec::Path(left),
+        right: SideSpec::Path(right),
         choice: StartChoice::default(),
     };
     let (window, view) = &opened;

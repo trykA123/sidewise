@@ -35,8 +35,7 @@ impl CompareTab {
         self.subscriptions.extend([folders, screen, large]);
         if self.run.kind() == RunKind::Files {
             let roots = self.run.roots();
-            let path = request
-                .left
+            let path = super::compare_tab::path_of(&request.left)
                 .file_name()
                 .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
             let pair = PairRequest {

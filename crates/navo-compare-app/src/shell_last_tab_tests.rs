@@ -1,5 +1,6 @@
 //! View tests of closing the last tab (CHR): the window stays open and keeps one New compare tab.
 
+use navo_compare_cli::args::SideSpec;
 use std::fs;
 
 use gpui_kit::test::TestWindowExt as _;
@@ -35,8 +36,8 @@ fn open_lone_compare(
         fs::write(dir.path().join("a.txt"), b"one").expect("write file");
     }
     let request = CompareRequest {
-        left: dirs[0].path().to_owned(),
-        right: dirs[1].path().to_owned(),
+        left: SideSpec::Path(dirs[0].path().to_owned()),
+        right: SideSpec::Path(dirs[1].path().to_owned()),
         choice: StartChoice::default(),
     };
     cx.update_window(*window, |_, window, cx| {

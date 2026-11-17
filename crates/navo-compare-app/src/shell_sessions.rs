@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use gpui_kit::Global;
+use navo_compare_cli::args::SideSpec;
 use navo_compare_profile::book::{SessionBook, Visit, now_ms};
 use navo_compare_profile::recent::StartRows;
 use sidewise_kit::prelude::*;
@@ -98,9 +99,12 @@ impl Shell {
         if !cx.has_global::<Sessions>() {
             return;
         }
+        let (SideSpec::Path(left), SideSpec::Path(right)) = (&request.left, &request.right) else {
+            return;
+        };
         let visit = Visit {
-            left: request.left.clone(),
-            right: request.right.clone(),
+            left: left.clone(),
+            right: right.clone(),
             respect_gitignore: request.choice.respect_gitignore,
         };
         if let Err(text) = cx.global_mut::<Sessions>().0.record(&visit, now_ms()) {
@@ -126,8 +130,8 @@ impl Shell {
                     respect_gitignore: visit.respect_gitignore,
                 };
                 let request = CompareRequest {
-                    left: visit.left,
-                    right: visit.right,
+                    left: SideSpec::Path(visit.left),
+                    right: SideSpec::Path(visit.right),
                     choice,
                 };
                 self.open_recorded((index, request), window, cx);

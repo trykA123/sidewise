@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use navo_compare_cli::args::SideSpec;
 use navo_compare_profile::brand;
 use sidewise_kit::prelude::*;
 use sidewise_kit::tokens::Mode;
@@ -62,8 +63,8 @@ fn open(cx: &mut App, pair: Option<(PathBuf, PathBuf)>) -> Result<(), String> {
                     (
                         0,
                         CompareRequest {
-                            left,
-                            right,
+                            left: SideSpec::Path(left),
+                            right: SideSpec::Path(right),
                             choice: StartChoice::default(),
                         },
                     ),

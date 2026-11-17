@@ -1,6 +1,7 @@
 //! Layout check of the compare tab (blank diff bug): an opened text diff must fill the tab, so its
 //! status line sits at the bottom of the stage, just above the footer, not under the header.
 
+use navo_compare_cli::args::SideSpec;
 use std::fs;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -35,8 +36,8 @@ fn changes_bottom_and_footer_top(cx: &mut TestAppContext) -> (Pixels, Pixels) {
     TEST_DIFF_HOOKS.with_borrow_mut(|slot| *slot = Some(Arc::new(DiffBackend::default())));
     let (window, view) = &opened;
     let request = CompareRequest {
-        left,
-        right,
+        left: SideSpec::Path(left),
+        right: SideSpec::Path(right),
         choice: StartChoice::default(),
     };
     cx.update_window(*window, |_, window, cx| {
