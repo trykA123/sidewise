@@ -10,6 +10,7 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained (merged into zbus 6), not vulnerable; transitive through gpui-kit (through sidewise-kit) (accesskit_unix, atspi); recheck on every gpui-kit update" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained (merged into zbus 6), not vulnerable; transitive through gpui-kit (through sidewise-kit) (accesskit_unix, atspi); recheck on every gpui-kit update" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained (merged into zbus 6), not vulnerable; transitive through gpui-kit (through sidewise-kit) (accesskit_unix, atspi); recheck on every gpui-kit update" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained, not vulnerable; transitive through gpui-base (through gpui-kit, sidewise-kit); no alternative upstream; recheck on every gpui-kit update" },
 ]
 
 [licenses]
