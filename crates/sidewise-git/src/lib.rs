@@ -3,5 +3,6 @@
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixture;
+pub mod index;
 pub mod location;
 pub mod repo;
