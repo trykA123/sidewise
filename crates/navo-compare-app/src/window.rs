@@ -28,14 +28,18 @@ pub fn run(opening: Opening) -> std::process::ExitCode {
         if let Err(message) = crate::shell_prefs::install_prefs(profile.as_deref(), cx) {
             report(&message);
         }
+        crate::updates::install_updates(profile.as_deref(), cx);
         let writes = crate::writes::install_writes(profile.as_deref());
         let opened = initialised
             .map_err(|error| error.to_string())
             .and_then(|()| open(cx, pair));
-        if let Err(message) = opened {
-            report(&message);
-            run_failed.store(true, std::sync::atomic::Ordering::SeqCst);
-            cx.quit();
+        match opened {
+            Ok(()) => crate::updates_check::check_at_start(cx),
+            Err(message) => {
+                report(&message);
+                run_failed.store(true, std::sync::atomic::Ordering::SeqCst);
+                cx.quit();
+            }
         }
         crate::writes::announce(writes, cx);
     });

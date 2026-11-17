@@ -85,8 +85,19 @@ mod theme_data;
 mod theme_tests;
 #[cfg(test)]
 mod ui_matrix_tests;
-#[expect(dead_code, reason = "U9 wires the check and U10 the notice")]
+#[expect(
+    dead_code,
+    reason = "U10 draws the Start line (view) and U11 the notice"
+)]
 mod updates;
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "U10 calls set_choice, dismiss and open_release_page"
+    )
+)]
+mod updates_check;
 mod window;
 mod writes;
 #[cfg(test)]
