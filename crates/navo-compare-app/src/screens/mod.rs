@@ -4,6 +4,9 @@
 pub mod compare_host;
 #[cfg(test)]
 mod compare_host_tests;
+pub mod compare_roots;
+#[cfg(test)]
+mod compare_roots_tests;
 pub mod compare_run;
 #[cfg(test)]
 mod compare_run_phase_tests;

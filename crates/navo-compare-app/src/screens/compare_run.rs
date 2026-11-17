@@ -1,15 +1,19 @@
 //! The model behind one compare tab: its two roots, the folder walk and the updates it receives.
 //! It holds no GPUI handle; the tab owns it and drains the updates on the UI thread.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 
 use navo_compare_cli::args::SideSpec;
-use sidewise_core::{Location, ProviderPath};
+use sidewise_core::Location;
 use sidewise_ui::browser::{CompareHooks, CompareSink, CompareUpdate, FolderSession, Waker};
 use sidewise_ui::compare_diff::CompareOptions;
 
+#[cfg(test)]
+pub use super::compare_roots::classify;
+#[cfg(test)]
+pub(crate) use super::compare_roots::location_of;
+use super::compare_roots::roots_of;
 use crate::screens::large_model::PhaseMeters;
 use crate::start::Side;
 use crate::start_tabs::StartChoice;
@@ -46,44 +50,6 @@ impl std::fmt::Display for RunError {
     }
 }
 
-/// Classifies two roots by the file system: both folders, both files, or neither of those.
-/// A missing side is `Missing`; another read failure is `Location`; mixed kinds are `Mixed`.
-pub fn classify(left: &Path, right: &Path) -> Result<RunKind, RunError> {
-    let left = std::fs::metadata(left).map_err(|error| root_error(&error, Side::Left))?;
-    let right = std::fs::metadata(right).map_err(|error| root_error(&error, Side::Right))?;
-    match (left.is_dir(), right.is_dir()) {
-        (true, true) => Ok(RunKind::Folders),
-        (false, false) => Ok(RunKind::Files),
-        _ => Err(RunError::Mixed),
-    }
-}
-
-/// Maps a missing root to `Missing`; any other metadata failure is a location error.
-fn root_error(error: &std::io::Error, side: Side) -> RunError {
-    if error.kind() == std::io::ErrorKind::NotFound {
-        RunError::Missing(side)
-    } else {
-        RunError::Location(error.to_string())
-    }
-}
-
-/// Turns a path into the local location the compare engine reads; keeps non-UTF-8 names on Unix.
-#[cfg(unix)]
-pub(crate) fn location_of(path: &Path) -> Result<Location, RunError> {
-    use std::os::unix::ffi::OsStrExt as _;
-    Location::local(ProviderPath::from_bytes(path.as_os_str().as_bytes()))
-        .map_err(|error| RunError::Location(error.to_string()))
-}
-
-/// Turns a path into the local location the compare engine reads; keeps wide names on Windows.
-#[cfg(windows)]
-pub(crate) fn location_of(path: &Path) -> Result<Location, RunError> {
-    use std::os::windows::ffi::OsStrExt as _;
-    let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
-    Location::local(ProviderPath::from_wide(&wide))
-        .map_err(|error| RunError::Location(error.to_string()))
-}
-
 /// One compare tab's run: the roots, the optional folder session and its update channel.
 pub struct CompareRun {
     kind: RunKind,
@@ -102,13 +68,7 @@ impl CompareRun {
         hooks: &dyn CompareHooks,
         wake: Waker,
     ) -> Result<Self, RunError> {
-        let (SideSpec::Path(left), SideSpec::Path(right)) = (left, right) else {
-            return Err(RunError::Location(
-                "Git compare is not in this alpha".into(),
-            ));
-        };
-        let kind = classify(left, right)?;
-        let roots = [location_of(left)?, location_of(right)?];
+        let (kind, roots) = roots_of(left, right)?;
         let (sender, updates) = mpsc::channel();
         let session = match kind {
             RunKind::Folders => {

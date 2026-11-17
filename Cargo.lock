@@ -4631,6 +4631,7 @@ dependencies = [
  "sidewise-core",
  "sidewise-engine",
  "sidewise-fs",
+ "sidewise-git",
  "sidewise-host",
  "sidewise-journal",
  "sidewise-kit",
