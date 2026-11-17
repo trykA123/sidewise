@@ -163,6 +163,7 @@ impl Render for StartScreen {
             .child(self.hint_line(cx))
             .when(row_count(&self.rows) == 0, |col| col.child(hero(cx)))
             .child(rows)
+            .child(self.updates.clone())
             .children(menu_view(&self.menu))
     }
 }

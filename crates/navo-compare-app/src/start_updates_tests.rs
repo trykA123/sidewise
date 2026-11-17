@@ -194,3 +194,28 @@ fn without_the_global_nothing_is_drawn(cx: &mut TestAppContext) {
     let handles = cx.update(|cx| line.read(cx).handles(cx));
     assert!(handles.iter().all(Option::is_none));
 }
+
+/// Opens a Start screen with no rows and returns its window.
+fn start_window(cx: &mut TestAppContext) -> AnyWindowHandle {
+    let cwd = std::path::PathBuf::from(".");
+    crate::start_tests::screen(cx, navo_compare_profile::recent::StartRows::default(), &cwd).0
+}
+
+#[gpui_kit::test]
+fn the_start_screen_shows_the_off_line_under_the_list(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        let fetch: Fetch = Arc::new(|| Err(CheckError::Unsupported));
+        install_for_test(UpdateState::default(), fetch, clock, cx);
+    });
+    let window = start_window(cx);
+    assert!(shown(cx, window).contains(&t!("update-line-off")));
+}
+
+#[gpui_kit::test]
+fn the_start_screen_without_the_global_shows_no_line(cx: &mut TestAppContext) {
+    let window = start_window(cx);
+    let drawn = cx
+        .update_window(window, |_, w, _| w.try_find("update-line").is_some())
+        .expect("window");
+    assert!(!drawn);
+}

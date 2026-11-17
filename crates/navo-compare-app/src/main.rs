@@ -69,7 +69,6 @@ mod start_rows_tests;
 mod start_tabs;
 #[cfg(test)]
 mod start_tests;
-#[cfg_attr(not(test), expect(dead_code, reason = "U10b places the line in Start"))]
 mod start_updates;
 mod start_view;
 #[cfg(test)]

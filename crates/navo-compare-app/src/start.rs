@@ -18,6 +18,7 @@ use crate::menu_host::MenuSlot;
 use crate::start_menu::{CopyPaths, ForgetSelected, ShowRowMenu};
 use crate::start_rows::{LIST_CONTEXT, RowBounds, row_at, row_count};
 use crate::start_tabs::{StartChoice, StartMode, StartTabs};
+use crate::start_updates::UpdateLine;
 
 gpui_kit::actions!(
     start,
@@ -125,6 +126,8 @@ pub struct StartScreen {
     pub(crate) fields: [Entity<TextFieldState>; 2],
     pub(crate) hints: [SideHint; 2],
     pub(crate) tabs: Entity<StartTabs>,
+    /// The update line at the foot of the screen.
+    pub(crate) updates: Entity<UpdateLine>,
     checks: [Option<Task<()>>; 2],
     pub(crate) rows: StartRows,
     pub(crate) selected: Option<usize>,
@@ -171,6 +174,7 @@ impl StartScreen {
             fields: [left, right],
             hints: [SideHint::Empty, SideHint::Empty],
             tabs,
+            updates: cx.new(UpdateLine::new),
             checks: [None, None],
             rows,
             selected: None,
