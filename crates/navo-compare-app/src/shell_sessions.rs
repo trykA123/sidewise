@@ -7,6 +7,7 @@ use gpui_kit::Global;
 use navo_compare_cli::args::SideSpec;
 use navo_compare_profile::book::{SessionBook, Visit, now_ms};
 use navo_compare_profile::recent::StartRows;
+use navo_compare_profile::session::{SideKind, SideRef};
 use sidewise_kit::prelude::*;
 
 use super::{Shell, TabKind};
@@ -28,6 +29,25 @@ pub(super) fn stored_rows(cx: &App) -> StartRows {
 /// Unix seconds now.
 fn now_s() -> i64 {
     i64::try_from(now_ms() / 1000).unwrap_or(i64::MAX)
+}
+
+/// Turns a start side into the side a session stores.
+fn side_ref(spec: &SideSpec) -> SideRef {
+    match spec {
+        SideSpec::Path(path) => SideRef::path(path.clone()),
+        SideSpec::GitRev { repo, rev } => SideRef::git(repo.clone(), rev.clone()),
+    }
+}
+
+/// Turns a stored side back into the start side that opens it.
+fn side_spec(side: SideRef) -> SideSpec {
+    match side.rev {
+        Some(rev) if side.kind == SideKind::Git => SideSpec::GitRev {
+            repo: side.path,
+            rev,
+        },
+        _ => SideSpec::Path(side.path),
+    }
 }
 
 impl Shell {
@@ -99,12 +119,9 @@ impl Shell {
         if !cx.has_global::<Sessions>() {
             return;
         }
-        let (SideSpec::Path(left), SideSpec::Path(right)) = (&request.left, &request.right) else {
-            return;
-        };
         let visit = Visit {
-            left: left.clone(),
-            right: right.clone(),
+            left: side_ref(&request.left),
+            right: side_ref(&request.right),
             respect_gitignore: request.choice.respect_gitignore,
         };
         if let Err(text) = cx.global_mut::<Sessions>().0.record(&visit, now_ms()) {
@@ -130,8 +147,8 @@ impl Shell {
                     respect_gitignore: visit.respect_gitignore,
                 };
                 let request = CompareRequest {
-                    left: SideSpec::Path(visit.left),
-                    right: SideSpec::Path(visit.right),
+                    left: side_spec(visit.left),
+                    right: side_spec(visit.right),
                     choice,
                 };
                 self.open_recorded((index, request), window, cx);
@@ -142,5 +159,29 @@ impl Shell {
                 self.sync_rows(cx);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use navo_compare_cli::args::SideSpec;
+
+    use super::{side_ref, side_spec};
+
+    #[test]
+    fn a_path_side_round_trips() {
+        let spec = SideSpec::Path(PathBuf::from("/tmp/left"));
+        assert_eq!(side_spec(side_ref(&spec)), spec);
+    }
+
+    #[test]
+    fn a_git_side_round_trips() {
+        let spec = SideSpec::GitRev {
+            repo: PathBuf::from("/tmp/repo"),
+            rev: "main".to_string(),
+        };
+        assert_eq!(side_spec(side_ref(&spec)), spec);
     }
 }

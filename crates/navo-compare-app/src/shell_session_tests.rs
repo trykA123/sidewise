@@ -142,11 +142,7 @@ fn a_compare_from_start_is_saved_and_listed(cx: &mut TestAppContext) {
 fn an_open_row_reopens_and_bumps_its_session(cx: &mut TestAppContext) {
     let fixture = Fixture::new();
     let mut book = SessionBook::open(Some(&fixture.profile()), 0).expect("book");
-    let visit = Visit {
-        left: fixture.left(),
-        right: fixture.right(),
-        respect_gitignore: false,
-    };
+    let visit = Visit::paths(fixture.left(), fixture.right(), false);
     book.record(&visit, 1_000).expect("record");
     let id = book.rows().recent[0].id.clone();
     let opened = open_shell(cx, Some(&fixture.profile()));
@@ -183,11 +179,7 @@ fn without_a_book_a_compare_still_opens(cx: &mut TestAppContext) {
 fn forget_then_undo_restores_the_row(cx: &mut TestAppContext) {
     let fixture = Fixture::new();
     let mut book = SessionBook::open(Some(&fixture.profile()), 0).expect("book");
-    let visit = Visit {
-        left: fixture.left(),
-        right: fixture.right(),
-        respect_gitignore: false,
-    };
+    let visit = Visit::paths(fixture.left(), fixture.right(), false);
     book.record(&visit, 1_000).expect("record");
     let id = book.rows().recent[0].id.clone();
     let opened = open_shell(cx, Some(&fixture.profile()));
@@ -210,11 +202,7 @@ fn forget_then_undo_restores_the_row(cx: &mut TestAppContext) {
 fn recorded() -> Fixture {
     let fixture = Fixture::new();
     let mut book = SessionBook::open(Some(&fixture.profile()), 0).expect("book");
-    let visit = Visit {
-        left: fixture.left(),
-        right: fixture.right(),
-        respect_gitignore: false,
-    };
+    let visit = Visit::paths(fixture.left(), fixture.right(), false);
     book.record(&visit, 1_000).expect("record");
     fixture
 }

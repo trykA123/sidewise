@@ -6,15 +6,25 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::paths::{self, ProfileError};
 use crate::recent::{self, StartRows};
-use crate::session::{Rules, SESSION_VERSION, Session, SessionKind, SideKind, SideRef};
+use crate::session::{Rules, SESSION_VERSION, Session, SessionKind, SideRef};
 use crate::session_store::{SessionStore, StoreError};
 
-/// Two path sides and their `.gitignore` rule: one compare to record, or one to open again.
+/// Two sides (paths or Git revisions) and their `.gitignore` rule: one compare to record, or one to open again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Visit {
-    pub left: PathBuf,
-    pub right: PathBuf,
+    pub left: SideRef,
+    pub right: SideRef,
     pub respect_gitignore: bool,
+}
+impl Visit {
+    /// Makes a visit of two path sides with the `.gitignore` rule.
+    pub fn paths(left: PathBuf, right: PathBuf, respect_gitignore: bool) -> Visit {
+        Visit {
+            left: SideRef::path(left),
+            right: SideRef::path(right),
+            respect_gitignore,
+        }
+    }
 }
 /// The sessions store of an opened profile and the start rows last read from it.
 pub struct SessionBook {
@@ -59,23 +69,18 @@ impl SessionBook {
             Ok(()) => refreshed,
         }
     }
-    /// Loads session `id` as a visit. Fails with `"Could not open this session: …"` for a bad read, a Git side or a non-pair.
+    /// Loads session `id` as a visit of its two sides (paths or Git revisions). Fails with `"Could not open this session: …"` for a bad read or a non-pair.
     pub fn load(&self, id: &str) -> Result<Visit, String> {
         let session = self
             .store
             .load(id)
             .map_err(|error| format!("Could not open this session: {}.", store_text(&error)))?;
-        if session.left.kind == SideKind::Git || session.right.kind == SideKind::Git {
-            return Err(
-                "Could not open this session: Git compare is not in this alpha.".to_string(),
-            );
-        }
         if session.kind != SessionKind::Pair {
             return Err("Could not open this session: it does not hold two paths.".to_string());
         }
         Ok(Visit {
-            left: session.left.path,
-            right: session.right.path,
+            left: session.left,
+            right: session.right,
             respect_gitignore: session.rules.respect_gitignore,
         })
     }
@@ -150,32 +155,22 @@ fn save_text(error: &StoreError) -> String {
         store_text(error)
     )
 }
-/// Returns true when `session` is the path pair `visit` with the same `.gitignore` rule.
+/// Returns true when `session` is the two sides (paths or Git revisions) of `visit` with the same `.gitignore` rule.
 fn same_pair(session: &Session, visit: &Visit) -> bool {
     session.kind == SessionKind::Pair
-        && session.left.kind == SideKind::Path
-        && session.right.kind == SideKind::Path
-        && session.left.path == visit.left
-        && session.right.path == visit.right
+        && session.left == visit.left
+        && session.right == visit.right
         && session.rules.respect_gitignore == visit.respect_gitignore
 }
-/// Builds a new unnamed pair session for `visit`, opened at `now_s`.
+/// Builds a new unnamed pair session for `visit`'s two sides (paths or Git revisions), opened at `now_s`.
 fn new_session(id: String, visit: &Visit, now_s: i64) -> Session {
     Session {
         version: SESSION_VERSION,
         id,
         name: None,
         kind: SessionKind::Pair,
-        left: SideRef {
-            kind: SideKind::Path,
-            path: visit.left.clone(),
-            rev: None,
-        },
-        right: SideRef {
-            kind: SideKind::Path,
-            path: visit.right.clone(),
-            rev: None,
-        },
+        left: visit.left.clone(),
+        right: visit.right.clone(),
         rules: Rules {
             whitespace: "keep".to_string(),
             ignore_bom: false,

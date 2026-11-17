@@ -55,7 +55,7 @@ pub enum SessionKind {
 }
 
 /// One resolved side: absolute path plus, for Git, the revision.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SideRef {
     /// Whether the side is a path or a Git revision.
     pub kind: SideKind,
@@ -64,6 +64,26 @@ pub struct SideRef {
     /// Git revision; `None` for a path side.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rev: Option<String>,
+}
+
+impl SideRef {
+    /// Makes a side that reads `path` from disk.
+    pub fn path(path: PathBuf) -> SideRef {
+        SideRef {
+            kind: SideKind::Path,
+            path,
+            rev: None,
+        }
+    }
+
+    /// Makes a side that reads revision `rev` of the Git repository at `repo`.
+    pub fn git(repo: PathBuf, rev: String) -> SideRef {
+        SideRef {
+            kind: SideKind::Git,
+            path: repo,
+            rev: Some(rev),
+        }
+    }
 }
 
 /// Where a side's content comes from.

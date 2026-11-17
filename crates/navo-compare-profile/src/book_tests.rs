@@ -74,13 +74,9 @@ fn pair(id: &str) -> Session {
     }
 }
 
-/// Builds a visit with `left` and `right` under `temp`.
+/// Builds a visit of two path sides under `temp`.
 fn visit(temp: &TempDir, left: &str, right: &str, respect_gitignore: bool) -> Visit {
-    Visit {
-        left: temp.join(left),
-        right: temp.join(right),
-        respect_gitignore,
-    }
+    Visit::paths(temp.join(left), temp.join(right), respect_gitignore)
 }
 
 /// Opens a book on `temp` at a fixed `now_s`.
@@ -160,6 +156,28 @@ fn record_again_bumps_the_same_session() {
 }
 
 #[test]
+fn record_again_bumps_one_git_session() {
+    let temp = TempDir::new("git-bump");
+    let mut book = open_book(&temp);
+    let visit = Visit {
+        left: SideRef::git(temp.join("repo"), "main".to_string()),
+        right: SideRef::path(temp.join("b")),
+        respect_gitignore: false,
+    };
+    book.record(&visit, T).expect("first record");
+    book.record(&visit, T + 120_000).expect("second record");
+    let sessions = SessionStore::open(temp.join("sessions"))
+        .list()
+        .expect("list");
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].opened, 1_700_000_120);
+    assert_eq!(
+        sessions[0].left,
+        SideRef::git(temp.join("repo"), "main".to_string())
+    );
+}
+
+#[test]
 fn record_prunes_past_the_recent_limit() {
     let temp = TempDir::new("prune");
     let mut book = open_book(&temp);
@@ -221,24 +239,27 @@ fn load_gives_the_visit_back() {
 }
 
 #[test]
-fn load_refuses_git_sides_and_missing_files() {
+fn load_returns_git_sides() {
     let temp = TempDir::new("git-load");
     let book = open_book(&temp);
     let mut session = pair("b-0");
-    session.left.path = temp.join("a");
-    session.right = SideRef {
-        kind: SideKind::Git,
-        path: temp.join("repo"),
-        rev: Some("main".to_string()),
-    };
+    session.left = SideRef::path(temp.join("a"));
+    session.right = SideRef::git(temp.join("repo"), "main".to_string());
     SessionStore::open(temp.join("sessions"))
         .save(&session)
         .expect("save git");
-    let git_error = book.load("b-0").expect_err("git side");
+    let visit = book.load("b-0").expect("git side");
+    assert_eq!(visit.left, SideRef::path(temp.join("a")));
     assert_eq!(
-        git_error,
-        "Could not open this session: Git compare is not in this alpha."
+        visit.right,
+        SideRef::git(temp.join("repo"), "main".to_string())
     );
+}
+
+#[test]
+fn load_refuses_missing_files() {
+    let temp = TempDir::new("missing-load");
+    let book = open_book(&temp);
     let missing = book.load("c-0").expect_err("missing file");
     assert!(missing.starts_with("Could not open this session: "));
     assert!(missing.contains("c-0.toml"));
