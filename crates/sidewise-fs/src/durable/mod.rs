@@ -18,6 +18,8 @@ mod real;
 mod tests;
 #[cfg(windows)]
 mod windows;
+#[cfg(any(windows, test))]
+mod windows_reparse;
 #[cfg(test)]
 mod windows_tests;
 

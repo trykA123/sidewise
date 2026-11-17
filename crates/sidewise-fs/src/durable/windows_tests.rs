@@ -161,3 +161,47 @@ fn a_junction_or_a_relative_path_is_refused() {
     let error = RealDisk.meta(Path::new("relative.txt")).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidInput);
 }
+
+/// WOF-compresses `path` (`compact /EXE:xpress4k`), which makes it a non-link reparse file.
+fn wof_compress(path: &Path) {
+    use std::os::windows::fs::MetadataExt;
+    let done = std::process::Command::new("compact")
+        .args(["/C", "/EXE:xpress4k"])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(done.status.success(), "{done:?}");
+    let attributes = std::fs::symlink_metadata(path).unwrap().file_attributes();
+    assert_ne!(
+        attributes & 0x400,
+        0,
+        "compact left no reparse point: {done:?}"
+    );
+}
+
+#[test]
+fn a_wof_compressed_file_is_refused_as_a_placeholder() {
+    let dir = tempfile::tempdir().unwrap();
+    let packed = dir.path().join("packed.txt");
+    put(&packed, &"sidewise ".repeat(8192));
+    wof_compress(&packed);
+    let errors = [
+        RealDisk.open_read(&packed).err().unwrap(),
+        RealDisk.meta(&packed).unwrap_err(),
+        RealDisk
+            .set_modified(&packed, 1_600_000_000_000)
+            .unwrap_err(),
+    ];
+    for error in errors {
+        assert_eq!(error.kind(), ErrorKind::InvalidInput, "{error}");
+        assert!(error.to_string().contains("placeholder"), "{error}");
+    }
+}
+
+#[test]
+fn device_paths_are_refused() {
+    for device in [r"\\.\C:\Windows", r"\\?\GLOBALROOT\Device\Null", r"\\?\C:"] {
+        let error = RealDisk.meta(Path::new(device)).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidInput, "{device}: {error}");
+    }
+}

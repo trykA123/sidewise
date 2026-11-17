@@ -70,7 +70,10 @@ pub(super) fn swap(
 /// Maps a failed `ReplaceFileW` to a replace result (NC146): 1176 and 1177 mean the
 /// target may sit at the backup name, so the caller rolls back by hash.
 #[cfg(any(windows, test))]
-pub(super) fn replace_failure(error: io::Error) -> super::ReplaceError {
+pub(super) fn replace_failure(
+    error: io::Error,
+    _moved_aside: io::Result<bool>,
+) -> super::ReplaceError {
     match error.raw_os_error() {
         Some(1176 | 1177) => super::ReplaceError::TargetMoved(error),
         _ => super::ReplaceError::Unchanged(error),

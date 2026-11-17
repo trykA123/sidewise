@@ -14,6 +14,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 
 use super::real::{from_ms, list_sorted, parent, refused, replace_failure, to_ms};
+use super::windows_reparse::{check_plain, on_a_volume};
 use super::{Disk, DiskFile, Meta, RealDisk, ReplaceError};
 
 /// The verbatim form of an absolute path, so long names and trailing dots pass unchanged.
@@ -27,6 +28,9 @@ fn verbatim(path: &Path) -> io::Result<PathBuf> {
         return Err(refused("path holds a NUL"));
     }
     let wide = crate::native::verbatim::verbatim(&units);
+    if !on_a_volume(&wide) {
+        return Err(refused("device path, not a file on a volume"));
+    }
     Ok(PathBuf::from(OsString::from_wide(&wide)))
 }
 
@@ -43,6 +47,7 @@ fn open_regular(path: &Path, options: &mut OpenOptions) -> io::Result<File> {
     let file = options
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
         .open(verbatim(path)?)?;
+    check_plain(&file)?;
     let kind = file.metadata()?.file_type();
     if kind.is_symlink() {
         return Err(refused("path is a link"));
@@ -147,7 +152,8 @@ impl Disk for RealDisk {
         }
         let names = || io::Result::Ok((wide(target)?, wide(staged)?, wide(old)?));
         let (target_w, staged_w, old_w) = names().map_err(ReplaceError::Unchanged)?;
-        replace_file(&target_w, &staged_w, &old_w).map_err(replace_failure)?;
+        replace_file(&target_w, &staged_w, &old_w)
+            .map_err(|error| replace_failure(error, Ok(false)))?;
         if let Err(error) = verbatim(old).and_then(std::fs::remove_file) {
             tracing::warn!(path = %old.display(), %error, "replace: could not remove the old file");
         }

@@ -233,16 +233,22 @@ fn copy_mode_refuses_a_symlink_source() {
 }
 
 #[test]
-fn replace_file_codes_1176_and_1177_say_the_target_moved_and_others_unchanged() {
-    let moved = |code| {
-        matches!(
-            replace_failure(std::io::Error::from_raw_os_error(code)),
-            ReplaceError::TargetMoved(e) if e.raw_os_error() == Some(code)
-        )
-    };
-    assert!(moved(1176) && moved(1177));
+fn replace_file_codes_1176_and_1177_or_a_missing_target_say_the_target_moved() {
+    let fail =
+        |code, moved_aside| replace_failure(std::io::Error::from_raw_os_error(code), moved_aside);
+    let moved = |code, moved_aside| matches!(fail(code, moved_aside), ReplaceError::TargetMoved(e) if e.raw_os_error() == Some(code));
+    assert!(moved(1176, Ok(false)) && moved(1177, Ok(false)));
+    assert!(
+        moved(32, Ok(true)) && moved(1175, Ok(true)),
+        "target gone, old present"
+    );
+    let probe_failed = || Err(std::io::Error::from_raw_os_error(5));
+    assert!(
+        moved(32, probe_failed()),
+        "an unknown state rolls back by hash"
+    );
     for code in [1175, 32, 5] {
-        let failed = replace_failure(std::io::Error::from_raw_os_error(code));
+        let failed = fail(code, Ok(false));
         assert!(matches!(failed, ReplaceError::Unchanged(e) if e.raw_os_error() == Some(code)));
     }
 }
