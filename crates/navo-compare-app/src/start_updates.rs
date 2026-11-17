@@ -82,10 +82,6 @@ impl UpdateLine {
         }
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "U10c walks Tab through the handles")
-    )]
     /// The handles of the buttons drawn in the current view, first then second; `None` for a button not drawn.
     pub(crate) fn handles(&self, cx: &App) -> [Option<FocusHandle>; 2] {
         let count = view(cx).map_or(0, |v| actions(&v).len());

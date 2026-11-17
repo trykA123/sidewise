@@ -148,3 +148,51 @@ fn enter_on_the_compare_stop_submits(cx: &mut TestAppContext) {
     press(cx, &s, "enter");
     assert_eq!(log.borrow().len(), 1);
 }
+
+/// Installs the update global for the prompt card (third launch) and redraws the screen.
+fn with_prompt(cx: &mut TestAppContext, s: &Screen) {
+    use crate::updates::{Fetch, install_for_test};
+    use navo_compare_profile::appearance::{UiPrefs, UpdateCheck};
+    use navo_compare_profile::update_state::UpdateState;
+    use std::sync::Arc;
+    cx.update(|cx| {
+        crate::shell_prefs::save_prefs(
+            UiPrefs {
+                update_check: UpdateCheck::Ask,
+                ..UiPrefs::default()
+            },
+            cx,
+        )
+        .expect("save");
+        let fetch: Fetch = Arc::new(|| Err(sidewise_update::check::CheckError::Unsupported));
+        let state = UpdateState {
+            launches: 3,
+            ..UpdateState::default()
+        };
+        install_for_test(state, fetch, || 1_000_000, cx);
+    });
+    cx.update_window(s.0, |_, window, cx| window.render_frame(cx))
+        .expect("window");
+}
+
+#[gpui_kit::test]
+fn tab_reaches_the_prompt_buttons_and_enter_turns_the_check_on(cx: &mut TestAppContext) {
+    let dir = TempDir::new("prompt-keys");
+    let s = screen(cx, StartRows::default(), dir.path());
+    with_prompt(cx, &s);
+    act(cx, &s, |screen, window, cx| screen.focus_left(window, cx));
+    cx.simulate_keystrokes(s.0, "tab tab tab");
+    assert_eq!(stop(cx, &s), Some(Stop::Rule));
+    for want in [Stop::UpdateFirst, Stop::UpdateSecond, Stop::Folder] {
+        cx.simulate_keystrokes(s.0, "tab");
+        assert_eq!(stop(cx, &s), Some(want));
+    }
+    for want in [Stop::UpdateSecond, Stop::UpdateFirst, Stop::Rule] {
+        cx.simulate_keystrokes(s.0, "shift-tab");
+        assert_eq!(stop(cx, &s), Some(want));
+    }
+    cx.simulate_keystrokes(s.0, "tab");
+    press(cx, &s, "enter");
+    let choice = cx.update(|cx| crate::shell_prefs::prefs(cx).update_check);
+    assert_eq!(choice, navo_compare_profile::appearance::UpdateCheck::On);
+}

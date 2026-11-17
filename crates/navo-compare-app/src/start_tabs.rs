@@ -104,14 +104,14 @@ impl StartTabs {
         }
     }
 
-    /// The focus handle of a stop that is not a text field; `None` for `Left` and `Right`.
+    /// The focus handle of a stop that is not a text field; `None` for `Left`, `Right` and the update buttons.
     pub(crate) fn handle(&self, stop: Stop) -> Option<&FocusHandle> {
         match stop {
             Stop::Folder => Some(self.tab_handle(StartMode::Folder)),
             Stop::File => Some(self.tab_handle(StartMode::File)),
             Stop::Compare => Some(&self.compare),
             Stop::Rule => Some(&self.rule),
-            Stop::Left | Stop::Right => None,
+            Stop::Left | Stop::Right | Stop::UpdateFirst | Stop::UpdateSecond => None,
         }
     }
 }
