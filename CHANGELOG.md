@@ -6,12 +6,20 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Copy a change to the other side. `Ctrl+Alt+Right` copies the change at the cursor to the right, and `Ctrl+Alt+Left` copies it to the left. The right-click menu has the same commands, and also copies the lines you picked.
+- Copy all matches in Stream: `Ctrl+Shift+Right` and `Ctrl+Shift+Left`. A sheet lists the files and what it skips, and you confirm with Copy all.
+- Every copy is safe against a crash or a power cut. Sidewise saves the old file in a journal first, then replaces the file in one step. You see either the old file or the new one, never half of each.
+- Undo for copies. The "Copied to the left" and "Copied to the right" message has an Undo button. `Ctrl+Z` undoes the latest copy in any open compare tab. Undo puts back the old bytes and the old modified time.
+- Recovery at start. If Sidewise stopped during a copy, the next start puts the old file back and says so. A file you edited since then is kept as it is.
+- Old backups are removed at start: after 14 days, and the oldest first when the journal passes 1 GiB.
+- The README explains how to take a file back from the journal by hand.
 - A Theme picker: five palettes (Violet, Graphite, Ocean, Ember and High contrast) and a System, Light or Dark mode.
 - An installer, `sidewise-<version>-windows-x64-setup.exe`: it installs Sidewise for your Windows user only, with a Start menu entry and an uninstaller. It needs no administrator and keeps your settings when you uninstall. The portable zip stays.
 - The release zip carries the licence of the embedded Material icons.
 
 ### Changed
 
+- Sidewise is no longer read-only: it can copy changes between the two sides. Releases up to alpha.2 are read-only.
 - Closing the last tab leaves a New compare tab open instead of quitting.
 - Copy commands confirm with a short message.
 
@@ -25,6 +33,15 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 
 - The Git compare entry in the sidebar; Git compare is not in this alpha.
+
+### Known limits
+
+- Copy refuses a file that changed since it was shown, a read-only side, a file another program has open, and a file on a network drive. It copies nothing and tells you why.
+- Undo works in the session that made the copy. It covers the latest copy first. After a restart, Sidewise does not offer Undo. The backups stay in the journal folder for 14 days; see the README to restore by hand.
+- An undo is refused when the file changed after the copy. It writes nothing, and that copy cannot be undone later.
+- If Sidewise cannot confirm that a copy was written, it says so and offers no Undo. It checks the file at the next start.
+- If the journal cannot open, copying is off and Sidewise says why. Compare still works.
+- Copying works on files only. Folder sync, merge and three-way merge are not built yet.
 
 ## [0.1.0-alpha.2] — 2026-11-17
 
