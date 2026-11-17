@@ -98,6 +98,34 @@ fn job_commit_sync_failure_is_in_doubt_with_new_bytes() {
     assert_eq!(fs::read(&fixture.targets[0]).unwrap(), OLD);
 }
 
+#[test]
+fn job_commit_line_failing_for_good_is_in_doubt_when_the_rollback_fails_too() {
+    let ops = {
+        let fixture = Fixture::new(1);
+        let disk = Arc::new(FaultDisk::new(RealDisk, Plan::Pass));
+        let journal = Journal::open_raw(&fixture.journal_dir(), disk.clone()).unwrap();
+        let mut job = journal.begin(JobKind::Copy, "Copy", None).unwrap();
+        job.overwrite(&fixture.targets[0], Expect::default(), None, &mut write_new)
+            .unwrap();
+        job.commit().unwrap();
+        disk.ops()
+    };
+    // From the write of the Commit line on, every op fails, so the rollback fails too.
+    let fixture = Fixture::new(1);
+    let plan = Plan::FailFrom(ops - 1, ErrorKind::Other);
+    let disk = Arc::new(FaultDisk::new(RealDisk, plan));
+    let journal = Journal::open_raw(&fixture.journal_dir(), disk).unwrap();
+    let mut job = journal.begin(JobKind::Copy, "Copy", None).unwrap();
+    job.overwrite(&fixture.targets[0], Expect::default(), None, &mut write_new)
+        .unwrap();
+    let result = job.commit();
+    assert!(
+        matches!(result, Err(JournalError::InDoubt(_))),
+        "{result:?}"
+    );
+    assert_eq!(fs::read(&fixture.targets[0]).unwrap(), NEW);
+}
+
 /// Locks an owner while `race` acts, at the first name only, as another process's recovery.
 fn lock_with_race(race: impl Fn(&std::path::Path) -> Option<File>) -> (String, File) {
     let fixture = Fixture::new(0);

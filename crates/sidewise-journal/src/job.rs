@@ -182,8 +182,15 @@ impl Job {
                 Err(JournalError::InDoubt(error.to_string()))
             }
             Err(error) => {
-                self.close("commit failed");
-                Err(JournalError::Io(error.to_string()))
+                // Files left to roll back keep the new bytes: recovery settles them (NC168).
+                let rolled = self.close("commit failed");
+                if rolled.failed == 0 {
+                    return Err(JournalError::Io(error.to_string()));
+                }
+                Err(JournalError::InDoubt(format!(
+                    "{error}; {} file(s) not rolled back yet",
+                    rolled.failed
+                )))
             }
         }
     }

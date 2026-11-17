@@ -440,8 +440,7 @@ fn a_lasting_fault_never_leaves_a_refused_copy_undoable() {
         assert_ne!(result, CopyResult::Copied, "op {n}: the copy cannot finish");
         // NC168: new bytes left by a commit in doubt or a rollback left to the next start
         // are never answered as "not copied".
-        // Open journal gap: a failed Commit-line write whose rollback fails is still `Io`.
-        if now == NEW && n != copied - 1 {
+        if now == NEW {
             left_new += 1;
             assert_eq!(result, refused(&CopyRefusal::Unconfirmed), "op {n}");
         }

@@ -51,8 +51,10 @@ impl std::error::Error for WriteError {}
 pub enum JournalError {
     /// A file step failed; the text names the step and the OS error.
     Io(String),
-    /// The `Commit` line was written but its sync failed (NC162): the targets keep the new
-    /// bytes and recovery at the next start settles the job from the log. Never undoable now.
+    /// The `Commit` line was written but its sync failed (NC162), or a rollback was left to the
+    /// next start: the targets keep
+    /// the new bytes and recovery at the next start settles the job from the log. Never
+    /// undoable now.
     InDoubt(String),
 }
 
