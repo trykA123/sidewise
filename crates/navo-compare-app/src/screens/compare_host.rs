@@ -8,6 +8,7 @@ use gpui_kit::{App, KeyBinding, KeyBindingContextPredicate};
 use navo_compare_profile::appearance::{LayoutPref, UiPrefs, ViewPresetPref};
 use sidewise_host::compare::diff::copy_port::CopyHost;
 use sidewise_host::compare::diff::hooks::DiffBackend;
+use sidewise_host::compare::diff::write::host::LocalCopyHost;
 use sidewise_ui::browser::Waker;
 use sidewise_ui::compare_diff::{CompareOptions, DiffHooks, Layout};
 use sidewise_ui::compare_keys::compare_keys;
@@ -30,8 +31,12 @@ fn diff_hooks() -> Arc<dyn DiffHooks> {
     if let Some(hooks) = TEST_DIFF_HOOKS.with_borrow(Clone::clone) {
         return hooks;
     }
-    let host = crate::writes::host().map(|host| host as Arc<dyn CopyHost>);
-    Arc::new(hooks_with(host))
+    diff_hooks_for(crate::writes::host())
+}
+
+/// The diff hooks over the in-memory backend, writing copies through `host` when there is one.
+pub(crate) fn diff_hooks_for(host: Option<Arc<LocalCopyHost>>) -> Arc<dyn DiffHooks> {
+    Arc::new(hooks_with(host.map(|host| host as Arc<dyn CopyHost>)))
 }
 
 /// The default diff backend, writing copies through `host` when there is one.

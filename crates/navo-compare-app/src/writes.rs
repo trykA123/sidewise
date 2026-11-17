@@ -10,6 +10,7 @@ use sidewise_fs::durable::RealDisk;
 use sidewise_host::compare::diff::write::host::LocalCopyHost;
 use sidewise_journal::{Journal, Recovered};
 use sidewise_kit::prelude::App;
+use sidewise_l10n::t;
 
 use crate::layers::toast;
 
@@ -57,63 +58,48 @@ pub(crate) fn open_writes(
 }
 
 /// Toasts the outcome of `install_writes` once the shell is up: the recovery note or the
-/// "Copying is off" reason; nothing for a clean start.
+/// "Copying is off" reason; nothing for a clean start. With no toast host, prints it instead.
 pub(crate) fn announce(outcome: Result<Option<String>, String>, cx: &mut App) {
-    if let Ok(Some(text)) | Err(text) = outcome {
-        toast::notify(text, cx);
+    if let Ok(Some(text)) | Err(text) = outcome
+        && !toast::notify(text.clone(), cx)
+    {
+        report(&text);
     }
 }
 
-/// "Copying is off: <reason>".
+/// Prints a start-up note on the terminal when no window can show it.
+#[expect(
+    clippy::print_stderr,
+    reason = "start-up notes go to the terminal without a window"
+)]
+fn report(text: &str) {
+    eprintln!("{}: {text}", navo_compare_profile::brand::SLUG);
+}
+
+/// "Copying is off: <reason>"; the reason text is not localised yet.
 fn off(reason: &str) -> String {
-    format!("Copying is off: {reason}")
+    t!("compare-writes-off", reason = reason)
 }
 
-/// The recovery toast: files restored after an interrupted copy, then what was left and the
-/// journal folder that keeps its backups. `None` when recovery found nothing to report.
+/// The recovery toast: files restored after an interrupted copy, what was left, old backups the
+/// sweep could not remove, and the journal folder that keeps the backups. `None` when there
+/// is nothing to report.
 pub(crate) fn recovery_note(recovered: &Recovered, dir: &Path) -> Option<String> {
-    let mut parts = Vec::new();
-    if recovered.restored > 0 {
-        parts.push(format!(
-            "Sidewise restored {} after an interrupted copy",
-            files(recovered.restored)
-        ));
+    let counts = [
+        ("compare-recovery-restored", recovered.restored),
+        ("compare-recovery-kept", recovered.kept),
+        ("compare-recovery-failed", recovered.failed),
+        ("compare-recovery-damaged", recovered.damaged),
+        ("compare-recovery-sweep-failed", recovered.swept.failed),
+    ];
+    let mut parts: Vec<String> = counts
+        .iter()
+        .filter(|(_, count)| *count > 0)
+        .map(|(id, count)| t!(id, count = *count))
+        .collect();
+    if counts[1..].iter().any(|(_, count)| *count > 0) {
+        let folder = dir.display().to_string();
+        parts.push(t!("compare-recovery-folder", folder = folder));
     }
-    if recovered.kept > 0 {
-        parts.push(format!(
-            "{} changed since the interrupted copy and {} kept as is",
-            files(recovered.kept),
-            if recovered.kept == 1 { "was" } else { "were" }
-        ));
-    }
-    if recovered.failed > 0 {
-        parts.push(format!(
-            "{} could not be restored now; Sidewise tries again at the next start",
-            files(recovered.failed)
-        ));
-    }
-    if recovered.damaged > 0 {
-        parts.push(format!(
-            "{} damaged journal {} left untouched",
-            recovered.damaged,
-            if recovered.damaged == 1 {
-                "entry was"
-            } else {
-                "entries were"
-            }
-        ));
-    }
-    if recovered.kept > 0 || recovered.failed > 0 || recovered.damaged > 0 {
-        parts.push(format!("The backups stay in {}", dir.display()));
-    }
-    (!parts.is_empty()).then(|| parts.join(". "))
-}
-
-/// "1 file" or "<n> files".
-fn files(count: u32) -> String {
-    if count == 1 {
-        "1 file".to_owned()
-    } else {
-        format!("{count} files")
-    }
+    (!parts.is_empty()).then(|| parts.join(" "))
 }

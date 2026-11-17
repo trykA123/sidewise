@@ -270,7 +270,8 @@ impl ScreenOwner {
         if done.result == CopyResult::Copied {
             cx.emit(ScreenEvent::Wrote {
                 text: note.text.to_string(),
-                undoable: true,
+                job: done.job.clone(),
+                reload: Vec::new(),
             });
         }
         copy.note = Some(note);

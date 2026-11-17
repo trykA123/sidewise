@@ -9,7 +9,7 @@ use navo_core::Location;
 
 use super::CompareOptions;
 use super::sheet::{SheetPlan, SheetPlanSink, SheetResult, SheetSink};
-use super::undo::UndoSink;
+use super::undo::{UndoSink, UndoStart};
 
 mod detail;
 mod image_types;
@@ -273,12 +273,14 @@ impl CopyResult {
     }
 }
 
-/// The end of one copy, for the pair whose `request` id was sent.
+/// The end of one copy, for the pair whose `request` id was sent; `job` names a committed
+/// copy on the undo stack (NC166).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CopyDone {
     pub request: u64,
     pub direction: CopyDirection,
     pub result: CopyResult,
+    pub job: Option<String>,
 }
 
 /// Receives the end of a copy on any thread; it wakes the window.
@@ -347,13 +349,14 @@ pub trait DiffHooks: Send + Sync {
             request: change.pair.id,
             direction: change.direction,
             result: CopyResult::Refused(navo_l10n::tr("compare-copy-not-copyable")),
+            job: None,
         });
     }
 
-    /// Undoes the last copy and reports once through `done`, never blocking the caller. Returns
-    /// `false`, and never calls `done`, when there is nothing to undo. The default has none.
-    fn undo_last(&self, _done: UndoSink) -> bool {
-        false
+    /// Undoes the newest copy, only when it is `job` (any for `None`), and reports once through
+    /// `done`, never blocking; no report unless `Started`. The default has nothing to undo.
+    fn undo_last(&self, _job: Option<&str>, _done: UndoSink) -> UndoStart {
+        UndoStart::Nothing
     }
 
     /// Plans a copy of many changes without writing and reports once through `planned`. The
@@ -379,6 +382,7 @@ pub trait DiffHooks: Send + Sync {
                 request: first.as_ref().map_or(0, |change| change.pair.id),
                 direction: first.map_or(CopyDirection::ToRight, |change| change.direction),
                 result: CopyResult::Refused(navo_l10n::tr("compare-copy-not-copyable")),
+                job: None,
             }),
         }
     }

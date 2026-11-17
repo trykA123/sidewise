@@ -68,7 +68,11 @@ fn screen_with_pair(
 }
 
 fn undo(cx: &mut TestAppContext, screen: &Entity<CompareScreen>) -> bool {
-    cx.update(|cx| screen.update(cx, |s, cx| s.start_undo(cx)))
+    cx.update(|cx| {
+        screen.update(cx, |s, cx| {
+            s.start_undo(None, cx) != crate::compare_diff::UndoStart::Nothing
+        })
+    })
 }
 
 fn poll(cx: &mut TestAppContext, screen: &Entity<CompareScreen>) -> bool {
@@ -104,7 +108,8 @@ fn undone_copy_refreshes_the_open_file_and_emits_wrote(cx: &mut TestAppContext) 
         *seen.lock().expect("events"),
         [ScreenEvent::Wrote {
             text: "Undid the copy".into(),
-            undoable: false
+            job: None,
+            reload: vec![place("b.txt")],
         }]
     );
 }
@@ -176,6 +181,7 @@ fn finished_copy_emits_wrote_with_undo(cx: &mut TestAppContext) {
         request: 0,
         direction: CopyDirection::ToRight,
         result: CopyResult::Copied,
+        job: Some("j1".into()),
     });
     assert!(poll(cx, &screen));
     let note = screen.read_with(cx, |s, _| s.copy_note());
@@ -184,7 +190,8 @@ fn finished_copy_emits_wrote_with_undo(cx: &mut TestAppContext) {
         *seen.lock().expect("events"),
         [ScreenEvent::Wrote {
             text: "Copied to the right".into(),
-            undoable: true
+            job: Some("j1".into()),
+            reload: Vec::new(),
         }]
     );
     let _ = fake;
@@ -221,6 +228,7 @@ fn unconfirmed_copy_refreshes_the_pair(cx: &mut TestAppContext) {
         request: 0,
         direction: CopyDirection::ToRight,
         result: CopyResult::Unconfirmed("unsure".into()),
+        job: None,
     });
     assert!(poll(cx, &screen));
     assert_eq!(fake.refreshes().len(), before + 1, "the pair is reloaded");

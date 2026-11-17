@@ -94,6 +94,11 @@ pub struct CompareTab {
     pub(super) subscriptions: Vec<Subscription>,
 }
 
+/// The tab's undo rewrote these files; the shell reloads them in the other tabs (NC148).
+pub struct Rewrote(pub Vec<sidewise_core::Location>);
+
+impl gpui_kit::EventEmitter<Rewrote> for CompareTab {}
+
 impl CompareTab {
     /// Starts the run for `request`; a bad side returns `RunError` before any entity exists.
     /// The shell calls this outside `cx.new`, so an error leaves no half-made tab behind.

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use super::{
     CompareOptions, CopyChange, CopySink, DiffHooks, DiffSink, PairControl, PairRequest,
-    SheetPlanSink, SheetSink, StreamControl, StreamSink, UndoSink, ViewedKey,
+    SheetPlanSink, SheetSink, StreamControl, StreamSink, UndoSink, UndoStart, ViewedKey,
 };
 
 /// What the fake recorded.
@@ -384,21 +384,21 @@ impl DiffHooks for FakeDiffHooks {
             .unwrap_or_else(PoisonError::into_inner) = Some(done);
     }
 
-    fn undo_last(&self, done: UndoSink) -> bool {
+    fn undo_last(&self, _job: Option<&str>, done: UndoSink) -> UndoStart {
         *self
             .calls
             .undo_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner) += 1;
         if !self.calls.undoable.load(Ordering::SeqCst) {
-            return false;
+            return UndoStart::Nothing;
         }
         *self
             .calls
             .undo_sink
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(done);
-        true
+        UndoStart::Started
     }
 
     fn plan_sheet(&self, changes: Vec<CopyChange>, planned: SheetPlanSink) {

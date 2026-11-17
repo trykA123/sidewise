@@ -3,6 +3,7 @@
 
 use navo_ui::compare_diff::{
     CopyChange, CopyDone, CopyResult, CopySink, SheetPlanSink, SheetResult, SheetSink, UndoSink,
+    UndoStart,
 };
 
 /// The host's write side for a file pair; an app without one refuses every copy (read-only).
@@ -15,10 +16,10 @@ pub trait CopyHost: Send + Sync {
     fn plan_sheet(&self, changes: Vec<CopyChange>, planned: SheetPlanSink);
     /// Run the last planned sheet as one job and report through `done`, exactly once.
     fn run_sheet(&self, done: SheetSink);
-    /// Undo the last copy and report through `done`, exactly once; `false`, with no report,
-    /// when there is nothing to undo (NC148). The default has nothing.
-    fn undo_last(&self, _done: UndoSink) -> bool {
-        false
+    /// Undo the newest copy, only when it is `job` (any for `None`), and report through `done`
+    /// exactly once when `Started` (NC148, NC166). The default has nothing.
+    fn undo_last(&self, _job: Option<&str>, _done: UndoSink) -> UndoStart {
+        UndoStart::Nothing
     }
 }
 
@@ -33,6 +34,7 @@ pub fn refuse_change(change: &CopyChange, done: &CopySink) {
         request: change.pair.id,
         direction: change.direction,
         result: CopyResult::Refused(not_copyable()),
+        job: None,
     });
 }
 

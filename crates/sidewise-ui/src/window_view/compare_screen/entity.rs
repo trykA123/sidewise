@@ -213,6 +213,11 @@ pub enum ScreenEvent {
     WalkFile { from: u64, step: i32 },
     /// The resync wait ended: rebuild the Stream from the folder compare.
     Resync,
-    /// A copy or an undo finished: show `text` in a toast, with Undo when `undoable`.
-    Wrote { text: String, undoable: bool },
+    /// A copy or an undo finished: show `text` in a toast, with Undo of copy `job` when set;
+    /// other screens reload the `reload` files, which an undo may have rewritten (NC148).
+    Wrote {
+        text: String,
+        job: Option<String>,
+        reload: Vec<navo_core::Location>,
+    },
 }

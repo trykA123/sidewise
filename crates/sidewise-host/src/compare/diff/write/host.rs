@@ -9,7 +9,7 @@ use std::thread;
 use navo_compare::text::Direction;
 use navo_ui::compare_diff::{
     CopyChange, CopyDirection, CopyDone, CopyResult, CopySink, SheetPlan, SheetPlanSink, SheetSink,
-    UndoDone, UndoSink,
+    UndoDone, UndoSink, UndoStart,
 };
 use sidewise_journal::{Journal, JournalError, UndoError, WriteError};
 
@@ -42,12 +42,15 @@ impl State {
             .push(committed);
     }
 
-    /// Pop the newest committed copy, if any.
-    fn pop(&self) -> Option<Committed> {
-        self.undo
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop()
+    /// Pop the newest committed copy when it is `job` (any for `None`). `Err(NotNewest)` when
+    /// `job` is not on top (a newer copy, or already undone), `Ok(None)` for an empty stack.
+    fn pop_if(&self, job: Option<&str>) -> Result<Option<Committed>, UndoStart> {
+        let mut stack = self.undo.lock().unwrap_or_else(PoisonError::into_inner);
+        match (stack.last(), job) {
+            (Some(top), Some(job)) if top.job.as_str() == job => Ok(stack.pop()),
+            (_, Some(_)) => Err(UndoStart::NotNewest),
+            (_, None) => Ok(stack.pop()),
+        }
     }
 }
 
@@ -111,17 +114,19 @@ impl LocalCopyHost {
                 request: 0,
                 direction: CopyDirection::ToRight,
                 result: CopyResult::Refused(CopyRefusal::NotCopyable.text()),
+                job: None,
             });
             return;
         };
         let (request, direction) = (first.pair.id, first.direction);
-        let answer = move |result| CopyDone {
+        let answer = move |(result, job)| CopyDone {
             request,
             direction,
             result,
+            job,
         };
         let Some(busy) = Busy::take(&self.state) else {
-            done(answer(running()));
+            done(answer((running(), None)));
             return;
         };
         let state = Arc::clone(&self.state);
@@ -131,14 +136,15 @@ impl LocalCopyHost {
             .spawn(move || {
                 guarded(
                     done,
-                    move || answer(stopped()),
+                    move || answer((stopped(), None)),
                     busy,
                     move || answer(copy_with(&state, &changes)),
                 );
             });
         if let Err(error) = spawned {
-            report(answer(CopyResult::Refused(
-                CopyRefusal::Failed(error.to_string()).text(),
+            report(answer((
+                CopyResult::Refused(CopyRefusal::Failed(error.to_string()).text()),
+                None,
             )));
         }
     }
@@ -168,16 +174,19 @@ impl CopyHost for LocalCopyHost {
     /// Pop the newest copy and undo it on a `compare-undo` thread. While a write runs it
     /// reports "running" instead. A failed undo goes back on the stack unless it can never work
     /// (NC169: a changed target, or an undo in doubt).
-    fn undo_last(&self, done: UndoSink) -> bool {
+    fn undo_last(&self, job: Option<&str>, done: UndoSink) -> UndoStart {
         let Some(busy) = Busy::take(&self.state) else {
             done(UndoDone {
                 targets: Vec::new(),
                 result: running(),
             });
-            return true;
+            return UndoStart::Started;
         };
-        let Some(entry) = self.state.pop() else {
-            return false;
+        // The held write slot keeps copies from pushing between this check and the pop.
+        let entry = match self.state.pop_if(job) {
+            Ok(Some(entry)) => entry,
+            Ok(None) => return UndoStart::Nothing,
+            Err(start) => return start,
         };
         let (state, kept, report) = (Arc::clone(&self.state), entry.clone(), done.clone());
         let on_panic = (Arc::clone(&self.state), entry.clone());
@@ -195,19 +204,21 @@ impl CopyHost for LocalCopyHost {
             let reason = error.to_string();
             report(undo_done(&kept, undo_refused(&reason)));
         }
-        true
+        UndoStart::Started
     }
 }
 
-/// Run the copy of `changes` now and push the committed job on the undo stack.
-fn copy_with(state: &State, changes: &[CopyChange]) -> CopyResult {
+/// Run the copy of `changes` now and push the committed job on the undo stack; returns the
+/// result and, for a commit, its job id.
+fn copy_with(state: &State, changes: &[CopyChange]) -> (CopyResult, Option<String>) {
     let requests: Vec<CopyRequest> = changes.iter().map(request_of).collect();
     match (state.copy)(&state.journal, &requests) {
         Ok(committed) => {
+            let job = committed.job.as_str().to_owned();
             state.push(committed);
-            CopyResult::Copied
+            (CopyResult::Copied, Some(job))
         }
-        Err(refusal) => result_of(&refusal),
+        Err(refusal) => (result_of(&refusal), None),
     }
 }
 

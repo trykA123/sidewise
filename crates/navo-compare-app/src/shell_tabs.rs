@@ -6,7 +6,7 @@ use sidewise_kit::prelude::*;
 use super::Shell;
 use crate::chrome::topbar_status::{Crumbs, TopbarMode};
 use crate::screens::compare_run::RunError;
-use crate::screens::compare_tab::{CompareRequest, CompareTab, TabView};
+use crate::screens::compare_tab::{CompareRequest, CompareTab, Rewrote, TabView};
 use crate::start::{StartEvent, StartScreen};
 use navo_compare_cli::args::SideSpec;
 
@@ -185,6 +185,10 @@ impl Shell {
         tab.update(cx, |tab, cx| tab.attach(&request, window, cx));
         cx.observe(&tab, |shell, _, cx| shell.sync_mode(cx))
             .detach();
+        cx.subscribe(&tab, |shell, source, Rewrote(targets), cx| {
+            shell.reload_others(&source, targets, cx);
+        })
+        .detach();
         self.tabs[index] = ShellTab {
             title: tab.read(cx).title(),
             kind: TabKind::Compare(tab),
@@ -193,6 +197,20 @@ impl Shell {
         self.sync_chrome(cx);
         self.activated(window, cx);
         Ok(())
+    }
+
+    /// Reloads what shows `targets` in every compare tab but `source`, whose undo rewrote them
+    /// and which reloaded itself (NC148: the undo stack is process-wide).
+    fn reload_others(
+        &self,
+        source: &Entity<CompareTab>,
+        targets: &[sidewise_core::Location],
+        cx: &mut Context<Self>,
+    ) {
+        for tab in self.compare_tabs().iter().filter(|tab| *tab != source) {
+            let screen = tab.read(cx).screen().clone();
+            screen.update(cx, |screen, cx| screen.reload_written(targets, cx));
+        }
     }
 
     /// Pushes one toast that expires on its own.

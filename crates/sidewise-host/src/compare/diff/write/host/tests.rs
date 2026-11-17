@@ -13,7 +13,7 @@ use navo_core::{Location, ProviderPath};
 use navo_fs::durable::{FaultDisk, Plan, RealDisk};
 use navo_ui::compare_diff::{
     CompareOptions, CopyChange, CopyDirection, CopyDone, CopyResult, CopySink, DiffHooks, DiffSink,
-    DiffUpdate, PairRequest, UndoDone, UndoSink,
+    DiffUpdate, PairRequest, UndoDone, UndoSink, UndoStart,
 };
 use sidewise_journal::{Expect, JobKind, Journal};
 
@@ -126,12 +126,17 @@ impl Fixture {
 
     /// Copy `changes` as one job through the backend and wait for the end.
     fn copy(&self, changes: Vec<CopyChange>) -> CopyResult {
+        self.copy_done(changes).result
+    }
+
+    /// Copy `changes` as one job and return the whole end, with its job id.
+    fn copy_done(&self, changes: Vec<CopyChange>) -> CopyDone {
         let (sink, receiver) = copy_sink();
         self.backend.copy_changes(changes, sink);
         let end = receiver.recv_timeout(WAIT).unwrap();
         assert_eq!((end.request, end.direction), (9, CopyDirection::ToRight));
         assert!(receiver.recv_timeout(Duration::from_millis(50)).is_err());
-        end.result
+        end
     }
 
     /// Undo through the backend; `None` when it had nothing to undo.
@@ -140,7 +145,7 @@ impl Fixture {
         let sink: UndoSink = Arc::new(move |done| {
             let _ = sender.send(done);
         });
-        if !self.backend.undo_last(sink) {
+        if self.backend.undo_last(None, sink) == UndoStart::Nothing {
             assert!(receiver.recv_timeout(Duration::from_millis(50)).is_err());
             return None;
         }
@@ -176,6 +181,8 @@ fn unconfirmed() -> CopyResult {
 fn undo_changed() -> CopyResult {
     CopyResult::Refused(navo_l10n::tr("compare-undo-changed"))
 }
+
+mod job;
 
 #[test]
 fn a_copy_writes_the_target_and_undo_puts_back_its_bytes_and_time() {
@@ -337,7 +344,10 @@ fn a_read_only_target_is_refused_with_nothing_written() {
 #[test]
 fn a_backend_without_a_host_has_nothing_to_undo() {
     let sink: UndoSink = Arc::new(|_| panic!("no undo to report"));
-    assert!(!DiffBackend::default().undo_last(sink));
+    assert_eq!(
+        DiffBackend::default().undo_last(None, sink),
+        UndoStart::Nothing
+    );
 }
 
 /// A copy whose fill panics after the job began, as a bug in compose would.

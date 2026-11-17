@@ -8,7 +8,7 @@ use navo_core::Location;
 use navo_l10n::tr;
 
 use super::{CopyState, Note};
-use crate::compare_diff::{CopyResult, UndoDone, UndoSink};
+use crate::compare_diff::{CopyResult, UndoDone, UndoSink, UndoStart};
 use crate::list_actions::UndoLast;
 use crate::prelude::*;
 use crate::window_view::{DiffSlot, ScreenEvent, ScreenOwner};
@@ -45,20 +45,20 @@ impl ScreenOwner {
     /// action passes on to the next handler.
     pub(super) fn undo_keys(root: Stateful<Div>, cx: &mut Context<Self>) -> Stateful<Div> {
         root.on_action(cx.listener(|view, _: &UndoLast, _, cx| {
-            if !view.start_undo(cx) {
+            if view.start_undo(None, cx) == UndoStart::Nothing {
                 cx.propagate();
             }
         }))
     }
 
-    /// Undoes the last copy, as the toast's Undo does.
-    pub fn undo_last_write(&mut self, cx: &mut Context<Self>) {
-        self.start_undo(cx);
+    /// Undoes copy `job` for the toast's Undo, only while it is the newest copy (NC166).
+    pub fn undo_write(&mut self, job: &str, cx: &mut Context<Self>) -> UndoStart {
+        self.start_undo(Some(job), cx)
     }
 
-    /// Asks the app to undo the last copy. Returns false when there is nothing to undo; while
-    /// a copy or an undo runs, says so in the status line and returns true.
-    pub(super) fn start_undo(&mut self, cx: &mut Context<Self>) -> bool {
+    /// Asks the app to undo the newest copy, only when it is `job` (any for `None`). While a
+    /// copy or an undo runs, says so in the status line and answers `Started`.
+    pub(super) fn start_undo(&mut self, job: Option<&str>, cx: &mut Context<Self>) -> UndoStart {
         let copy = &mut self.compare.diff.copy;
         if copy.inflight {
             copy.note = Some(Note {
@@ -67,19 +67,19 @@ impl ScreenOwner {
                 error: false,
             });
             cx.notify();
-            return true;
+            return UndoStart::Started;
         }
         let Some(hooks) = self.compare.diff.hooks.clone() else {
-            return false;
+            return UndoStart::Nothing;
         };
         let sink = self.compare.diff.undo_sink();
-        if !hooks.undo_last(sink) {
-            return false;
+        let start = hooks.undo_last(job, sink);
+        if start == UndoStart::Started {
+            let copy = &mut self.compare.diff.copy;
+            (copy.inflight, copy.note) = (true, None);
+            cx.notify();
         }
-        let copy = &mut self.compare.diff.copy;
-        (copy.inflight, copy.note) = (true, None);
-        cx.notify();
-        true
+        start
     }
 
     /// Takes the ends of undos. Returns whether anything arrived.
@@ -99,13 +99,23 @@ impl ScreenOwner {
         let note = note_of(&done.result);
         let text = note.text.to_string();
         copy.note = Some(note);
-        if done.result.may_have_written() {
-            self.reload_targets(&done.targets);
-        }
+        let reload = if done.result.may_have_written() {
+            done.targets.clone()
+        } else {
+            Vec::new()
+        };
+        self.reload_targets(&reload);
         cx.emit(ScreenEvent::Wrote {
             text,
-            undoable: false,
+            job: None,
+            reload,
         });
+        cx.notify();
+    }
+
+    /// Reloads what shows any of `targets`, after another screen's undo rewrote them.
+    pub fn reload_written(&mut self, targets: &[Location], cx: &mut Context<Self>) {
+        self.reload_targets(targets);
         cx.notify();
     }
 

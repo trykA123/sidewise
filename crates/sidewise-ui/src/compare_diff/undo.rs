@@ -17,3 +17,13 @@ pub struct UndoDone {
 
 /// Receives the end of an undo on any thread; it wakes the window.
 pub type UndoSink = Arc<dyn Fn(UndoDone) + Send + Sync>;
+
+/// How an undo request was taken. `Started`: the end comes through the sink (a running write
+/// reports there too). `Nothing`: the stack is empty. `NotNewest`: the asked copy is not the
+/// newest, so nothing was undone (NC166).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UndoStart {
+    Started,
+    Nothing,
+    NotNewest,
+}

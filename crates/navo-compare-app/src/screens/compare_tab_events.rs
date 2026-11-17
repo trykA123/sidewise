@@ -1,14 +1,15 @@
 //! The compare tab's event handling: Folders and compare-screen events decide which view shows
 //! and which pair opens (H3).
 
-use gpui_kit::Focusable as _;
+use gpui_kit::{Focusable as _, WeakEntity};
 use sidewise_kit::prelude::*;
+use sidewise_l10n::t;
 use sidewise_ui::browser::FolderSession;
-use sidewise_ui::compare_diff::PairRequest;
-use sidewise_ui::window_view::ScreenEvent;
+use sidewise_ui::compare_diff::{PairRequest, UndoStart};
+use sidewise_ui::window_view::{CompareScreen, ScreenEvent};
 
 use super::compare_run::RunKind;
-use super::compare_tab::{CompareRequest, CompareTab, TabView};
+use super::compare_tab::{CompareRequest, CompareTab, Rewrote, TabView};
 use super::folders_view::FoldersEvent;
 use super::pair_requests::{neighbour, pair_request, stream_one};
 use crate::layers::toast;
@@ -101,23 +102,25 @@ impl CompareTab {
                     self.show_pair(pair, window, cx);
                 }
             }
-            ScreenEvent::Wrote { text, undoable } => self.toast_write(text, *undoable, cx),
+            ScreenEvent::Wrote { text, job, reload } => {
+                self.toast_write(text, job.as_deref(), cx);
+                if !reload.is_empty() {
+                    cx.emit(Rewrote(reload.clone()));
+                }
+            }
             ScreenEvent::OpenSettings(_) | ScreenEvent::Resync => {}
         }
     }
 
-    /// Toasts a finished copy or undo; a copy's toast has Undo, which undoes on this tab's
-    /// screen (NC148).
-    fn toast_write(&self, text: &str, undoable: bool, cx: &mut Context<Self>) {
-        if !undoable {
+    /// Toasts a finished copy or undo. A copy's toast has Undo, which undoes copy `job` on this
+    /// tab's screen only while it is the newest copy (NC148, NC166); otherwise it says why.
+    fn toast_write(&self, text: &str, job: Option<&str>, cx: &mut Context<Self>) {
+        let Some(job) = job.map(str::to_owned) else {
             toast::notify(text.to_owned(), cx);
             return;
-        }
-        let screen = self.screen.downgrade();
-        let undo = move |cx: &mut App| {
-            // A closed tab has nothing left to undo from here; Ctrl+Z in another tab still can.
-            let _ = screen.update(cx, |screen, cx| screen.undo_last_write(cx));
         };
+        let screen = self.screen.downgrade();
+        let undo = move |cx: &mut App| undo_from_toast(&screen, &job, cx);
         toast::notify_undo(text.to_owned(), undo, cx);
     }
 
@@ -133,4 +136,19 @@ impl CompareTab {
             cx.notify();
         }
     }
+}
+
+/// The toast's Undo: undoes copy `job` on `screen` while it is the newest copy; otherwise
+/// toasts why not (tab closed, or a newer copy exists).
+fn undo_from_toast(screen: &WeakEntity<CompareScreen>, job: &str, cx: &mut App) {
+    let started = screen.update(cx, |screen, cx| screen.undo_write(job, cx));
+    let id = match started {
+        Err(_) => "compare-undo-tab-closed",
+        Ok(UndoStart::NotNewest) => "compare-undo-not-newest",
+        Ok(UndoStart::Started | UndoStart::Nothing) => return,
+    };
+    // The toast host is mid-update while it runs this Undo, so the reply waits a turn.
+    cx.defer(move |cx| {
+        toast::notify(t!(id), cx);
+    });
 }

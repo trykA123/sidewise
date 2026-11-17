@@ -11,6 +11,7 @@ use sidewise_journal::Recovered;
 use sidewise_ui::compare_diff::{
     CompareOptions, CopyChange, CopyDirection, CopyDone, CopyResult, CopySink, DiffHooks, DiffSink,
     PairControl, PairRequest, SheetPlanSink, SheetSink, StreamControl, StreamSink, UndoSink,
+    UndoStart,
 };
 use sidewise_ui::window_view::ScreenEvent;
 
@@ -21,7 +22,7 @@ use crate::screens::compare_tab::{CompareTab, TabView};
 use crate::shell::Shell;
 use crate::writes::{open_writes, recovery_note};
 
-type Opened = (AnyWindowHandle, Entity<Shell>);
+pub(crate) type Opened = (AnyWindowHandle, Entity<Shell>);
 
 /// Diff hooks over the quiet test hooks that count `undo_last` calls and always have one.
 struct UndoProbe {
@@ -46,9 +47,9 @@ impl DiffHooks for UndoProbe {
     }
 
     /// Counts the call and says an undo started; it never ends.
-    fn undo_last(&self, _done: UndoSink) -> bool {
+    fn undo_last(&self, _job: Option<&str>, _done: UndoSink) -> UndoStart {
         self.undos.fetch_add(1, Ordering::SeqCst);
-        true
+        UndoStart::Started
     }
 }
 
@@ -82,7 +83,7 @@ fn opened(
 }
 
 /// Emits `event` from the tab's compare screen, as a finished copy or undo does.
-fn emit(
+pub(crate) fn emit(
     cx: &mut TestAppContext,
     (window, _): &Opened,
     tab: &Entity<CompareTab>,
@@ -97,12 +98,12 @@ fn emit(
 }
 
 /// The texts of the shell's toasts.
-fn toasts(cx: &mut TestAppContext, (_, shell): &Opened) -> Vec<SharedString> {
+pub(crate) fn toasts(cx: &mut TestAppContext, (_, shell): &Opened) -> Vec<SharedString> {
     shell.read_with(cx, |shell, cx| shell.toast_host().read(cx).messages())
 }
 
 /// Presses the newest toast's Undo.
-fn press_toast_undo(cx: &mut TestAppContext, (_, shell): &Opened) {
+pub(crate) fn press_toast_undo(cx: &mut TestAppContext, (_, shell): &Opened) {
     let host = shell.read_with(cx, |shell, _| shell.toast_host());
     cx.update(|cx| host.update(cx, |host, cx| host.undo(cx)));
     cx.run_until_parked();
@@ -114,16 +115,13 @@ fn a_copy_toasts_with_undo_and_undo_reaches_the_screen(cx: &mut TestAppContext) 
     let (open, tab, undos, _dirs) = opened(cx, "wrote-undo");
     let copied = ScreenEvent::Wrote {
         text: "Copied to the right".into(),
-        undoable: true,
+        job: Some("j1".into()),
+        reload: Vec::new(),
     };
     emit(cx, &open, &tab, copied);
     assert_eq!(toasts(cx, &open), ["Copied to the right"]);
     press_toast_undo(cx, &open);
-    assert_eq!(
-        undos.load(Ordering::SeqCst),
-        1,
-        "Undo calls undo_last_write"
-    );
+    assert_eq!(undos.load(Ordering::SeqCst), 1, "Undo calls undo_write");
     assert!(toasts(cx, &open).is_empty(), "the Undo toast is dismissed");
 }
 
@@ -133,7 +131,8 @@ fn an_undo_toasts_without_undo(cx: &mut TestAppContext) {
     let (open, tab, undos, _dirs) = opened(cx, "wrote-plain");
     let undone = ScreenEvent::Wrote {
         text: "Undid the copy".into(),
-        undoable: false,
+        job: None,
+        reload: Vec::new(),
     };
     emit(cx, &open, &tab, undone);
     assert_eq!(toasts(cx, &open), ["Undid the copy"]);
@@ -169,6 +168,7 @@ impl CopyHost for RecordingHost {
             request: change.pair.id,
             direction: change.direction,
             result: CopyResult::Copied,
+            job: None,
         });
     }
     /// Unused here.
@@ -237,37 +237,53 @@ fn a_journal_folder_that_is_a_file_turns_copying_off() {
     let Err(text) = open_writes(Some(profile.path())) else {
         panic!("a journal folder that is a file must not open");
     };
-    assert!(text.starts_with("Copying is off: "), "{text}");
+    let off = sidewise_l10n::t!("compare-writes-off", reason = "");
+    assert!(text.starts_with(&off), "{text}");
 }
 
 /// The recovery note counts restored files, then names the journal folder when anything was
-/// left; a clean recovery says nothing.
+/// left, old backups that could not be removed included; a clean recovery says nothing.
 #[test]
 fn the_recovery_note_counts_and_names_the_folder() {
+    use sidewise_journal::Swept;
+    use sidewise_l10n::t;
     let dir = std::path::Path::new("/j");
     assert_eq!(recovery_note(&Recovered::default(), dir), None);
     let restored = Recovered {
         restored: 1,
         ..Recovered::default()
     };
-    assert_eq!(
-        recovery_note(&restored, dir).as_deref(),
-        Some("Sidewise restored 1 file after an interrupted copy")
-    );
+    let one = t!("compare-recovery-restored", count = 1);
+    assert_eq!(recovery_note(&restored, dir), Some(one));
     let left = Recovered {
         restored: 2,
         kept: 1,
         failed: 2,
         damaged: 1,
+        swept: Swept {
+            failed: 3,
+            ..Swept::default()
+        },
+    };
+    let parts = [
+        t!("compare-recovery-restored", count = 2),
+        t!("compare-recovery-kept", count = 1),
+        t!("compare-recovery-failed", count = 2),
+        t!("compare-recovery-damaged", count = 1),
+        t!("compare-recovery-sweep-failed", count = 3),
+        t!("compare-recovery-folder", folder = "/j"),
+    ];
+    assert_eq!(recovery_note(&left, dir), Some(parts.join(" ")));
+    let swept = Recovered {
+        swept: Swept {
+            failed: 1,
+            ..Swept::default()
+        },
         ..Recovered::default()
     };
-    assert_eq!(
-        recovery_note(&left, dir).as_deref(),
-        Some(
-            "Sidewise restored 2 files after an interrupted copy. 1 file changed since the \
-             interrupted copy and was kept as is. 2 files could not be restored now; Sidewise \
-             tries again at the next start. 1 damaged journal entry was left untouched. The \
-             backups stay in /j"
-        )
+    let note = recovery_note(&swept, dir).expect("a failed sweep is reported");
+    assert!(
+        note.starts_with(&t!("compare-recovery-sweep-failed", count = 1)),
+        "{note}"
     );
 }

@@ -193,6 +193,30 @@ compare-copy-undo = Undo
 compare-undone = Undid the copy
 compare-undo-changed = The file changed after the copy. Nothing was undone.
 compare-undo-failed = The copy was not undone: { $reason }
+compare-undo-not-newest = Only the latest copy can be undone here; use Ctrl+Z.
+compare-undo-tab-closed = Use Ctrl+Z in an open compare tab.
+compare-writes-off = Copying is off: { $reason }
+compare-recovery-restored = Sidewise restored { $count ->
+    [one] 1 file
+   *[other] { $count } files
+} after an interrupted copy.
+compare-recovery-kept = { $count ->
+    [one] 1 file changed since the interrupted copy and was kept as is.
+   *[other] { $count } files changed since the interrupted copy and were kept as is.
+}
+compare-recovery-failed = { $count ->
+    [one] 1 file
+   *[other] { $count } files
+} could not be restored now; Sidewise tries again at the next start.
+compare-recovery-damaged = { $count ->
+    [one] 1 damaged journal entry was left untouched.
+   *[other] { $count } damaged journal entries were left untouched.
+}
+compare-recovery-sweep-failed = { $count ->
+    [one] 1 old backup
+   *[other] { $count } old backups
+} could not be removed; Sidewise tries again at the next start.
+compare-recovery-folder = The backups stay in { $folder }
 compare-sheet-title-left = Copy all matches to the left
 compare-sheet-title-right = Copy all matches to the right
 compare-sheet-confirm = Copy all
