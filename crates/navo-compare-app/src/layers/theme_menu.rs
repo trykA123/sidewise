@@ -1,7 +1,9 @@
 //! The Theme picker's state (NC150, NC151): five palettes and three modes in one list. The host
 //! saves the choice on `Changed` and closes the picker on `Dismissed`.
 
-use gpui_kit::{EventEmitter, FocusHandle};
+use std::cell::Cell;
+
+use gpui_kit::{EventEmitter, FocusHandle, KeyDownEvent};
 use navo_compare_profile::appearance::{AppearanceMode, PaletteId};
 use sidewise_kit::prelude::*;
 
@@ -18,7 +20,6 @@ pub enum ThemeMenuEvent {
     /// The palette or mode changed; save and apply it.
     Changed,
     /// Close the picker and give focus back (Escape).
-    #[allow(dead_code, reason = "emitted by the key handler in TH5")]
     Dismissed,
 }
 
@@ -37,8 +38,9 @@ pub struct ThemeMenu {
     palette: PaletteId,
     mode: AppearanceMode,
     active: usize,
-    #[allow(dead_code, reason = "read by `focus` and the view in TH5")]
     handle: FocusHandle,
+    /// Whether the last frame ran the opacity entrance; false under reduced motion.
+    animated: Cell<bool>,
 }
 
 impl EventEmitter<ThemeMenuEvent> for ThemeMenu {}
@@ -55,6 +57,7 @@ impl ThemeMenu {
             mode,
             active,
             handle: cx.focus_handle(),
+            animated: Cell::new(false),
         }
     }
 
@@ -90,6 +93,34 @@ impl ThemeMenu {
         cx.notify();
     }
 }
+
+impl ThemeMenu {
+    /// Arrows move the active row (wrapping); Enter or Space picks it unless held; Escape dismisses.
+    fn key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        let stroke = &event.keystroke;
+        let n = ITEMS.len();
+        match (stroke.modifiers.modified(), stroke.key.as_str()) {
+            (false, "down") => self.active = (self.active + 1) % n,
+            (false, "up") => self.active = (self.active + n - 1) % n,
+            (false, "home") => self.active = 0,
+            (false, "end") => self.active = n - 1,
+            (false, "enter" | "space") => {
+                cx.stop_propagation();
+                if !event.is_held {
+                    self.apply(ITEMS[self.active].0, cx);
+                }
+                return;
+            }
+            (false, "escape") => cx.emit(ThemeMenuEvent::Dismissed),
+            _ => return,
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+}
+
+#[path = "theme_menu_view.rs"]
+mod view;
 
 #[cfg(test)]
 #[path = "theme_menu_tests.rs"]
