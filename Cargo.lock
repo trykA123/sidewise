@@ -574,9 +574,9 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bincode-next"
-version = "3.1.2"
+version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e289ae0e3dfb546a0670c572b5001be7a8691044731d666f9187e98124285565"
+checksum = "1d6626829353ae29293be5c86f42de5f0468bc758af074b0c7d08f07e538ccbc"
 dependencies = [
  "pastey 0.2.3",
  "rapidhash",
@@ -3288,7 +3288,6 @@ dependencies = [
 [[package]]
 name = "gpui-pre-windows"
 version = "0.3.12"
-source = "git+https://github.com/trykA123/navo?rev=568792a31eb055745ed60572107cd1fc42512582#568792a31eb055745ed60572107cd1fc42512582"
 dependencies = [
  "accesskit",
  "accesskit_windows",

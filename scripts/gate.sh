@@ -1,29 +1,38 @@
 #!/usr/bin/env bash
 # The quality gate of this repo: format, lints, tests, cargo-deny and lock drift against the
-# pinned navo rev. Run it before every merge to main; the first failing step stops it.
+# navo rev in scripts/navo-rev. Run it before every merge to main; the first failing step stops it.
 set -euo pipefail
 
 usage() {
   printf '%s\n' "usage: gate.sh   (NAVO_LOCK=<navo's Cargo.lock at the pin> overrides the lookup)" >&2
 }
 
-# Prints the path of navo's lockfile at the pin: NAVO_LOCK, else cargo's Git checkout of the rev.
+# Prints the path of navo's lockfile at the pin: NAVO_LOCK, else a cached download of the file at
+# the rev in scripts/navo-rev (the rev of the vendored fork; bump both together).
 navo_lock() {
   if [[ -n "${NAVO_LOCK:-}" ]]; then
     printf '%s\n' "$NAVO_LOCK"
     return
   fi
-  local found rev pin
-  # The pin is read from the root manifest, so a pin bump needs no edit here.
-  rev="$(grep -o -m 1 'rev = "[0-9a-f]\{40\}"' Cargo.toml)" || { printf '%s\n' "gate: no pinned rev in Cargo.toml" >&2; return 1; }
-  pin="${rev:7:7}"
-  shopt -s nullglob
-  for found in "${CARGO_HOME:-$HOME/.cargo}"/git/checkouts/navo-*/"$pin"/Cargo.lock; do
-    printf '%s\n' "$found"
-    return
-  done
-  printf '%s\n' "gate: navo's lockfile at $pin not found; build once or set NAVO_LOCK" >&2
-  return 1
+  local rev dir file tmp
+  rev="$(cat -- scripts/navo-rev 2>/dev/null)" || rev=""
+  if [[ ! "$rev" =~ ^[0-9a-f]{40}$ ]]; then
+    printf '%s\n' "gate: scripts/navo-rev is missing or not 40 hex characters; set NAVO_LOCK" >&2
+    return 1
+  fi
+  dir="target/navo-lock"
+  file="$dir/$rev.Cargo.lock"
+  if [[ ! -s "$file" ]]; then
+    mkdir -p -- "$dir"
+    tmp="$(mktemp -- "$dir/.dl.XXXXXX")"
+    if ! curl -fsSL --max-time 60 -o "$tmp" "https://raw.githubusercontent.com/trykA123/navo/$rev/Cargo.lock"; then
+      rm -f -- "$tmp"
+      printf '%s\n' "gate: cannot fetch navo's Cargo.lock at $rev; set NAVO_LOCK" >&2
+      return 1
+    fi
+    mv -- "$tmp" "$file"
+  fi
+  printf '%s\n' "$file"
 }
 
 # Runs one named step and prints its result; a failing step ends the gate with exit code 1.

@@ -2,6 +2,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "xtask"]
+exclude = ["vendor"]
 default-members = ["crates/*"]
 
 [workspace.package]
@@ -43,6 +44,6 @@ debug = "line-tables-only"
 strip = "none"
 panic = "unwind"
 
-# A patch does not pass through a dependency (NC32): repeat navo's patch at the pinned rev.
+# A patch does not pass through a dependency (NC32): this repeats Navo's vendored fork, copied at the rev in scripts/navo-rev.
 [patch.crates-io]
-gpui-pre-windows = { git = "https://github.com/trykA123/navo", rev = "568792a31eb055745ed60572107cd1fc42512582" }
+gpui-pre-windows = { path = "vendor/gpui-pre-windows" }

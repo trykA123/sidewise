@@ -1,20 +1,15 @@
-# cargo-deny rules: advisories, licences, bans and sources. Follows Navo's file at the pinned rev.
+# cargo-deny rules: advisories, licences, bans and sources. Started from Navo's file; no Git sources remain.
 [advisories]
 yanked = "deny"
 ignore = [
-    { id = "RUSTSEC-2024-0384", reason = "instant: unmaintained, not vulnerable; transitive through gpui-kit (through navo-ui); recheck on every gpui-kit update" },
-    { id = "RUSTSEC-2024-0436", reason = "paste: unmaintained, not vulnerable; transitive through gpui-kit (through navo-ui); recheck on every gpui-kit update" },
-    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile: unmaintained, not vulnerable; transitive through gpui-kit (through navo-ui); recheck on every gpui-kit update" },
-    { id = "RUSTSEC-2026-0206", reason = "rustybuzz: unmaintained, not vulnerable; transitive through gpui-kit (through navo-ui); recheck on every gpui-kit update" },
-    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: unmaintained, not vulnerable; transitive through gpui-kit (through navo-ui); recheck on every gpui-kit update" },
-    { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained (merged into zbus 6), not vulnerable; transitive through gpui-kit (through navo-ui) (accesskit_unix, atspi); recheck on every gpui-kit update" },
-    { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained (merged into zbus 6), not vulnerable; transitive through gpui-kit (through navo-ui) (accesskit_unix, atspi); recheck on every gpui-kit update" },
-    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained (merged into zbus 6), not vulnerable; transitive through gpui-kit (through navo-ui) (accesskit_unix, atspi); recheck on every gpui-kit update" },
-    { id = "RUSTSEC-2024-0388", reason = "derivative: unmaintained, not vulnerable; transitive through velopack 1.2.161 (through navo-app); recheck on every velopack update" },
-    { id = "RUSTSEC-2026-0367", reason = "zip 8.6.0 extract() symlink and permission handling; velopack 1.2.161 (through navo-app) pins zip 8; Sidewise links the navo-app lib only, never calls velopack and never extracts a package; remove when velopack moves to zip 9" },
-    { id = "RUSTSEC-2026-0368", reason = "zip 8.6.0 extract() symlink and permission handling; velopack 1.2.161 (through navo-app) pins zip 8; Sidewise links the navo-app lib only, never calls velopack and never extracts a package; remove when velopack moves to zip 9" },
-    { id = "RUSTSEC-2026-0369", reason = "zip 8.6.0 extract() symlink and permission handling; velopack 1.2.161 (through navo-app) pins zip 8; Sidewise links the navo-app lib only, never calls velopack and never extracts a package; remove when velopack moves to zip 9" },
-    { id = "RUSTSEC-2026-0429", reason = "zip 8.6.0 through velopack 1.2.161 (through navo-app); Sidewise links the navo-app lib only, never calls velopack and never extracts a package; recheck on every velopack update" },
+    { id = "RUSTSEC-2024-0384", reason = "instant: unmaintained, not vulnerable; transitive through gpui-kit (through sidewise-kit); recheck on every gpui-kit update" },
+    { id = "RUSTSEC-2024-0436", reason = "paste: unmaintained, not vulnerable; transitive through gpui-kit (through sidewise-kit); recheck on every gpui-kit update" },
+    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile: unmaintained, not vulnerable; transitive through gpui-kit (through sidewise-kit); recheck on every gpui-kit update" },
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz: unmaintained, not vulnerable; transitive through gpui-kit (through sidewise-kit); recheck on every gpui-kit update" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: unmaintained, not vulnerable; transitive through gpui-kit (through sidewise-kit); recheck on every gpui-kit update" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained (merged into zbus 6), not vulnerable; transitive through gpui-kit (through sidewise-kit) (accesskit_unix, atspi); recheck on every gpui-kit update" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained (merged into zbus 6), not vulnerable; transitive through gpui-kit (through sidewise-kit) (accesskit_unix, atspi); recheck on every gpui-kit update" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained (merged into zbus 6), not vulnerable; transitive through gpui-kit (through sidewise-kit) (accesskit_unix, atspi); recheck on every gpui-kit update" },
 ]
 
 [licenses]
@@ -45,5 +40,5 @@ multiple-versions = "warn"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# The app depends on the navo crates by Git, at one pinned rev.
-allow-git = ["https://github.com/trykA123/navo"]
+# No Git sources: gpui-pre-windows is vendored under vendor/.
+allow-git = []
