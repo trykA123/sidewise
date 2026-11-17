@@ -85,6 +85,8 @@ mod theme_data;
 mod theme_tests;
 #[cfg(test)]
 mod ui_matrix_tests;
+#[expect(dead_code, reason = "U9 wires the check and U10 the notice")]
+mod updates;
 mod window;
 
 use std::process::ExitCode;

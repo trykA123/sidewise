@@ -29,6 +29,7 @@ sidewise-host = { path = "../sidewise-host" }
 sidewise-kit = { path = "../sidewise-kit" }
 sidewise-l10n = { path = "../sidewise-l10n" }
 sidewise-ui = { path = "../sidewise-ui" }
+sidewise-update = { path = "../sidewise-update" }
 toml = "1.2.1"
 
 [target.'cfg(windows)'.dependencies]

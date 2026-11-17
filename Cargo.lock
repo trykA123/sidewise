@@ -4635,6 +4635,7 @@ dependencies = [
  "sidewise-kit",
  "sidewise-l10n",
  "sidewise-ui",
+ "sidewise-update",
  "toml 1.2.1+spec-1.1.0",
  "windows-sys 0.61.2",
 ]
