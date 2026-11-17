@@ -2,7 +2,7 @@
 //! A screen of the compare tab; the opener runs on the session thread, never the UI thread.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use sidewise_core::{Location, ProviderPath};
 use sidewise_engine::model::{EntryKind, Reason, RelPath, SideEntry, SideSource};
@@ -15,6 +15,12 @@ use sidewise_host::compare::pane::LocalTarget;
 
 /// How many open sides the cache keeps.
 pub const GIT_SIDES: usize = 8;
+
+/// The app's one cache, shared by the compare engine and every diff backend; made on first use.
+pub fn shared_sides() -> Arc<GitSides> {
+    static SIDES: OnceLock<Arc<GitSides>> = OnceLock::new();
+    Arc::clone(SIDES.get_or_init(Arc::default))
+}
 
 /// What names a side: its form, repository folder and revision text.
 type Key = (Form, PathBuf, String);

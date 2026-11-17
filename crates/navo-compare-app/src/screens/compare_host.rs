@@ -7,14 +7,17 @@ use std::sync::Arc;
 use gpui_kit::{App, KeyBinding, KeyBindingContextPredicate};
 use navo_compare_profile::appearance::{LayoutPref, UiPrefs, ViewPresetPref};
 use sidewise_host::compare::diff::copy_port::CopyHost;
-use sidewise_host::compare::diff::hooks::DiffBackend;
+use sidewise_host::compare::diff::hooks::{BackendParts, DiffBackend};
+use sidewise_host::compare::diff::viewed::MemoryViewed;
 use sidewise_host::compare::diff::write::host::LocalCopyHost;
+use sidewise_host::compare::dirs::CompareDirs;
 use sidewise_ui::browser::Waker;
 use sidewise_ui::compare_diff::{CompareOptions, DiffHooks, Layout};
 use sidewise_ui::compare_keys::compare_keys;
 use sidewise_ui::list_actions::UndoLast;
 use sidewise_ui::window_view::{CompareScreen, DiffSlot, LookDefaults, LookPreset};
 
+use super::git_sides::{shared_sides, side_fn};
 use super::host_parts::compare_files;
 
 #[cfg(test)]
@@ -26,7 +29,7 @@ thread_local! {
 
 /// The diff hooks a new screen uses: the in-memory backend with the journal's copy host when
 /// it opened (else copies are refused), or the test seam's hooks.
-fn diff_hooks() -> Arc<dyn DiffHooks> {
+pub(crate) fn diff_hooks() -> Arc<dyn DiffHooks> {
     #[cfg(test)]
     if let Some(hooks) = TEST_DIFF_HOOKS.with_borrow(Clone::clone) {
         return hooks;
@@ -34,16 +37,22 @@ fn diff_hooks() -> Arc<dyn DiffHooks> {
     diff_hooks_for(crate::writes::host())
 }
 
-/// The diff hooks over the in-memory backend, writing copies through `host` when there is one.
+/// The diff hooks over the Git-aware backend, writing copies through `host` when there is one.
 pub(crate) fn diff_hooks_for(host: Option<Arc<LocalCopyHost>>) -> Arc<dyn DiffHooks> {
     Arc::new(hooks_with(host.map(|host| host as Arc<dyn CopyHost>)))
 }
 
-/// The default diff backend, writing copies through `host` when there is one.
+/// The diff backend over local and Git sides and in-memory Viewed marks, writing copies through
+/// `host` when there is one.
 pub(crate) fn hooks_with(host: Option<Arc<dyn CopyHost>>) -> DiffBackend {
+    let backend = DiffBackend::new(BackendParts {
+        dirs: CompareDirs::default(),
+        side: side_fn(shared_sides()),
+        viewed: Arc::new(|| Arc::new(MemoryViewed::default())),
+    });
     match host {
-        Some(host) => DiffBackend::default().with_copy_host(host),
-        None => DiffBackend::default(),
+        Some(host) => backend.with_copy_host(host),
+        None => backend,
     }
 }
 

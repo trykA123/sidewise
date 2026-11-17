@@ -1,17 +1,21 @@
-//! Tests for the compare host: key binding count, the compare file reads and opening a text pair.
+//! Tests for the compare host: key binding count, the compare file reads and opening text and Git pairs.
 
 use std::fs;
 use std::sync::Arc;
 
+use sidewise_git::fixture::Fixture;
+use sidewise_git::location::{Form, encode};
 use sidewise_ui::browser::Waker;
-use sidewise_ui::compare_diff::PairRequest;
+use sidewise_ui::compare_diff::{CompareOptions, DiffSink, DiffUpdate, PairRequest};
 use sidewise_ui::compare_keys::compare_keys;
 
 use navo_compare_profile::appearance::{LayoutPref, UiPrefs, ViewPresetPref};
 use sidewise_ui::compare_diff::Layout;
 use sidewise_ui::window_view::{LookDefaults, LookPreset};
 
-use super::compare_host::{action_name, bind_compare_keys, look_of, new_compare_screen};
+use super::compare_host::{
+    action_name, bind_compare_keys, diff_hooks, look_of, new_compare_screen,
+};
 use super::compare_run::location_of;
 use super::host_parts::compare_files;
 
@@ -102,6 +106,36 @@ fn compare_screen_opens_a_text_pair(cx: &mut gpui_kit::TestAppContext) {
     let _ = fs::remove_dir_all(&dir);
     assert!(opened);
     assert!(open);
+}
+
+/// The diff hooks open a pair of Git files and report `Opened`.
+#[test]
+fn diff_hooks_open_a_git_pair() {
+    let fixture = Fixture::new();
+    let _ = fixture.commit("main", &[("a.txt", b"one\n")]);
+    let root = encode(fixture.path(), "main", Form::Stored).expect("encode");
+    let text = format!("{}/a.txt", root.path().to_text());
+    let place = || {
+        sidewise_core::Location::with_provider(
+            root.provider().clone(),
+            sidewise_core::ProviderPath::from_text(&text),
+        )
+        .expect("location")
+    };
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let sink: DiffSink = Arc::new(move |update| drop(sender.send(update)));
+    let request = PairRequest {
+        id: 0,
+        path: "a.txt".into(),
+        left: Some(place()),
+        right: Some(place()),
+    };
+    let _control = diff_hooks().open_pair(request, &CompareOptions::default(), sink);
+    let update = receiver.recv_timeout(std::time::Duration::from_secs(10));
+    assert!(
+        matches!(update, Ok(DiffUpdate::Opened { text: Some(_), .. })),
+        "{update:?}"
+    );
 }
 
 /// `look_of` maps each preset one to one, and words, wrap and layout follow the prefs.
