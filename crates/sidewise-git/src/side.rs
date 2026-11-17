@@ -88,6 +88,18 @@ impl GitTreeSide {
         self.form
     }
 
+    /// The commit the revision names now, read from the repository; this side is unchanged.
+    /// Fails as `open` (`NotFound` for a deleted branch, `ReadError` for damaged data).
+    pub fn resolve_now(&self) -> Result<Commit, Reason> {
+        self.repo.resolve(&self.rev).map_err(GitProblem::reason)
+    }
+
+    /// The kind of the entry at `rel` in the pinned commit. Fails with `NotFound` for an
+    /// unknown path, or as `lookup` for a damaged tree.
+    pub fn kind(&self, rel: &RelPath) -> Result<EntryKind, Reason> {
+        self.child(rel).map(|child| child.kind)
+    }
+
     /// The tree index of the pinned commit, built under the lock on first use so concurrent
     /// callers share one build. Fails as `TreeIndex::build`; a failed build is retried later.
     fn index(&self, cancel: &CancelToken) -> Result<Arc<TreeIndex>, Reason> {
