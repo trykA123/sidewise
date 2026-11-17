@@ -1,13 +1,13 @@
 //! `RealDisk`: the `Disk` trait on the OS. Linux is built here (rustix is a Linux-only
-//! dependency); elsewhere every call returns `Unsupported` until D3, so no write runs half-built.
+//! dependency), Windows in `windows.rs`; elsewhere every call returns `Unsupported`.
 
 use std::fs::File;
 use std::io;
 
 #[cfg(target_os = "linux")]
+use std::{fs::OpenOptions, io::Read};
+#[cfg(any(target_os = "linux", windows))]
 use std::{
-    fs::OpenOptions,
-    io::Read,
     path::Path,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -27,8 +27,8 @@ impl super::DiskFile for File {
 }
 
 /// Converts a file time to ms since the Unix epoch; `None` past the `i64` range.
-#[cfg(target_os = "linux")]
-fn to_ms(time: SystemTime) -> Option<i64> {
+#[cfg(any(target_os = "linux", windows))]
+pub(super) fn to_ms(time: SystemTime) -> Option<i64> {
     match time.duration_since(UNIX_EPOCH) {
         Ok(after) => i64::try_from(after.as_millis()).ok(),
         Err(before) => i64::try_from(before.duration().as_millis())
@@ -38,8 +38,8 @@ fn to_ms(time: SystemTime) -> Option<i64> {
 }
 
 /// Converts ms since the Unix epoch to a file time; fails with `InvalidInput` out of range.
-#[cfg(target_os = "linux")]
-fn from_ms(ms: i64) -> io::Result<SystemTime> {
+#[cfg(any(target_os = "linux", windows))]
+pub(super) fn from_ms(ms: i64) -> io::Result<SystemTime> {
     let span = Duration::from_millis(ms.unsigned_abs());
     let time = if ms >= 0 {
         UNIX_EPOCH.checked_add(span)
@@ -50,8 +50,8 @@ fn from_ms(ms: i64) -> io::Result<SystemTime> {
 }
 
 /// The folder that holds `path`; fails with `InvalidInput` for a root or a bare name.
-#[cfg(target_os = "linux")]
-fn parent(path: &Path) -> io::Result<&Path> {
+#[cfg(any(target_os = "linux", windows))]
+pub(super) fn parent(path: &Path) -> io::Result<&Path> {
     path.parent()
         .filter(|dir| !dir.as_os_str().is_empty())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent folder"))
@@ -71,12 +71,15 @@ pub(super) fn swap(
 /// target may sit at the backup name, so the caller rolls back by hash.
 #[cfg(any(windows, test))]
 pub(super) fn replace_failure(error: io::Error) -> super::ReplaceError {
-    super::ReplaceError::Unchanged(error)
+    match error.raw_os_error() {
+        Some(1176 | 1177) => super::ReplaceError::TargetMoved(error),
+        _ => super::ReplaceError::Unchanged(error),
+    }
 }
 
 /// An `InvalidInput` error that names why a path was refused.
-#[cfg(target_os = "linux")]
-fn refused(why: &'static str) -> io::Error {
+#[cfg(any(target_os = "linux", windows))]
+pub(super) fn refused(why: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, why)
 }
 
@@ -105,6 +108,18 @@ fn write_denied(path: &Path) -> io::Result<bool> {
         Err(Errno::ACCESS | Errno::PERM | Errno::ROFS) => Ok(true),
         Err(errno) => Err(errno.into()),
     }
+}
+
+/// The entry names of a folder, sorted; fails with `InvalidData` on a non-UTF-8 name.
+#[cfg(any(target_os = "linux", windows))]
+pub(super) fn list_sorted(dir: &Path) -> io::Result<Vec<String>> {
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let name = entry?.file_name().into_string();
+        names.push(name.map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 name"))?);
+    }
+    names.sort_unstable();
+    Ok(names)
 }
 
 #[cfg(target_os = "linux")]
@@ -190,15 +205,7 @@ impl Disk for RealDisk {
     }
 
     fn list(&self, dir: &Path) -> io::Result<Vec<String>> {
-        let mut names = Vec::new();
-        for entry in std::fs::read_dir(dir)? {
-            let name = entry?.file_name().into_string();
-            names.push(
-                name.map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 name"))?,
-            );
-        }
-        names.sort_unstable();
-        Ok(names)
+        list_sorted(dir)
     }
 
     fn sync_dir(&self, dir: &Path) -> io::Result<()> {
@@ -206,8 +213,8 @@ impl Disk for RealDisk {
     }
 }
 
-/// Until D3, every call off Linux fails closed with `Unsupported`.
-#[cfg(not(target_os = "linux"))]
+/// Off Linux and Windows, every call fails closed with `Unsupported`.
+#[cfg(not(any(target_os = "linux", windows)))]
 impl super::Disk for RealDisk {
     fn create_new(&self, _: &std::path::Path) -> io::Result<Box<dyn super::DiskFile>> {
         Err(io::ErrorKind::Unsupported.into())

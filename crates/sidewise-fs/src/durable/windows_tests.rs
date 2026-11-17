@@ -1,5 +1,7 @@
 //! Temp-folder tests of the Windows `RealDisk` contract: long paths, the read-only
 //! attribute, sharing locks on `replace`, junctions and the no-replace rename.
+// Windows only; clippy sees `cfg(test)` on the module, so test unwraps stay allowed.
+#![cfg(windows)]
 
 use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
@@ -55,7 +57,9 @@ fn every_step_works_on_a_path_past_300_characters() {
     RealDisk.rename_new(&target, &staged).unwrap();
     RealDisk.remove_file(&staged).unwrap();
     assert!(RealDisk.meta(&staged).unwrap().is_none());
-    RealDisk.remove_dir_all(&root.path().join("d".repeat(60))).unwrap();
+    RealDisk
+        .remove_dir_all(&root.path().join("d".repeat(60)))
+        .unwrap();
 }
 
 /// Sets or clears the read-only attribute; cleared again so the temp folder can be removed.

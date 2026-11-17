@@ -6942,6 +6942,7 @@ dependencies = [
  "sidewise-core",
  "sidewise-fs",
  "tempfile",
+ "tracing",
  "windows-sys 0.61.2",
 ]
 

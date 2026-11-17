@@ -16,7 +16,9 @@ mod fault_tests;
 mod real;
 #[cfg(test)]
 mod tests;
-#[cfg(all(test, windows))]
+#[cfg(windows)]
+mod windows;
+#[cfg(test)]
 mod windows_tests;
 
 #[cfg(feature = "test-support")]
