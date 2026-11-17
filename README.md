@@ -41,7 +41,7 @@ Or run `sidewise <left> <right>` in a terminal. Run `sidewise --help` for the ot
 
 ## Uninstall
 
-Open Settings > Apps > Installed apps, find Sidewise and choose Uninstall. Your settings, sessions and backups stay in `%APPDATA%\Sidewise` and `%LOCALAPPDATA%\Sidewise`. Delete those two folders to remove them too. For the zip: Delete its folder.
+Open Settings > Apps > Installed apps, find Sidewise and choose Uninstall. Your settings, sessions and backups stay in `%APPDATA%\Sidewise` and `%LOCALAPPDATA%\Sidewise`. Delete those two folders to remove them too. For the zip: delete its folder.
 
 ## In this alpha
 
