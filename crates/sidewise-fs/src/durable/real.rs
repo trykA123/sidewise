@@ -67,6 +67,13 @@ pub(super) fn swap(
     sync().map_err(ReplaceError::NotDurable)
 }
 
+/// Maps a failed `ReplaceFileW` to a replace result (NC146): 1176 and 1177 mean the
+/// target may sit at the backup name, so the caller rolls back by hash.
+#[cfg(any(windows, test))]
+pub(super) fn replace_failure(error: io::Error) -> super::ReplaceError {
+    super::ReplaceError::Unchanged(error)
+}
+
 /// An `InvalidInput` error that names why a path was refused.
 #[cfg(target_os = "linux")]
 fn refused(why: &'static str) -> io::Error {

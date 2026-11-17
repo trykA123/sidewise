@@ -6,7 +6,10 @@ use std::io::{ErrorKind, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-use super::{Disk, RealDisk, ReplaceError, real::swap};
+use super::{
+    Disk, RealDisk, ReplaceError,
+    real::{replace_failure, swap},
+};
 
 fn put(path: &Path, text: &str) {
     std::fs::write(path, text).unwrap();
@@ -227,4 +230,19 @@ fn copy_mode_refuses_a_symlink_source() {
     std::os::unix::fs::symlink(&file, &link).unwrap();
     let error = RealDisk.copy_mode(&link, &to).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidInput);
+}
+
+#[test]
+fn replace_file_codes_1176_and_1177_say_the_target_moved_and_others_unchanged() {
+    let moved = |code| {
+        matches!(
+            replace_failure(std::io::Error::from_raw_os_error(code)),
+            ReplaceError::TargetMoved(e) if e.raw_os_error() == Some(code)
+        )
+    };
+    assert!(moved(1176) && moved(1177));
+    for code in [1175, 32, 5] {
+        let failed = replace_failure(std::io::Error::from_raw_os_error(code));
+        assert!(matches!(failed, ReplaceError::Unchanged(e) if e.raw_os_error() == Some(code)));
+    }
 }

@@ -16,6 +16,8 @@ mod fault_tests;
 mod real;
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, windows))]
+mod windows_tests;
 
 #[cfg(feature = "test-support")]
 pub use fault::{FaultDisk, Plan, Tail};
