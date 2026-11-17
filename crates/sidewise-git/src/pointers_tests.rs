@@ -184,3 +184,35 @@ fn a_local_core_worktree_still_opens() {
     );
     assert_eq!(opened(fixture.path()), Ok(()));
 }
+
+#[test]
+fn a_continuation_line_hides_no_core_worktree() {
+    let dir = tempfile::tempdir().expect("temp");
+    let git_dir = dir.path().join(".git");
+    write(&git_dir.join("commondir"), "../common\n");
+    write(&git_dir.join("gitdir"), "../.git\n");
+    let config = dir.path().join("common/config");
+    write(
+        &config,
+        "[core]\n\ta = b\\\n[x]\n\tworktree = //host/share\n",
+    );
+    assert_eq!(check(dir.path()), Err(GitProblem::Unsupported));
+    write(
+        &config,
+        "[core]\n\ta = b\\\r\n[x]\n\tworktree = //host/share\n",
+    );
+    assert_eq!(check(dir.path()), Err(GitProblem::Unsupported));
+}
+
+#[test]
+fn an_escaped_backslash_at_line_end_is_not_a_continuation() {
+    let dir = tempfile::tempdir().expect("temp");
+    let git_dir = dir.path().join(".git");
+    write(&git_dir.join("commondir"), "../common\n");
+    write(&git_dir.join("gitdir"), "../.git\n");
+    write(
+        &dir.path().join("common/config"),
+        "[core]\n\ta = b\\\\\n\tworktree = ../w\n",
+    );
+    assert_eq!(check(dir.path()), Ok(()));
+}

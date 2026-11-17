@@ -5,11 +5,16 @@ use crate::repo::GitProblem;
 
 /// Every `core.worktree` value in config `text`, unquoted and unescaped. Keys and the section
 /// name match without case; `[core "sub"]` is another section. Fails with `Unsupported` for a
-/// section header without `]`, or a `core.worktree` value with an open quote or a continuation.
+/// section header without `]`, a `core.worktree` value with an open quote or a continuation, or
+/// any line (in any section) ending in an odd number of `\`, which Git reads as a continuation.
 pub fn core_worktrees(text: &str) -> Result<Vec<String>, GitProblem> {
     let mut in_core = false;
     let mut found = Vec::new();
-    for line in text.trim_start_matches('\u{feff}').lines() {
+    let text = text.trim_start_matches('\u{feff}');
+    if text.lines().any(ends_in_continuation) {
+        return Err(GitProblem::Unsupported);
+    }
+    for line in text.lines() {
         let mut rest = line.trim_start();
         if rest.starts_with('[') {
             let (header, after) = split_header(rest)?;
@@ -27,6 +32,12 @@ pub fn core_worktrees(text: &str) -> Result<Vec<String>, GitProblem> {
         }
     }
     Ok(found)
+}
+
+/// True when `line` ends in an odd number of `\`: the last one escapes the line break.
+fn ends_in_continuation(line: &str) -> bool {
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    (line.len() - line.trim_end_matches('\\').len()) % 2 == 1
 }
 
 /// Splits `line` (starting with `[`) into the header inside the brackets and the text after
