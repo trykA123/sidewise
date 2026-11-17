@@ -1,5 +1,5 @@
 //! `Journal`: the open journal folder (`<dir>/v1/`, NC143) and this process's owner lock.
-//! `begin` starts a job; recovery at open (J3) and the sweep (J4) build on `open_raw`.
+//! `open` recovers dead owners' jobs (J3); `begin` starts a job; the sweep (J4) builds on it.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io;
@@ -14,6 +14,7 @@ use sidewise_fs::native::identity;
 use crate::error::{JournalError, journal_io};
 use crate::job::Job;
 use crate::record::{JobId, JobKind, Record};
+use crate::recover::{Recovered, recover};
 
 /// The per-process job counter, the `seq` of every job id (NC143).
 static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -59,6 +60,15 @@ impl Journal {
         Ok(Self {
             inner: Arc::new(inner),
         })
+    }
+
+    /// Opens the journal in `dir` (see `open_raw`), then rolls back every incomplete job of a
+    /// dead owner (NC145) and removes the lock files of dead owners whose jobs are all complete.
+    /// Fails when the journal cannot open or its folders cannot be listed (writes stay off).
+    pub fn open(dir: &Path, disk: Arc<dyn Disk>) -> Result<(Self, Recovered), JournalError> {
+        let journal = Self::open_raw(dir, disk)?;
+        let recovered = recover(&journal.inner)?;
+        Ok((journal, recovered))
     }
 
     /// The `v1` folder that holds the job folders.
@@ -151,7 +161,7 @@ pub(crate) fn lock_owner_with(
 
 /// True when `path` still names the open `file` (same volume and file id); false when the
 /// name is gone or names another file. Fails closed when an identity is unreadable or unknown.
-fn still_named(file: &File, path: &Path) -> Result<bool, JournalError> {
+pub(crate) fn still_named(file: &File, path: &Path) -> Result<bool, JournalError> {
     let held = identity::from_file(file)
         .map_err(|error| journal_io("read owner lock identity", &error))?;
     let named = match identity::read(path) {

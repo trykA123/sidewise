@@ -14,6 +14,12 @@ use crate::journal::Inner;
 use crate::record::{ItemMode, JobId, Record, encode};
 use crate::rollback::{Rolled, roll_back};
 
+#[cfg(test)]
+thread_local! {
+    /// Test-only mutation (J3): when set, the `Backed` line is written but not synced.
+    pub(crate) static SKIP_BACKED_SYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// One open job. Dropping it without `commit` or `abort` aborts it.
 pub struct Job {
     inner: Arc<Inner>,
@@ -204,6 +210,11 @@ impl Job {
         if let Err(error) = self.log.write_all(line.as_bytes()) {
             self.log_ok = false;
             return Err(classify("write job log", &error));
+        }
+        #[cfg(test)]
+        if matches!(record, Record::Backed { .. }) && SKIP_BACKED_SYNC.get() {
+            self.records.push(record);
+            return Ok(());
         }
         if let Err(error) = self.log.sync() {
             self.log_ok = false;
