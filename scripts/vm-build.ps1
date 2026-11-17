@@ -1,9 +1,11 @@
-# Runs inside the Windows VM, started by vm-build.sh: checks out one commit from the bundle
-# into C:\src\navo-compare and runs the asked stages. Prints "=== ALL GREEN" only when all pass.
+# Runs inside the Windows VM, started by vm-build.sh: checks out one commit from the bundle into
+# C:\src\navo-compare and runs the stages (clippy,test,build,release,installer). "=== ALL GREEN" only when all pass.
 param([Parameter(Mandatory)][string]$Sha, [string]$Stages = 'clippy,test,build')
 $ErrorActionPreference = 'Stop'
 $Repo = 'C:\src\navo-compare'
 $Bundle = 'C:\winvm\sidewise.bundle'
+$Inno = 'C:\tools\inno-7.1.1\ISCC.exe'
+$SignDir = 'C:\winvm\sign'
 
 $env:CARGO_TERM_COLOR = 'never'
 # Incremental caches fill the VM disk and gain little for one-off builds.
@@ -18,6 +20,15 @@ function Step([string]$name, [scriptblock]$body) {
   & $body
   if ($LASTEXITCODE -ne 0) { Write-Output "=== FAIL $name ($LASTEXITCODE)"; exit 1 }
   Write-Output ("=== ok {0} {1:n0}s" -f $name, ((Get-Date) - $start).TotalSeconds)
+}
+
+# Signing seam (NC176): until plan P4b, a signing setup in C:\winvm\sign is an error, its absence a notice.
+function Assert-Unsigned {
+  if (Test-Path "$SignDir\metadata.json") {
+    Write-Output "=== FAIL signing (C:\winvm\sign\metadata.json exists, but signing is not built yet: plan P4b)"
+    exit 1
+  }
+  Write-Output '=== signing skipped: no Trusted Signing setup in C:\winvm\sign; sidewise.exe and the installer are UNSIGNED'
 }
 
 Write-Output ("=== free {0:n1} GB" -f ((Get-PSDrive C).Free / 1GB))
@@ -48,6 +59,15 @@ if ($want -contains 'release') {
   $env:CARGO_PROFILE_RELEASE_LTO = 'thin'
   $env:CARGO_PROFILE_RELEASE_DEBUG = '0'
   Step release { cmd /c "cargo build --release -p navo-compare-app --locked 2>&1" }
+  Assert-Unsigned
+}
+# The setup packs target\release\sidewise.exe, so it must come from this run's release build (NC174).
+if ($want -contains 'installer') {
+  if ($want -notcontains 'release') { Write-Output '=== FAIL installer (needs the release stage in the same run)'; exit 1 }
+  if (-not (Test-Path $Inno)) { Write-Output '=== FAIL installer (Inno Setup 7.1.1 missing: run scripts/vm-inno.sh)'; exit 1 }
+  Remove-Item -Recurse -Force "$Repo\target\installer" -ErrorAction SilentlyContinue
+  Step installer { cmd /c "$Inno /Qp /O$Repo\target\installer $Repo\installer\sidewise.iss 2>&1" }
+  Get-ChildItem "$Repo\target\installer" -Filter *.exe | ForEach-Object { Write-Output "=== setup $($_.Name)" }
 }
 Write-Output '=== ALL GREEN'
 exit 0

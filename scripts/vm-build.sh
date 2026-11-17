@@ -7,7 +7,7 @@ readonly LOCK_WAIT_S=3600
 readonly REMOTE_DIR='C:/winvm'
 
 usage() {
-  printf '%s\n' "usage: WINVM=<path to winvm.sh> vm-build.sh <rev> [clippy,test,build,release]" >&2
+  printf '%s\n' "usage: WINVM=<path to winvm.sh> vm-build.sh <rev> [clippy,test,build,release,installer]" >&2
 }
 
 # Sends <rev> to the VM and runs the stages; fails when a stage fails or the VM lock stays busy.
