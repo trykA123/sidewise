@@ -14,6 +14,7 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The Keys sheet lists all viewer keys (line and page scrolling, find results, undo).
 - The View menu closes on a click outside it and when you switch tabs.
 - Closing a menu with Esc returns focus to where it was.
+- The Keys sheet names the find-result keys' section "Find results" instead of an internal name.
 
 ### Removed
 

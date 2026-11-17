@@ -48,11 +48,16 @@ pub fn groups_from(
     groups
 }
 
-/// The group title of a key context: File, Stream, or the context text itself.
+/// The group title of a key context: File, Stream, Find results, or the context without its
+/// "Compare" prefix, so a raw context id never shows.
 fn title_of(context: &str) -> SharedString {
     match context {
         "CompareView" => "File".into(),
         "CompareStream" => "Stream".into(),
-        other => other.to_owned().into(),
+        "CompareOutline" => "Find results".into(),
+        other => match other.strip_prefix("Compare") {
+            Some(rest) if !rest.is_empty() => rest.to_owned().into(),
+            _ => other.to_owned().into(),
+        },
     }
 }

@@ -126,6 +126,20 @@ fn the_keys_sheet_lists_every_compare_binding(_cx: &mut TestAppContext) {
     assert!(skipped.is_empty(), "unlabelled commands are skipped");
 }
 
+/// Group titles are readable names, never a raw key context such as "CompareOutline".
+#[gpui_kit::test]
+fn compare_group_titles_are_readable_names(_cx: &mut TestAppContext) {
+    let titles: Vec<String> = (compare_groups().into_iter())
+        .map(|group| group.title.to_string())
+        .collect();
+    assert!(
+        titles.iter().any(|title| title == "Find results"),
+        "{titles:?}"
+    );
+    let raw = |title: &String| title.starts_with("Compare") && title != "Compare";
+    assert!(!titles.iter().any(raw), "{titles:?}");
+}
+
 /// Every id in the compare label table has a catalog message, so no row is skipped.
 #[gpui_kit::test]
 fn every_compare_label_id_has_a_catalog_message(_cx: &mut TestAppContext) {
