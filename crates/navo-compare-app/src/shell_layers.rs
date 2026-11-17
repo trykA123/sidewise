@@ -11,10 +11,14 @@ use crate::layers::view_menu::{ViewMenu, ViewMenuEvent};
 use crate::screens::compare_host::look_of;
 use crate::shell_prefs;
 
+#[path = "shell_theme.rs"]
+mod shell_theme;
+
 /// The layers the shell owns: the one Keys sheet and the View menu while it is open.
 pub(super) struct Layers {
     pub(super) keys: Entity<KeysSheet>,
     pub(super) view: Option<(Entity<ViewMenu>, Subscription)>,
+    theme: shell_theme::ThemeLayer,
 }
 
 impl Layers {
@@ -23,6 +27,7 @@ impl Layers {
         Self {
             keys: cx.new(|cx| KeysSheet::new(window, cx)),
             view: None,
+            theme: shell_theme::ThemeLayer::default(),
         }
     }
 }
@@ -55,6 +60,7 @@ impl Shell {
             }
             Action::View if self.layers.view.is_some() => self.close_view_menu(window, cx),
             Action::View => self.open_view_menu(window, cx),
+            Action::Theme => self.toggle_theme_menu(window, cx),
             _ => {}
         }
     }
@@ -68,6 +74,7 @@ impl Shell {
 
     /// Opens the View menu over the saved preferences and focuses it.
     fn open_view_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_theme_menu(None, cx);
         let prefs = shell_prefs::prefs(cx);
         let menu = cx.new(|cx| ViewMenu::new(prefs, cx));
         let sub = cx.subscribe_in(&menu, window, |this, menu, event, window, cx| match event {

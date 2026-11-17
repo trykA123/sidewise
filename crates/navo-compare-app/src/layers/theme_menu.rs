@@ -66,7 +66,6 @@ impl ThemeMenu {
         (self.palette, self.mode)
     }
 
-    #[allow(dead_code, reason = "called by the shell host in TH6")]
     /// Moves focus into the picker, so arrows, Enter and Escape reach it.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         self.handle.focus(window, cx);
