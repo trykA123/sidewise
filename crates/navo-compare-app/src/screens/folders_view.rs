@@ -2,7 +2,6 @@
 //! `FolderTree` model. The cursor moves with the arrow keys; Enter opens a pair of files.
 
 use std::cell::Cell;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::{
@@ -14,7 +13,7 @@ use sidewise_ui::browser::{CompareFilter, CompareRow};
 use sidewise_ui::compare_diff::map::{ChangeMap, MapEvent};
 
 use self::menu::{CopyLeftPath, ExpandAll, OpenStream, RevealLeft, ShowMenu, menu_actions};
-use super::folders_head::head_view;
+use super::folders_head::{SideRoot, head_view};
 use super::folders_model::{FolderTree, TreeLine, map_hunks};
 use super::folders_row::{LineCtx, line_view, summary_bar};
 use super::folders_text::Meta;
@@ -62,7 +61,7 @@ pub struct FoldersView {
     focus: FocusHandle,
     map: Entity<ChangeMap>,
     meta: Meta,
-    roots: Option<[PathBuf; 2]>,
+    roots: Option<[SideRoot; 2]>,
     pub(super) menu: MenuSlot,
     /// Where the cursor line was last drawn; `Shift+F10` anchors the menu to it.
     pub(super) cursor_bounds: Rc<Cell<Option<gpui_kit::Bounds<Pixels>>>>,
@@ -104,8 +103,11 @@ impl FoldersView {
 
     /// Sets the two folder roots the headers name; each goes through `absolute`, kept as given
     /// when that fails.
-    pub fn with_roots(mut self, roots: [PathBuf; 2]) -> Self {
-        self.roots = Some(roots.map(|root| std::path::absolute(&root).unwrap_or(root)));
+    pub fn with_roots(mut self, roots: [SideRoot; 2]) -> Self {
+        self.roots = Some(roots.map(|root| SideRoot {
+            path: std::path::absolute(&root.path).unwrap_or(root.path),
+            rev: root.rev,
+        }));
         self
     }
 
@@ -213,7 +215,7 @@ impl FoldersView {
     }
 
     /// The two folder roots, when the compare gave them.
-    pub(super) fn roots(&self) -> Option<&[PathBuf; 2]> {
+    pub(super) fn roots(&self) -> Option<&[SideRoot; 2]> {
         self.roots.as_ref()
     }
 

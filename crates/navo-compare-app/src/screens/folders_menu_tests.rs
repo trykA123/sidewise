@@ -11,10 +11,11 @@ use gpui_kit::{
 use super::tests::{shown, view_with};
 use super::{FoldersView, bind_keys};
 use crate::menu_host::{bind_menu_keys, menu_view};
+use crate::screens::folders_head::SideRoot;
 
 /// A focused view over the fixture with roots `/left` and `/right`, menu keys bound.
 fn setup(cx: &mut TestAppContext) -> (AnyWindowHandle, gpui_kit::Entity<FoldersView>) {
-    let roots = [abs_root("left"), abs_root("right")];
+    let roots = [abs_root("left"), abs_root("right")].map(SideRoot::folder);
     let (window, view, _) = view_with(cx, move |cx| FoldersView::new(cx).with_roots(roots));
     cx.update(|cx| {
         bind_keys(cx);

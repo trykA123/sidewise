@@ -17,6 +17,7 @@ use sidewise_ui::window_view::{CompareScreen, LookDefaults};
 use super::compare_host::{look_of, new_compare_screen};
 use super::compare_run::{CompareRun, RunError};
 use super::compare_tab_large::large_timer;
+use super::folders_head::SideRoot;
 use super::folders_view::FoldersView;
 use super::host_parts::NoHashes;
 use super::large_view::LargeView;
@@ -128,10 +129,7 @@ impl CompareTab {
         cx: &mut Context<Self>,
     ) -> Self {
         let Started { run, wakes, wake } = started;
-        let roots = [
-            path_of(&request.left).to_path_buf(),
-            path_of(&request.right).to_path_buf(),
-        ];
+        let roots = [&request.left, &request.right].map(side_root);
         let folders = cx.new(|cx| FoldersView::new(cx).with_roots(roots));
         let large = cx.new(LargeView::new);
         let look = look_of(&crate::shell_prefs::prefs(cx));
@@ -276,14 +274,30 @@ pub(super) fn path_of(spec: &SideSpec) -> &Path {
     }
 }
 
-/// `"<left name> ↔ <right name>"` from the last path segment of each side.
-fn title_of(request: &CompareRequest) -> SharedString {
+/// The header's view of one side: its path, plus the revision for a Git side.
+fn side_root(spec: &SideSpec) -> SideRoot {
+    SideRoot {
+        path: path_of(spec).to_path_buf(),
+        rev: match spec {
+            SideSpec::Path(_) => None,
+            SideSpec::GitRev { rev, .. } => Some(rev.clone()),
+        },
+    }
+}
+
+/// `"<left name> ↔ <right name>"` from the last path segment of each side; a Git side is
+/// `name@rev`.
+pub(super) fn title_of(request: &CompareRequest) -> SharedString {
     let name = |spec: &SideSpec| {
         let path = path_of(spec);
-        path.file_name().map_or_else(
+        let base = path.file_name().map_or_else(
             || path.display().to_string(),
             |n| n.to_string_lossy().into_owned(),
-        )
+        );
+        match spec {
+            SideSpec::Path(_) => base,
+            SideSpec::GitRev { rev, .. } => format!("{base}@{rev}"),
+        }
     };
     format!("{} ↔ {}", name(&request.left), name(&request.right)).into()
 }

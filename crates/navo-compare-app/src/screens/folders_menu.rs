@@ -131,7 +131,11 @@ impl FoldersView {
             return;
         };
         let present = [&line.left, &line.right][side].is_some();
-        let Some(root) = self.roots().filter(|_| present).map(|roots| &roots[side]) else {
+        let Some(root) = self
+            .roots()
+            .filter(|_| present)
+            .map(|roots| &roots[side].path)
+        else {
             return;
         };
         let path = side_path(root, &line.path).to_string_lossy().into_owned();
@@ -146,7 +150,11 @@ impl FoldersView {
             return;
         };
         let present = [&line.left, &line.right][side].is_some();
-        let Some(root) = self.roots().filter(|_| present).map(|roots| &roots[side]) else {
+        let Some(root) = self
+            .roots()
+            .filter(|_| present)
+            .map(|roots| &roots[side].path)
+        else {
             return;
         };
         if let Err(text) = reveal(&side_path(root, &line.path)) {

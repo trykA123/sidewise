@@ -15,8 +15,11 @@ use sidewise_ui::browser::{CompareKind, CompareRow, CompareSide, RowStatus};
 use sidewise_ui::compare_diff::map::MapEvent;
 
 use super::{FoldersEvent, FoldersView, bind_keys};
+use crate::screens::compare_tab::{CompareRequest, title_of};
+use crate::screens::folders_head::SideRoot;
 use crate::test_window::open;
 use crate::theme::apply_sidewise;
+use navo_compare_cli::args::SideSpec;
 
 /// A side of `kind` with a placeholder size.
 fn side(kind: CompareKind) -> Option<CompareSide> {
@@ -233,8 +236,8 @@ fn the_headers_name_both_roots(cx: &mut TestAppContext) {
         apply_sidewise(PaletteId::Violet, Mode::Light, cx);
     });
     let roots = [
-        abs_root("work").join("left"),
-        abs_root("work").join("right"),
+        SideRoot::folder(abs_root("work").join("left")),
+        SideRoot::folder(abs_root("work").join("right")),
     ];
     let (window, _) = open(cx, |_, cx| FoldersView::new(cx).with_roots(roots));
     cx.update_window(window, |_, window, cx| window.render_frame(cx))
@@ -247,6 +250,52 @@ fn the_headers_name_both_roots(cx: &mut TestAppContext) {
         label_of(window, ("head", 1), cx).as_deref(),
         abs_root("work").join("right").to_str()
     );
+}
+
+/// A Git side's header reads `path @ rev`; a folder side keeps the bare path.
+#[gpui_kit::test]
+fn a_git_root_draws_its_revision(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        apply_sidewise(PaletteId::Violet, Mode::Light, cx);
+    });
+    let repo = abs_root("work").join("app");
+    let roots = [
+        SideRoot {
+            path: repo.clone(),
+            rev: Some("main".to_owned()),
+        },
+        SideRoot {
+            path: abs_root("work").join("right"),
+            rev: None,
+        },
+    ];
+    let (window, _) = open(cx, |_, cx| FoldersView::new(cx).with_roots(roots));
+    cx.update_window(window, |_, window, cx| window.render_frame(cx))
+        .expect("window");
+    let want = format!("{} @ main", repo.display());
+    assert_eq!(
+        label_of(window, ("head", 0), cx).as_deref(),
+        Some(want.as_str())
+    );
+    assert_eq!(
+        label_of(window, ("head", 1), cx).as_deref(),
+        abs_root("work").join("right").to_str()
+    );
+}
+
+/// A Git side and a folder title the tab `app@main ↔ app`.
+#[test]
+fn a_git_and_folder_title_reads_name_at_rev() {
+    let request = CompareRequest {
+        left: SideSpec::GitRev {
+            repo: PathBuf::from("/w/app"),
+            rev: "main".to_owned(),
+        },
+        right: SideSpec::Path(PathBuf::from("/w/app")),
+        choice: Default::default(),
+    };
+    assert_eq!(title_of(&request).as_ref(), "app@main ↔ app");
 }
 
 /// The meta text and the gutter width follow the view width: wide shows size, narrow names only.
