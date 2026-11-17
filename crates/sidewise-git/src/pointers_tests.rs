@@ -110,3 +110,77 @@ fn a_dot_git_file_with_a_local_target_opens() {
     );
     assert_eq!(check(worktree.path()), Ok(()));
 }
+
+/// `core.worktree` spellings that name a network share, as written in a config file.
+const WORKTREE_CONFIGS: [&str; 6] = [
+    "[core]\n\tworktree = //host/share/w\n",
+    "[core]\n\tworktree = \"\\\\\\\\host\\\\share\\\\w\" ; quoted\n",
+    "[CORE]\n\tWorkTree=\\\\?\\UNC\\host\\share\n",
+    "[core] worktree = \\??\\UNC\\host\\share\n",
+    "[user]\n\tname = admin\n[ core ]\n# c\n  worktree = \"//host\"/share\n",
+    "\u{feff}[core]\nworktree = //host/share\n",
+];
+
+#[test]
+fn a_core_worktree_naming_a_network_path_is_unsupported() {
+    for name in ["config", "config.worktree"] {
+        for text in WORKTREE_CONFIGS {
+            let fixture = Fixture::new();
+            let _ = fixture.commit("main", &[("a.txt", b"a")]);
+            let config = fixture.path().join(".git").join(name);
+            let old = std::fs::read_to_string(&config).unwrap_or_default();
+            write(&config, &format!("{old}{text}"));
+            assert_eq!(
+                opened(fixture.path()),
+                Err(GitProblem::Unsupported),
+                "{name}: {text}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_core_worktree_in_the_common_config_is_checked() {
+    let dir = tempfile::tempdir().expect("temp");
+    let git_dir = dir.path().join(".git");
+    write(&git_dir.join("commondir"), "../common\n");
+    write(&git_dir.join("gitdir"), "../.git\n");
+    write(
+        &dir.path().join("common/config"),
+        "[core]\n\tworktree = //host/share\n",
+    );
+    assert_eq!(check(dir.path()), Err(GitProblem::Unsupported));
+    write(
+        &dir.path().join("common/config"),
+        "[core]\n\tworktree = ../w\n",
+    );
+    assert_eq!(check(dir.path()), Ok(()));
+}
+
+#[test]
+fn a_gitdir_file_naming_a_network_path_is_unsupported() {
+    for target in NETWORK {
+        let fixture = Fixture::new();
+        let _ = fixture.commit("main", &[("a.txt", b"a")]);
+        write(&fixture.path().join(".git/commondir"), ".\n");
+        write(&fixture.path().join(".git/gitdir"), &format!("{target}\n"));
+        assert_eq!(
+            opened(fixture.path()),
+            Err(GitProblem::Unsupported),
+            "{target}"
+        );
+    }
+}
+
+#[test]
+fn a_local_core_worktree_still_opens() {
+    let fixture = Fixture::new();
+    let _ = fixture.commit("main", &[("a.txt", b"a")]);
+    let config = fixture.path().join(".git/config");
+    let old = std::fs::read_to_string(&config).expect("config");
+    write(
+        &config,
+        &format!("{old}[core \"x\"]\n\tworktree = //host/a\n"),
+    );
+    assert_eq!(opened(fixture.path()), Ok(()));
+}

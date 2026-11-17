@@ -1,31 +1,60 @@
 //! Checks a repository's pointer files before gix opens it, so a hostile repository cannot
 //! make the open reach a network share (an SMB path leaks NTLM). Pure string checks, local reads.
+//! Includes are not followed; the open blocks them.
 
 use std::collections::HashSet;
 use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 
+use crate::config_scan::core_worktrees;
 use crate::repo::GitProblem;
 
 /// Most bytes read from one pointer file (64 KiB); a larger file is refused.
 const MAX_POINTER_BYTES: u64 = 64 * 1024;
+/// Most bytes read from one config file (1 MiB); a larger file is refused.
+const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 /// Most object folders followed through `alternates` files.
 const MAX_OBJECT_DIRS: usize = 16;
 
-/// Refuses `path` with `Unsupported` when its `.git` file, its `commondir` file or an
-/// `objects/info/alternates` file (followed through local alternates) names a network path,
-/// a quoted path or is over 64 KiB; `Broken` when one cannot be read.
+/// Refuses `path` with `Unsupported` when its `.git` file, its `commondir` or `gitdir` file,
+/// a `core.worktree` value in `config` or `config.worktree`, or an `objects/info/alternates`
+/// file (followed through local alternates) names a network path, a quoted path, or a file is
+/// over its size cap; `Broken` when one cannot be read.
 pub fn check(path: &Path) -> Result<(), GitProblem> {
     let git_dir = git_dir(path)?;
-    let common = match read_pointer(&git_dir.join("commondir"))? {
+    let common = match read_pointer(&git_dir.join("commondir"), MAX_POINTER_BYTES)? {
         Some(text) => {
             let target = first_line(&text);
             refuse_network(target)?;
+            // gix reads `gitdir` as the work tree path and checks its owner.
+            if let Some(gitdir) = read_pointer(&git_dir.join("gitdir"), MAX_POINTER_BYTES)? {
+                refuse_network(first_line(&gitdir))?;
+                refuse_network(gitdir.trim())?;
+            }
             git_dir.join(target)
         }
         None => git_dir.clone(),
     };
+    for config in [
+        git_dir.join("config"),
+        common.join("config"),
+        git_dir.join("config.worktree"),
+    ] {
+        check_config(&config)?;
+    }
     check_alternates(vec![git_dir.join("objects"), common.join("objects")])
+}
+
+/// Refuses a `core.worktree` value in the config file at `config` that names a network path,
+/// since gix checks that folder and its owner. An absent file passes.
+fn check_config(config: &Path) -> Result<(), GitProblem> {
+    let Some(text) = read_pointer(config, MAX_CONFIG_BYTES)? else {
+        return Ok(());
+    };
+    for worktree in core_worktrees(&text)? {
+        refuse_network(&worktree)?;
+    }
+    Ok(())
 }
 
 /// The Git folder `path` names: the target of a `.git` file (checked first), `path/.git`, or
@@ -41,7 +70,7 @@ fn git_dir(path: &Path) -> Result<PathBuf, GitProblem> {
     } else {
         return Ok(path.to_path_buf());
     };
-    let text = read_pointer(&pointer)?.unwrap_or_default();
+    let text = read_pointer(&pointer, MAX_POINTER_BYTES)?.unwrap_or_default();
     let Some(target) = first_line(&text).strip_prefix("gitdir:") else {
         // Not a pointer gix can follow; the open itself reports it.
         return Ok(pointer);
@@ -66,7 +95,8 @@ fn check_alternates(start: Vec<PathBuf>) -> Result<(), GitProblem> {
         if seen.len() > MAX_OBJECT_DIRS {
             return Err(GitProblem::Unsupported);
         }
-        let Some(text) = read_pointer(&dir.join("info").join("alternates"))? else {
+        let Some(text) = read_pointer(&dir.join("info").join("alternates"), MAX_POINTER_BYTES)?
+        else {
             continue;
         };
         for line in text.lines().map(str::trim) {
@@ -99,19 +129,19 @@ fn first_line(text: &str) -> &str {
     text.lines().next().unwrap_or("").trim()
 }
 
-/// Reads the pointer file at `path` as lossy text: `None` when absent, `Unsupported` over
-/// `MAX_POINTER_BYTES`, `Broken` for another read error.
-fn read_pointer(path: &Path) -> Result<Option<String>, GitProblem> {
+/// Reads the pointer or config file at `path` as lossy text: `None` when absent, `Unsupported`
+/// over `limit` bytes, `Broken` for another read error.
+fn read_pointer(path: &Path, limit: u64) -> Result<Option<String>, GitProblem> {
     let file = match std::fs::File::open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(GitProblem::Broken),
     };
     let mut bytes = Vec::new();
-    file.take(MAX_POINTER_BYTES + 1)
+    file.take(limit + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| GitProblem::Broken)?;
-    if bytes.len() as u64 > MAX_POINTER_BYTES {
+    if bytes.len() as u64 > limit {
         return Err(GitProblem::Unsupported);
     }
     Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))

@@ -199,13 +199,19 @@ fn a_non_utf8_name_is_listed_lossy_and_unreadable() {
 /// A commit whose root tree is written raw with one entry `name`, which `edit_tree` refuses.
 fn commit_raw_entry(fixture: &Fixture, name: &[u8]) -> Commit {
     let id = blob(fixture, b"raw");
+    commit_raw_tree(fixture, &[name], id)
+}
+
+/// A commit whose root tree is written raw with one blob entry `id` per name, unchecked.
+fn commit_raw_tree(fixture: &Fixture, names: &[&[u8]], id: gix::ObjectId) -> Commit {
     let repo = gix::open_opts(fixture.path(), gix::open::Options::isolated()).expect("open");
+    let entries = names.iter().map(|name| gix::objs::tree::Entry {
+        mode: GitKind::Blob.into(),
+        filename: (*name).into(),
+        oid: id,
+    });
     let tree = gix::objs::Tree {
-        entries: vec![gix::objs::tree::Entry {
-            mode: GitKind::Blob.into(),
-            filename: name.into(),
-            oid: id,
-        }],
+        entries: entries.collect(),
     };
     let tree = repo.write_object(&tree).expect("write raw tree").detach();
     let signature = gix::actor::SignatureRef {
@@ -281,4 +287,79 @@ fn the_byte_budget_counts_folder_keys_and_names() {
     assert_eq!(over.err(), Some(Reason::Unsupported));
     let exact = build_within(&repo, commit, &CancelToken::new(), 81);
     assert!(exact.is_ok(), "81 bytes hold every key and name");
+}
+
+/// Looks up `rel` in the tree of `main` without an index.
+fn lookup_main(fixture: &Fixture, rel: &str) -> Result<Option<Child>, Reason> {
+    let repo = open(fixture);
+    let commit = repo.resolve("main").expect("resolve main");
+    lookup(&repo, commit.tree, rel)
+}
+
+/// Removes the loose object `id` from the fixture repository.
+fn remove_loose(fixture: &Fixture, id: gix::ObjectId) {
+    let hex = id.to_hex().to_string();
+    let loose = fixture.path().join(".git/objects").join(&hex[..2]);
+    std::fs::remove_file(loose.join(&hex[2..])).expect("remove the loose object");
+}
+
+#[test]
+fn lookup_finds_a_nested_file_and_not_a_missing_one() {
+    let fixture = three_files();
+    let lib = lookup_main(&fixture, "src/deep/x.rs").expect("lookup");
+    assert_eq!(lib.map(|child| child.kind), Some(EntryKind::File));
+    assert!(lookup_main(&fixture, "src/nope").expect("lookup").is_none());
+}
+
+#[test]
+fn lookup_through_a_submodule_or_a_file_is_not_found_without_loading_it() {
+    let fixture = Fixture::new();
+    let file = blob(&fixture, b"a file");
+    let other = gix::ObjectId::from_hex(b"0123456789abcdef0123456789abcdef01234567").expect("hex");
+    let _ = commit_entries(
+        &fixture,
+        &[
+            (&b"f.txt"[..], GitKind::Blob, file),
+            (&b"sub"[..], GitKind::Commit, other),
+        ],
+    );
+    remove_loose(&fixture, file);
+    assert_eq!(
+        lookup_main(&fixture, "sub/x").map(|c| c.is_none()),
+        Ok(true)
+    );
+    assert_eq!(
+        lookup_main(&fixture, "f.txt/x").map(|c| c.is_none()),
+        Ok(true)
+    );
+}
+
+#[test]
+fn lookup_through_a_damaged_tree_is_a_read_error() {
+    let fixture = Fixture::new();
+    let repo = gix::open_opts(fixture.path(), gix::open::Options::isolated()).expect("open");
+    let damaged = gix::objs::Write::write_buf(
+        &repo.objects,
+        gix::object::Kind::Tree,
+        b"100644 no-nul-or-id",
+    )
+    .expect("write damaged tree");
+    let _ = commit_entries(&fixture, &[(&b"d"[..], GitKind::Tree, damaged)]);
+    assert_eq!(lookup_main(&fixture, "d/x").err(), Some(Reason::ReadError));
+}
+
+#[test]
+fn lookup_refuses_duplicate_names_like_the_index() {
+    let fixture = Fixture::new();
+    let id = blob(&fixture, b"dup");
+    let _ = commit_raw_tree(&fixture, &[b"a", b"a"], id);
+    assert_eq!(build_main(&fixture).err(), Some(Reason::Unsupported));
+    assert_eq!(lookup_main(&fixture, "a").err(), Some(Reason::Unsupported));
+    let lossy = Fixture::new();
+    let id = blob(&lossy, b"dup");
+    let _ = commit_raw_tree(&lossy, &[b"a\xef\xbf\xbd", b"a\xff"], id);
+    assert_eq!(
+        lookup_main(&lossy, "a\u{fffd}").err(),
+        Some(Reason::Unsupported)
+    );
 }

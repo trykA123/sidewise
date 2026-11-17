@@ -11,6 +11,7 @@ use gix::objs::tree::{EntryKind as GitKind, EntryRef};
 use gix::traverse::tree::{Visit, visit::Action};
 use sidewise_engine::model::{CancelToken, EntryKind, Reason};
 
+pub use crate::lookup::lookup;
 use crate::repo::{Commit, Repo};
 
 /// Most tree entries (files, folders, links, submodules) one index holds.
@@ -106,45 +107,9 @@ fn collect_tree(
     collect.finish()
 }
 
-/// Finds the one entry at `rel` (a `/`-joined UTF-8 path) in `tree` without an index: it
-/// reads one tree per component, so it needs no cancel. `None` when absent. Fails with
-/// `Unsupported` for a refused name or a path past a cap, otherwise as `TreeIndex::build`.
-pub fn lookup(repo: &Repo, tree: gix::ObjectId, rel: &str) -> Result<Option<Child>, Reason> {
-    if rel.is_empty() {
-        return Ok(None);
-    }
-    let parts = rel.split('/').count();
-    let plain = rel.split('/').all(|part| plain_name(part.into()));
-    if !plain || parts > MAX_DEPTH || rel.len() > MAX_PATH_BYTES {
-        return Err(Reason::Unsupported);
-    }
-    let local = repo.local();
-    let found = catch_unwind(AssertUnwindSafe(|| {
-        let tree = local
-            .find_tree(tree)
-            .map_err(|error| object_problem(&error))?;
-        let entry = tree
-            .lookup_entry(rel.split('/'))
-            .map_err(|error| object_problem(&error))?;
-        let Some(entry) = entry else {
-            return Ok(None);
-        };
-        let id = entry.object_id();
-        let (kind, size) = kind_and_size(&local, entry.mode(), &id)?;
-        Ok(Some(Child {
-            name: entry.filename().to_str_lossy().into_owned(),
-            kind,
-            size,
-            id,
-            readable: true,
-        }))
-    }));
-    found.map_err(|_| Reason::ReadError)?
-}
-
 /// The engine kind of a tree entry with `mode`, and its size in bytes from the object header
 /// (0 for folders and submodules). Fails with `MissingBlob` or `ReadError`.
-fn kind_and_size(
+pub(crate) fn kind_and_size(
     repo: &gix::Repository,
     mode: gix::objs::tree::EntryMode,
     id: &gix::oid,
@@ -167,7 +132,7 @@ fn header_size(repo: &gix::Repository, id: &gix::oid) -> Result<u64, Reason> {
 }
 
 /// Maps an object lookup error: absence is `MissingBlob`, anything else `ReadError`.
-fn object_problem(error: &gix::Error) -> Reason {
+pub(crate) fn object_problem(error: &gix::Error) -> Reason {
     match error.dominant_class() {
         Some(Class::NotFound) => Reason::MissingBlob,
         _ => Reason::ReadError,
@@ -308,7 +273,7 @@ impl<'a> Collect<'a> {
 
 /// False for a name Git itself refuses (empty, `.`, `..`, or with `/` or NUL), which would
 /// make two paths look the same.
-fn plain_name(name: &BStr) -> bool {
+pub(crate) fn plain_name(name: &BStr) -> bool {
     !(name.is_empty() || name == "." || name == ".." || name.contains(&b'/') || name.contains(&0))
 }
 
