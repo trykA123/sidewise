@@ -4,6 +4,8 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-alpha.4] — 2026-11-18
+
 ### Added
 
 - Git compare: a branch, tag or commit against another one or a folder, read-only. Type `repo@revision` in a side field on the Start screen, or on the command line. Git compares appear in Recent. Sidewise never starts `git`, never runs programs from the repository, and never fetches.
@@ -14,6 +16,12 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A file over 64 MiB in a revision shows as unreadable.
 - The repository folder must be the top folder of the repository. A subfolder shows "Not a Git repository".
 - A Git side must be a folder. A Git revision against a single file is refused.
+
+### Fixed
+
+- The right-click menu in the file diff and in the Stream now opens. In alpha.3 a right-click only picked lines. `Shift+F10` and the Menu key open the same menu next to the cursor line.
+- A copy stopped before it changed the file now says "Rolled back an interrupted copy." at the next start. Alpha.3 rolled it back without a note.
+- A Git revision that does not exist shows "No such revision" instead of an empty tab. `F5` compares a Git side again, so a branch shows its newest commit.
 
 ## [0.1.0-alpha.3] — 2026-11-17
 
