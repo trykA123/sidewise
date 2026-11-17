@@ -1,9 +1,11 @@
 //! The compare screen entity owns its screens and receives plain inputs from its window.
 
+use std::cell::Cell;
 use std::ops::ControlFlow;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gpui_kit::{EventEmitter, Task};
+use gpui_kit::{EventEmitter, Task, canvas};
 
 use super::files::CompareFiles;
 use super::look::{Look, LookDefaults};
@@ -30,6 +32,8 @@ pub struct CompareScreen {
     sides: SharedString,
     stamp: Option<(u64, u64)>,
     look: LookDefaults,
+    /// Where the screen was last painted, in window px; the keyboard menu anchors inside it.
+    pub(super) painted: Rc<Cell<Bounds<Pixels>>>,
 }
 
 impl CompareScreen {
@@ -43,6 +47,7 @@ impl CompareScreen {
             sides: SharedString::default(),
             stamp: None,
             look: LookDefaults::default(),
+            painted: Rc::default(),
         }
     }
 
@@ -195,12 +200,19 @@ impl Render for CompareScreen {
             return div();
         };
         // The menu sits outside the screens' key contexts: keys it leaves never reach the diff.
+        let painted = Rc::clone(&self.painted);
         div()
+            .relative()
             .flex()
             .flex_col()
             .flex_1()
             .min_h_0()
             .min_w_0()
+            .child(
+                canvas(move |bounds, _, _| painted.set(bounds), |_, (), _, _| {})
+                    .absolute()
+                    .size_full(),
+            )
             .child(view)
             .children(menu)
     }

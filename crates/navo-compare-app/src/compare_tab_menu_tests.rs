@@ -129,3 +129,26 @@ fn the_menu_keys_open_the_diff_menu_and_esc_returns_focus(cx: &mut TestAppContex
         );
     }
 }
+
+/// Shift+F10 opens the menu inside the main pane, right of the sidebar and below the top bar,
+/// not at the window's top-left corner.
+#[gpui_kit::test]
+fn the_menu_key_opens_the_menu_inside_the_compare_screen(cx: &mut TestAppContext) {
+    let (opened, _dirs) = walked(cx, "da");
+    cx.update(crate::screens::compare_host::bind_compare_keys);
+    cx.simulate_keystrokes(opened.0, "enter");
+    cx.run_until_parked();
+    cx.simulate_keystrokes(opened.0, "shift-f10");
+    cx.run_until_parked();
+    let (pane, row) = cx
+        .update_window(opened.0, |_, window, cx| {
+            window.render_frame(cx);
+            let pane = window.find("main-pane").bounds();
+            (pane, window.find(("menu-row", 0usize)).bounds())
+        })
+        .expect("window");
+    assert!(
+        pane.contains(&row.origin),
+        "the menu row {row:?} starts inside the main pane {pane:?}"
+    );
+}
