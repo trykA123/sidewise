@@ -16,7 +16,7 @@ use sidewise_kit::context_menu::{ContextMenu, ContextMenuEvent};
 use crate::compare_tab_script::{install_scripted, rows_script};
 use crate::menu_host::menu_view;
 use crate::shell::Shell;
-use crate::start::StartEvent;
+use crate::start::{Side, StartEvent};
 use crate::start_menu::ForgetSelected;
 use crate::start_tabs::StartChoice;
 use crate::test_window::open;
@@ -229,6 +229,15 @@ fn open_recent_menu(
         crate::menu_host::bind_menu_keys(cx);
     });
     let (window, shell) = open_shell(cx, Some(&fixture.profile()));
+    let menu = right_click_recent(cx, (window, &shell));
+    ((window, shell), menu)
+}
+
+/// Right-clicks sidebar Recent entry 0 of an open shell; returns the open menu.
+fn right_click_recent(
+    cx: &mut TestAppContext,
+    (window, shell): (AnyWindowHandle, &Entity<Shell>),
+) -> Entity<ContextMenu> {
     cx.update_window(window, |_, window, cx| {
         let right = ClickOptions::new().with_button(MouseButton::Right);
         window.click_with_options(("Recent", 0usize), right, cx);
@@ -237,7 +246,37 @@ fn open_recent_menu(
     .expect("right click");
     cx.run_until_parked();
     let menu = shell.read_with(cx, |shell, _| menu_view(&shell.menu));
-    ((window, shell), menu.expect("open menu"))
+    menu.expect("open menu")
+}
+
+/// MFX: Escape on the sidebar Recent menu gives the focus back to the Start field that had it.
+#[gpui_kit::test]
+fn escape_on_the_recent_menu_refocuses_the_start_field(cx: &mut TestAppContext) {
+    let fixture = recorded();
+    cx.update(|cx| {
+        crate::menu_host::bind_menu_keys(cx);
+    });
+    let (window, shell) = open_shell(cx, Some(&fixture.profile()));
+    let screen = shell.read_with(cx, |shell, _| shell.active_screen().cloned());
+    let screen = screen.expect("start tab");
+    cx.update_window(window, |_, window, cx| {
+        screen.update(cx, |screen, cx| screen.focus_left(window, cx));
+        window.render_frame(cx);
+    })
+    .expect("window");
+    right_click_recent(cx, (window, &shell));
+    cx.simulate_keystrokes(window, "escape");
+    cx.run_until_parked();
+    let side = cx
+        .update_window(window, |_, window, cx| {
+            screen.read(cx).focused_side(window, cx)
+        })
+        .expect("window");
+    assert_eq!(
+        side,
+        Some(Side::Left),
+        "Escape did not refocus the Left field"
+    );
 }
 
 /// Chooses line `index` of `menu`, as a click or Enter would, and settles.
@@ -289,7 +328,8 @@ fn escape_on_the_recent_menu_leaves_no_row_to_remove(cx: &mut TestAppContext) {
     );
 }
 
-/// B5 follow-up: Copy paths on a sidebar Recent entry puts its two sides on the clipboard.
+/// B5 follow-up: Copy paths on a sidebar Recent entry puts its two sides on the clipboard
+/// and confirms with one toast (MFX).
 #[gpui_kit::test]
 fn copy_paths_on_a_recent_entry_fills_the_clipboard(cx: &mut TestAppContext) {
     let fixture = recorded();
@@ -299,6 +339,9 @@ fn copy_paths_on_a_recent_entry_fills_the_clipboard(cx: &mut TestAppContext) {
     choose(cx, &menu, 1);
     let copied = cx.read_from_clipboard().and_then(|item| item.text());
     assert_eq!(copied, Some(format!("{}\n{}", row.left, row.right)));
+    let host = shell.read_with(cx, |shell, _| shell.toast_host());
+    let shown = host.read_with(cx, |host, _| host.messages());
+    assert_eq!(shown, ["Copied paths"]);
 }
 
 /// The topbar crumbs' accessible label: title and detail joined by a space.

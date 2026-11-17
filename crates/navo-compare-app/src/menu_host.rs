@@ -27,6 +27,7 @@ pub enum MenuLine {
 pub type MenuSlot = Option<(Entity<ContextMenu>, Subscription)>;
 
 /// Where and for whom a menu opens: the anchor, the focus that gets the chosen action, a title.
+/// A menu closed without a choice gives the focus back to whatever held it when it opened.
 pub struct MenuAt {
     pub anchor: Point<Pixels>,
     pub focus: FocusHandle,
@@ -45,6 +46,7 @@ pub fn show_menu<V: 'static>(
     window: &mut Window,
     cx: &mut Context<V>,
 ) {
+    let back = window.focused(cx).unwrap_or_else(|| at.focus.clone());
     let entries = to_entries(lines);
     let mut menu = viewer_menu(&entries, &at.focus, window);
     for (item, line) in menu.items.iter_mut().zip(lines) {
@@ -57,14 +59,14 @@ pub fn show_menu<V: 'static>(
         context: at.title.into(),
         anchor: at.anchor,
         bounds: Bounds::new(Point::default(), window.viewport_size()),
-        restore: Some(at.focus.clone()),
+        restore: Some(back.clone()),
     };
     let menu = cx.new(|cx| {
         let mut menu = ContextMenu::new(input, window, cx);
         menu.hide_classic(cx);
         menu
     });
-    let focus = at.focus;
+    let focus = [at.focus, back];
     let events = cx.subscribe_in(&menu, window, move |this, _, event, window, cx| {
         on_event(this, (event, &focus, slot), window, cx);
     });
@@ -91,10 +93,10 @@ fn to_entries(lines: &[MenuLine]) -> Vec<MenuEntry> {
 }
 
 /// Reacts to the menu: ignores a submenu opening; else closes it, then runs a chosen action on
-/// `focus` after `window.defer`, or just gives the focus back.
+/// `focus[0]` after `window.defer`, or gives the focus back to `focus[1]` (held before opening).
 fn on_event<V: 'static>(
     host: &mut V,
-    (event, focus, slot): (&ContextMenuEvent, &FocusHandle, SlotOf<V>),
+    (event, [focus, back], slot): (&ContextMenuEvent, &[FocusHandle; 2], SlotOf<V>),
     window: &mut Window,
     cx: &mut Context<V>,
 ) {
@@ -104,10 +106,10 @@ fn on_event<V: 'static>(
     *slot(host) = None;
     cx.notify();
     let ContextMenuEvent::Chosen(ItemId::Action(name)) = event else {
-        return window.focus(focus, cx);
+        return window.focus(back, cx);
     };
     let Ok(action) = cx.build_action(name, None) else {
-        return window.focus(focus, cx);
+        return window.focus(back, cx);
     };
     let focus = focus.clone();
     window.defer(cx, move |window, cx| {

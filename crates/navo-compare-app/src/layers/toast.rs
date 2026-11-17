@@ -54,6 +54,15 @@ impl ToastHost {
         self.toasts.is_empty()
     }
 
+    /// The texts on screen, oldest first; tests read them.
+    #[cfg(test)]
+    pub fn messages(&self) -> Vec<SharedString> {
+        self.toasts
+            .iter()
+            .map(|toast| toast.message.clone())
+            .collect()
+    }
+
     /// Shows a toast that expires on its own.
     pub fn push(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.add(message, None, cx);

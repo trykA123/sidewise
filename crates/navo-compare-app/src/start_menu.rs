@@ -6,6 +6,7 @@ use gpui_kit::{App, Bounds, ClipboardItem, Pixels, Point};
 use navo_compare_profile::recent::StartRow;
 use sidewise_kit::prelude::*;
 
+use crate::layers::toast;
 use crate::menu_host::{MenuAt, MenuLine, show_menu};
 use crate::start::{OpenSelected, StartEvent, StartScreen};
 use crate::start_rows::row_at;
@@ -59,7 +60,7 @@ impl StartScreen {
         self.show_row_menu(anchor, window, cx);
     }
 
-    /// Copies the selected row's two sides, one per line, to the clipboard.
+    /// Copies the selected row's two sides, one per line, to the clipboard, with a toast.
     pub(crate) fn copy_paths(&mut self, cx: &mut Context<Self>) {
         if let Some(row) = self.selected.and_then(|i| row_at(&self.rows, i)) {
             copy_row_paths(row, cx);
@@ -79,8 +80,9 @@ impl StartScreen {
     }
 }
 
-/// Copies `row`'s two sides, one per line, to the clipboard.
+/// Copies `row`'s two sides, one per line, to the clipboard and toasts "Copied paths".
 pub(crate) fn copy_row_paths(row: &StartRow, cx: &mut App) {
     let text = format!("{}\n{}", row.left, row.right);
     cx.write_to_clipboard(ClipboardItem::new_string(text));
+    toast::notify("Copied paths", cx);
 }
