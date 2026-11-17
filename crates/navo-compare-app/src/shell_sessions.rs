@@ -58,7 +58,7 @@ impl Shell {
 
     /// Deletes unnamed recent session `id`, refreshes the rows and toasts "Removed from Recent" with an Undo
     /// that saves it back. An error toasts its text and changes nothing.
-    pub(super) fn forget_row(&mut self, id: &str, cx: &mut Context<Self>) {
+    pub(in crate::shell) fn forget_row(&mut self, id: &str, cx: &mut Context<Self>) {
         if !cx.has_global::<Sessions>() {
             return;
         }
@@ -110,7 +110,7 @@ impl Shell {
     }
 
     /// Opens stored session `id` in the tab at `index`; a bad session shows one toast and the rows refresh.
-    pub(super) fn reopen(
+    pub(in crate::shell) fn reopen(
         &mut self,
         (index, id): (usize, &str),
         window: &mut Window,

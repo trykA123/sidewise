@@ -6,7 +6,7 @@ use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{App, FocusHandle, Subscription, WindowAppearance};
 use navo_compare_profile::appearance::PaletteId;
 use navo_compare_profile::brand;
-use navo_compare_profile::recent::StartRows;
+use navo_compare_profile::recent::{StartRow, StartRows};
 use sidewise_kit::prelude::*;
 use sidewise_kit::title_bar::NavoTitleBar;
 use sidewise_kit::tokens;
@@ -47,6 +47,8 @@ pub struct Shell {
     toasts: Entity<ToastHost>,
     layers: Layers,
     menu: MenuSlot,
+    /// The sidebar Recent row whose menu is open; its chosen action runs on this row.
+    menu_row: Option<StartRow>,
     handle: FocusHandle,
     _appearance: Subscription,
 }
@@ -88,6 +90,7 @@ impl Shell {
             toasts,
             layers,
             menu: None,
+            menu_row: None,
             handle: cx.focus_handle(),
             _appearance: appearance,
         };
@@ -109,6 +112,7 @@ impl Shell {
             SidebarEvent::CloseTab(index) => self.close_tab(index, window, cx),
             SidebarEvent::RailToggled(_) => cx.notify(),
             SidebarEvent::TabMenu(_, at) => self.show_tab_menu(at, window, cx),
+            SidebarEvent::RecentMenu(index, at) => self.show_recent_menu((index, at), window, cx),
         }
     }
 
@@ -199,7 +203,7 @@ impl Render for Shell {
         let (background, text) = (t.colors.background, t.colors.text);
         let (font, size) = (t.typography.ui_font.clone(), t.typography.body);
         let root = div().key_context(CONTEXT).track_focus(&self.handle);
-        keys_sheet::wire(root, &self.layers.keys)
+        shell_menus::recent_actions(keys_sheet::wire(root, &self.layers.keys), cx)
             .relative()
             .on_action(cx.listener(|this, _: &NewTab, window, cx| this.new_tab(window, cx)))
             .on_action(cx.listener(|this, _: &CloseTab, window, cx| {

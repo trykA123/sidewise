@@ -4,14 +4,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use gpui_kit::test::TestWindowExt as _;
-use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext};
+use gpui_kit::test::{ClickOptions, TestWindowExt as _};
+use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, MouseButton, TestAppContext};
 use navo_compare_cli::args::SideSpec;
 use navo_compare_profile::book::{SessionBook, Visit};
 use navo_compare_profile::brand::SLUG;
 use navo_compare_profile::session_store::SessionStore;
 
+use sidewise_kit::context_menu::ContextMenuEvent;
+
 use crate::compare_tab_script::{install_scripted, rows_script};
+use crate::menu_host::menu_view;
 use crate::shell::Shell;
 use crate::start::StartEvent;
 use crate::start_tabs::StartChoice;
@@ -200,4 +203,43 @@ fn forget_then_undo_restores_the_row(cx: &mut TestAppContext) {
     host.update(cx, |host, cx| host.undo(cx));
     assert_eq!(rows(cx), 1);
     assert_eq!(fixture.stored().len(), 1);
+}
+
+/// B5: a right click on a sidebar Recent entry opens the start row menu, and its Remove line
+/// forgets the row through the same handler, with the Undo toast.
+#[gpui_kit::test]
+fn a_sidebar_recent_entry_has_the_row_menu(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let mut book = SessionBook::open(Some(&fixture.profile()), 0).expect("book");
+    let visit = Visit {
+        left: fixture.left(),
+        right: fixture.right(),
+        respect_gitignore: false,
+    };
+    book.record(&visit, 1_000).expect("record");
+    let (window, shell) = open_shell(cx, Some(&fixture.profile()));
+    cx.update_window(window, |_, window, cx| {
+        let right = ClickOptions::new().with_button(MouseButton::Right);
+        window.click_with_options(("Recent", 0usize), right, cx);
+        window.render_frame(cx);
+    })
+    .expect("right click");
+    cx.run_until_parked();
+    let menu = shell.read_with(cx, |shell, _| menu_view(&shell.menu));
+    let menu = menu.expect("open menu");
+    let items = menu.read_with(cx, |menu, _| menu.menu().items.clone());
+    let texts: Vec<_> = items.iter().map(|item| item.text.as_str()).collect();
+    assert_eq!(texts, ["Open", "Copy paths", "Remove from recent"]);
+    assert!(items.iter().all(|item| item.enabled));
+    menu.update(cx, |_, cx| {
+        cx.emit(ContextMenuEvent::Chosen(items[2].id.clone()))
+    });
+    cx.run_until_parked();
+    let sidebar = shell.read_with(cx, |shell, _| shell.sidebar().clone());
+    assert_eq!(
+        sidebar.read_with(cx, |sidebar, _| sidebar.rows().recent.len()),
+        0
+    );
+    assert!(fixture.stored().is_empty());
+    assert_eq!(shell.read_with(cx, |shell, cx| shell.toast_count(cx)), 1);
 }
