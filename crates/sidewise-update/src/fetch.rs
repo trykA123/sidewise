@@ -61,4 +61,19 @@ mod tests {
     fn off_windows_the_fetch_is_unsupported() {
         assert_eq!(fetch_feed(), Err(CheckError::Unsupported));
     }
+
+    /// Reads the real GitHub feed; run by hand in the Windows VM (`-- --ignored`).
+    #[test]
+    #[ignore = "reads the live GitHub feed over the network"]
+    fn live_github_feed() -> Result<(), CheckError> {
+        let body = fetch_feed()?;
+        let releases = crate::feed::parse_feed(&body).map_err(|_| CheckError::BadFeed)?;
+        assert!(!releases.is_empty(), "the published feed lists releases");
+        let tags: Vec<String> = releases.iter().map(|(v, _)| v.to_string()).collect();
+        assert!(
+            tags.iter().any(|t| t == "0.1.0-alpha.2"),
+            "alpha.2 is published: {tags:?}"
+        );
+        Ok(())
+    }
 }
