@@ -144,9 +144,32 @@ fn rename_new_refuses_an_existing_name_and_keeps_both_files() {
     assert_eq!((read(&from), read(&to)), ("a".into(), "b".into()));
 }
 
+/// True when `dir` is on NTFS; otherwise prints that the test of `feature` is skipped and why.
+/// Junctions, WOF and custom reparse tags need NTFS; TEMP may sit on exFAT or FAT.
+#[expect(clippy::print_stderr, reason = "a skipped test prints why")]
+fn on_ntfs(dir: &Path, feature: &str) -> bool {
+    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
+    let handle = OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(dir)
+        .unwrap();
+    let name = crate::native::identity::filesystem_name(&handle).unwrap();
+    let ntfs = name.eq_ignore_ascii_case("NTFS");
+    if !ntfs {
+        eprintln!("SKIPPED {feature}: needs NTFS, the temp volume is {name}");
+    }
+    ntfs
+}
+
 #[test]
 fn a_junction_or_a_relative_path_is_refused() {
+    let error = RealDisk.meta(Path::new("relative.txt")).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidInput);
     let dir = tempfile::tempdir().unwrap();
+    if !on_ntfs(dir.path(), "junction") {
+        return;
+    }
     let (real, link) = (dir.path().join("real"), dir.path().join("link"));
     RealDisk.create_dir(&real).unwrap();
     let made = std::process::Command::new("cmd")
@@ -157,8 +180,6 @@ fn a_junction_or_a_relative_path_is_refused() {
         .unwrap();
     assert!(made.status.success(), "{made:?}");
     let error = RealDisk.meta(&link).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidInput);
-    let error = RealDisk.meta(Path::new("relative.txt")).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidInput);
 }
 
@@ -182,6 +203,9 @@ fn wof_compress(path: &Path) -> String {
 #[test]
 fn a_wof_compressed_file_reads_its_real_bytes_or_is_refused() {
     let dir = tempfile::tempdir().unwrap();
+    if !on_ntfs(dir.path(), "WOF compression") {
+        return;
+    }
     let packed = dir.path().join("packed.txt");
     let text = "sidewise ".repeat(8192);
     put(&packed, &text);
@@ -238,6 +262,9 @@ fn tag_as_placeholder(path: &Path) {
 #[test]
 fn a_file_with_a_non_link_reparse_tag_is_refused_as_a_placeholder() {
     let dir = tempfile::tempdir().unwrap();
+    if !on_ntfs(dir.path(), "a non-link reparse tag") {
+        return;
+    }
     let stub = dir.path().join("cloud.txt");
     put(&stub, "stub bytes, not the real file");
     tag_as_placeholder(&stub);

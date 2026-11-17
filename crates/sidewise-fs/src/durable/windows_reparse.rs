@@ -49,11 +49,38 @@ fn strip_ascii<'a>(units: &'a [u16], prefix: &str, ignore_case: bool) -> Option<
     same.then(|| &units[prefix.len()..])
 }
 
-/// Reads the attributes and reparse tag of an open handle and refuses a link, placeholder
-/// or offline file with `InvalidInput`. A failed query is returned, so the check fails closed.
+/// Why a file with these attributes is refused when its volume cannot report a reparse tag,
+/// or `None` for a plain file. Without the tag a reparse point cannot be told apart: refuse it.
+pub(super) fn untagged_refusal(attributes: u32) -> Option<&'static str> {
+    if attributes & REPARSE_POINT != 0 {
+        return Some("file is a reparse point whose tag the volume does not report; not supported");
+    }
+    refusal(attributes, 0)
+}
+
+/// Refuses a link, placeholder or offline file behind an open handle with `InvalidInput`.
+/// exFAT and FAT reject the tag query (error 87); there the attributes alone decide. Any
+/// other failed query is returned, so the check fails closed.
+#[cfg(windows)]
+pub(super) fn check_plain(file: &std::fs::File) -> std::io::Result<()> {
+    let why = match tag_info(file) {
+        Ok((attributes, tag)) => refusal(attributes, tag),
+        Err(error) if crate::native::identity::unsupported(&error) => {
+            untagged_refusal(basic_attributes(file)?)
+        }
+        Err(error) => return Err(error),
+    };
+    match why {
+        Some(why) => Err(super::real::refused(why)),
+        None => Ok(()),
+    }
+}
+
+/// The attributes and reparse tag of an open handle (`FileAttributeTagInfo`).
+/// Fails with the OS error, 87 on a volume without reparse support.
 #[cfg(windows)]
 #[allow(unsafe_code, reason = "FileAttributeTagInfo is a handle query")]
-pub(super) fn check_plain(file: &std::fs::File) -> std::io::Result<()> {
+fn tag_info(file: &std::fs::File) -> std::io::Result<(u32, u32)> {
     use std::mem::{MaybeUninit, size_of};
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
@@ -75,10 +102,35 @@ pub(super) fn check_plain(file: &std::fs::File) -> std::io::Result<()> {
     }
     // SAFETY: a successful query initializes FILE_ATTRIBUTE_TAG_INFO.
     let info = unsafe { info.assume_init() };
-    match refusal(info.FileAttributes, info.ReparseTag) {
-        Some(why) => Err(super::real::refused(why)),
-        None => Ok(()),
+    Ok((info.FileAttributes, info.ReparseTag))
+}
+
+/// The attributes of an open handle (`FileBasicInfo`), which every local file system answers.
+/// Fails with the OS error.
+#[cfg(windows)]
+#[allow(unsafe_code, reason = "FileBasicInfo is a handle query")]
+fn basic_attributes(file: &std::fs::File) -> std::io::Result<u32> {
+    use std::mem::{MaybeUninit, size_of};
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_BASIC_INFO, FileBasicInfo, GetFileInformationByHandleEx,
+    };
+
+    let mut info = MaybeUninit::<FILE_BASIC_INFO>::zeroed();
+    // SAFETY: the handle and the correctly sized output buffer live through the query.
+    let ok = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileBasicInfo,
+            info.as_mut_ptr().cast(),
+            size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error());
     }
+    // SAFETY: a successful query initializes FILE_BASIC_INFO.
+    Ok(unsafe { info.assume_init() }.FileAttributes)
 }
 
 #[cfg(test)]
@@ -104,6 +156,18 @@ mod tests {
             let why = refusal(0x20 | attribute, 0).unwrap_or_default();
             assert!(why.contains("offline"), "attribute {attribute:#x}: {why:?}");
         }
+    }
+
+    #[test]
+    fn without_a_tag_every_reparse_point_and_offline_file_is_refused() {
+        assert_eq!(untagged_refusal(0x20), None);
+        assert_eq!(untagged_refusal(0x80), None);
+        for attributes in [0x400, 0x420, 0x410] {
+            let why = untagged_refusal(attributes).unwrap_or_default();
+            assert!(why.contains("reparse point"), "{attributes:#x}: {why:?}");
+        }
+        let why = untagged_refusal(0x20 | 0x40_0000).unwrap_or_default();
+        assert!(why.contains("offline"), "{why:?}");
     }
 
     #[test]

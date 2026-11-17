@@ -151,7 +151,7 @@ fn legacy(file: &std::fs::File) -> io::Result<Option<FileIdentity>> {
     unsafe_code,
     reason = "file IDs are trusted only on filesystems that keep them stable"
 )]
-fn filesystem_name(file: &std::fs::File) -> io::Result<String> {
+pub(crate) fn filesystem_name(file: &std::fs::File) -> io::Result<String> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::GetVolumeInformationByHandleW;
     let mut name = [0_u16; 64];
@@ -188,7 +188,7 @@ fn stable_ids(filesystem: &str) -> bool {
 }
 
 #[cfg(windows)]
-fn unsupported(error: &io::Error) -> bool {
+pub(crate) fn unsupported(error: &io::Error) -> bool {
     use windows_sys::Win32::Foundation::{
         ERROR_INVALID_FUNCTION, ERROR_INVALID_PARAMETER, ERROR_NOT_SUPPORTED,
     };

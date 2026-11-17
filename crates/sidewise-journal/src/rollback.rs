@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use navo_core::FileStamp;
 use sidewise_fs::durable::{Disk, Meta, ReplaceError};
 
-use crate::files::{Temp, backup_path, copy_hashed, hash_file, remove_if_present, temp_path};
+use crate::files::{
+    Temp, backup_path, copy_hashed, hash_file, remove_if_present, set_time_closed, temp_path,
+};
 use crate::item::check_same;
 use crate::record::{ItemMode, JobId, Record};
 
@@ -175,8 +177,8 @@ fn settle(
     }
 }
 
-/// Copies the backup to the restore temp with the old modified time (and, over a `present`
-/// target, its mode), syncs it, then replaces the target, or renames it into place with no
+/// Copies the backup to the restore temp, syncs and closes it, then gives it the old modified
+/// time (and, over a `present` target, its mode) and syncs it again, then replaces the target, or renames it into place with no
 /// replace when the target is gone. Returns false, with the temp removed and the target left
 /// alone, when the target no longer matches `present` (NC160). Fails when the copy does not
 /// hash to `old` or a step fails.
@@ -187,15 +189,14 @@ fn restore_from(
     present: Option<&Meta>,
 ) -> io::Result<bool> {
     let (target, restore) = (places.target, places.restore.as_path());
-    let (_, hash) = copy_hashed(disk, &places.backup, restore, || {
-        if let Some(ms) = old.modified_ms {
-            disk.set_modified(restore, ms)?;
-        }
-        if present.is_some() {
-            disk.copy_mode(target, restore)?;
-        }
-        Ok(())
+    let mode_from = present.map(|_| target);
+    let (_, hash) = copy_hashed(disk, &places.backup, restore, || match mode_from {
+        Some(from) if old.modified_ms.is_none() => disk.copy_mode(from, restore),
+        _ => Ok(()),
     })?;
+    if let Some(ms) = old.modified_ms {
+        set_time_closed(disk, restore, ms, mode_from)?;
+    }
     if hash != old.hash {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,

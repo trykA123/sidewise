@@ -9,7 +9,7 @@ use sidewise_fs::durable::{Disk, Meta, ReplaceError};
 use sidewise_fs::{DriveClass, drive_class};
 
 use crate::error::{WriteError, classify};
-use crate::files::{Hashing, copy_hashed};
+use crate::files::{Hashing, copy_hashed, set_time_closed};
 
 /// What the caller last saw of a target; `None` fields are not checked.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -76,8 +76,8 @@ pub(crate) fn precheck(disk: &dyn Disk, request: &Request<'_>) -> Result<Meta, W
     Ok(meta)
 }
 
-/// NC144 step 3: fills the staged file, applies the restore time and the target's mode, syncs
-/// it, and returns its stamp. A fill error maps back to the OS error it hit, if any.
+/// NC144 step 3: fills the staged file, applies the target's mode, syncs and closes it, then
+/// sets the restore time (and syncs again), and returns its stamp. A fill error maps back to the OS error it hit, if any.
 pub(crate) fn stage(
     disk: &dyn Disk,
     staged: &Path,
@@ -95,18 +95,23 @@ pub(crate) fn stage(
             None => WriteError::Failed(reason),
         });
     }
-    if let Some(ms) = request.restore_mtime_ms {
-        disk.set_modified(staged, ms)
+    let restore = request.restore_mtime_ms;
+    if restore.is_none() {
+        disk.copy_mode(request.target, staged)
+            .map_err(io_err("copy mode"))?;
+    }
+    out.file.sync().map_err(io_err("sync staged file"))?;
+    let (size, hash) = (out.len, *out.hasher.finalize().as_bytes());
+    drop(out);
+    if let Some(ms) = restore {
+        set_time_closed(disk, staged, ms, Some(request.target))
             .map_err(io_err("set staged time"))?;
     }
-    disk.copy_mode(request.target, staged)
-        .map_err(io_err("copy mode"))?;
-    out.file.sync().map_err(io_err("sync staged file"))?;
     let meta = disk.meta(staged).map_err(io_err("read staged file"))?;
     Ok(FileStamp {
-        size: out.len,
+        size,
         modified_ms: meta.and_then(|meta| meta.modified_ms),
-        hash: *out.hasher.finalize().as_bytes(),
+        hash,
     })
 }
 

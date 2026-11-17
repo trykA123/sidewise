@@ -84,8 +84,8 @@ impl Write for Hashing {
     }
 }
 
-/// Copies `from` into a new file at `to`, runs `finish` (set times or mode), syncs the copy,
-/// and returns its length and blake3 hash. Fails when `to` exists, `from` is a symlink or
+/// Copies `from` into a new file at `to`, runs `finish` (set the mode), syncs and closes the
+/// copy, and returns its length and blake3 hash. Fails when `to` exists, `from` is a symlink or
 /// special file, or any step fails.
 pub(crate) fn copy_hashed(
     disk: &dyn Disk,
@@ -99,6 +99,24 @@ pub(crate) fn copy_hashed(
     finish()?;
     out.file.sync()?;
     Ok((out.len, *out.hasher.finalize().as_bytes()))
+}
+
+/// Gives the closed file at `path` the modified time `ms`, copies the mode of `mode_from`
+/// (if any), and syncs both through a new append handle opened before the mode change, so a
+/// read-only mode cannot block it. Fails when a step fails.
+pub(crate) fn set_time_closed(
+    disk: &dyn Disk,
+    path: &Path,
+    ms: i64,
+    mode_from: Option<&Path>,
+) -> io::Result<()> {
+    // exFAT stamps the write time when a handle that wrote flushes or closes (V1 BUG-3).
+    disk.set_modified(path, ms)?;
+    let mut file = disk.open_append(path)?;
+    if let Some(from) = mode_from {
+        disk.copy_mode(from, path)?;
+    }
+    file.sync()
 }
 
 /// The blake3 hash of the file at `path`; `None` when it is missing.
