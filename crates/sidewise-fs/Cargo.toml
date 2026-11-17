@@ -7,6 +7,10 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+[features]
+# `FaultDisk`, the numbered fault and crash layer for data-safety tests.
+test-support = []
+
 [dependencies]
 navo-core = { package = "sidewise-core", path = "../sidewise-core" }
 
