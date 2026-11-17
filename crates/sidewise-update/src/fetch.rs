@@ -20,8 +20,18 @@ pub const TIMEOUTS_MS: [i32; 4] = [5_000, 5_000, 5_000, 10_000];
 /// The largest body chunk read at a time, in bytes.
 pub const CHUNK_BYTES: usize = 64 * 1024;
 
-/// Fetches the release feed body.
-/// Windows: WinHTTP (U5); elsewhere `Unsupported`.
+#[cfg(windows)]
+#[path = "winhttp.rs"]
+mod winhttp;
+
+/// Fetches the release feed body through WinHTTP; fails with `Network`, `Status` or `TooLarge`.
+#[cfg(windows)]
+pub fn fetch_feed() -> Result<Vec<u8>, CheckError> {
+    winhttp::get(HOST, PATH)
+}
+
+/// Fetches the release feed body; off Windows there is no transport, so always `Unsupported`.
+#[cfg(not(windows))]
 pub fn fetch_feed() -> Result<Vec<u8>, CheckError> {
     Err(CheckError::Unsupported)
 }
