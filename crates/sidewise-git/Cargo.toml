@@ -14,7 +14,7 @@ test-support = ["dep:tempfile"]
 sidewise-core = { path = "../sidewise-core" }
 sidewise-engine = { path = "../sidewise-engine" }
 tracing = "0.1.44"
-gix = { version = "=0.90.0", default-features = false, features = ["sha1", "revision"] }
+gix = { version = "=0.90.0", default-features = false, features = ["sha1", "revision", "parallel"] }
 tempfile = { version = "3.27.0", optional = true }
 
 [dev-dependencies]

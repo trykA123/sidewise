@@ -4,7 +4,7 @@
 use std::io::{Cursor, Read};
 use std::ops::ControlFlow;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use gix::error::Class;
@@ -13,7 +13,7 @@ use sidewise_engine::model::{
     CancelToken, EntryKind, ObjectId, ReadHint, Reason, RelPath, SideEntry, SideSource, Stamp,
 };
 
-use crate::index::{Child, TreeIndex};
+use crate::index::{Child, TreeIndex, lookup};
 use crate::location::Form;
 use crate::repo::{Commit, GitProblem, MAX_BLOB, Repo};
 
@@ -21,12 +21,10 @@ use crate::repo::{Commit, GitProblem, MAX_BLOB, Repo};
 type Opener = fn(&Path) -> Result<Repo, GitProblem>;
 
 /// One revision of a repository as a compare side. The commit is pinned at open and moves
-/// only on `refresh`; the tree index is built on first use and shared by every caller.
-/// gix's `Repo` is not `Send` without its `parallel` feature, so each call reopens it (as
-/// NV's `GixGit` does) instead of holding one.
+/// only on `refresh`; the tree index is built on the first `list` and shared by every caller.
+/// It holds one thread-safe repository handle; each call takes a thread-local view of it.
 pub struct GitTreeSide {
-    path: PathBuf,
-    opener: Opener,
+    repo: Repo,
     rev: String,
     form: Form,
     provider: ProviderId,
@@ -61,8 +59,7 @@ impl GitTreeSide {
         let repo = opener(path).map_err(GitProblem::reason)?;
         let commit = repo.resolve(rev).map_err(GitProblem::reason)?;
         Ok(GitTreeSide {
-            path: path.to_path_buf(),
-            opener,
+            repo,
             rev: rev.to_owned(),
             form,
             provider,
@@ -91,11 +88,6 @@ impl GitTreeSide {
         self.form
     }
 
-    /// Opens the repository again on this thread. Fails as `open` does.
-    fn repo(&self) -> Result<Repo, Reason> {
-        (self.opener)(&self.path).map_err(GitProblem::reason)
-    }
-
     /// The tree index of the pinned commit, built under the lock on first use so concurrent
     /// callers share one build. Fails as `TreeIndex::build`; a failed build is retried later.
     fn index(&self, cancel: &CancelToken) -> Result<Arc<TreeIndex>, Reason> {
@@ -108,17 +100,21 @@ impl GitTreeSide {
         #[cfg(test)]
         self.builds
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let index = Arc::new(TreeIndex::build(&self.repo()?, commit, cancel)?);
+        let index = Arc::new(TreeIndex::build(&self.repo, commit, cancel)?);
         *slot = Some(Arc::clone(&index));
         Ok(index)
     }
 
-    /// The index entry at `rel`. Fails with `NotFound` for an unknown or non-text path, or
-    /// with the index build's reason.
+    /// The entry at `rel`: from the index when `list` built one, else looked up alone, since
+    /// a build here could not be cancelled. Fails with `NotFound` for an unknown or non-text
+    /// path (a lossy name is found only through the index), or as `lookup`.
     fn child(&self, rel: &RelPath) -> Result<Child, Reason> {
-        let index = self.index(&CancelToken::new())?;
         let text = rel.as_path().as_str().ok_or(Reason::NotFound)?;
-        index.child(text).cloned().ok_or(Reason::NotFound)
+        let built = lock(&self.index).clone();
+        match built {
+            Some(index) => index.child(text).cloned().ok_or(Reason::NotFound),
+            None => lookup(&self.repo, self.commit().tree, text)?.ok_or(Reason::NotFound),
+        }
     }
 
     /// The object id the index holds for `rel`, for tests that damage the object store.
@@ -205,7 +201,7 @@ impl SideSource for GitTreeSide {
         if child.kind != EntryKind::File || !child.readable || child.size > MAX_BLOB {
             return Err(Reason::Unsupported);
         }
-        let data = read_blob(&self.repo()?, child.id)?;
+        let data = read_blob(&self.repo, child.id)?;
         Ok(Box::new(Cursor::new(data)))
     }
 
@@ -258,9 +254,7 @@ impl SideSource for GitTreeSide {
     /// Resolves the revision again; a new commit drops the index. A failed resolve (such as
     /// a deleted branch) keeps the pinned commit and its listing.
     fn refresh(&self) {
-        let resolved = self
-            .repo()
-            .and_then(|repo| repo.resolve(&self.rev).map_err(GitProblem::reason));
+        let resolved = self.repo.resolve(&self.rev).map_err(GitProblem::reason);
         let fresh = match resolved {
             Ok(commit) => commit,
             Err(reason) => {

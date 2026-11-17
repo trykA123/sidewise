@@ -19,6 +19,9 @@ pub const MAX_ENTRIES: usize = 1_000_000;
 pub const MAX_DEPTH: usize = 128;
 /// Most bytes of one entry's full path (16 KiB).
 pub const MAX_PATH_BYTES: usize = 16 * 1024;
+/// Most bytes of folder keys and entry names one index holds (256 MiB); the per-entry caps
+/// alone allow about 16 GiB of keys.
+pub const MAX_INDEX_BYTES: usize = 256 * 1024 * 1024;
 /// How many entries pass between two looks at the cancel token.
 const CANCEL_EVERY: usize = 1024;
 
@@ -45,15 +48,10 @@ pub struct TreeIndex {
 
 impl TreeIndex {
     /// Indexes the whole tree of `commit` in one traversal. Fails with `Stopped` on cancel,
-    /// `Unsupported` past a cap or on a hostile name, `MissingBlob` for an absent object and
-    /// `ReadError` for damaged data or a parser panic.
+    /// `Unsupported` past a cap, on a hostile name or on two sibling names that look the same,
+    /// `MissingBlob` for an absent object and `ReadError` for damaged data or a parser panic.
     pub fn build(repo: &Repo, commit: Commit, cancel: &CancelToken) -> Result<TreeIndex, Reason> {
-        let local = repo.local();
-        let built = catch_unwind(AssertUnwindSafe(|| {
-            collect_tree(&local, commit.tree, cancel)
-        }));
-        let folders = built.map_err(|_| Reason::ReadError)??;
-        Ok(TreeIndex { folders, commit })
+        build_within(repo, commit, cancel, MAX_INDEX_BYTES)
     }
 
     /// The children of `folder` (`""` is the root), or `None` when it is not a folder.
@@ -74,22 +72,98 @@ impl TreeIndex {
     }
 }
 
+/// As `TreeIndex::build`, with at most `budget` bytes of folder keys and names.
+fn build_within(
+    repo: &Repo,
+    commit: Commit,
+    cancel: &CancelToken,
+    budget: usize,
+) -> Result<TreeIndex, Reason> {
+    let local = repo.local();
+    let built = catch_unwind(AssertUnwindSafe(|| {
+        collect_tree(&local, commit.tree, cancel, budget)
+    }));
+    let folders = built.map_err(|_| Reason::ReadError)??;
+    Ok(TreeIndex { folders, commit })
+}
+
 /// Walks the tree `tree` depth-first and returns its folders. Errors as `TreeIndex::build`.
 fn collect_tree(
     repo: &gix::Repository,
     tree: gix::ObjectId,
     cancel: &CancelToken,
+    budget: usize,
 ) -> Result<HashMap<String, Vec<Child>>, Reason> {
     let tree = repo
         .find_tree(tree)
         .map_err(|error| object_problem(&error))?;
-    let mut collect = Collect::new(repo, cancel);
+    let mut collect = Collect::new(repo, cancel, budget);
     let walked = tree.traverse().depthfirst(&mut collect);
     if let Some(reason) = collect.stop {
         return Err(reason);
     }
     walked.map_err(|_| Reason::ReadError)?;
-    Ok(collect.finish())
+    collect.finish()
+}
+
+/// Finds the one entry at `rel` (a `/`-joined UTF-8 path) in `tree` without an index: it
+/// reads one tree per component, so it needs no cancel. `None` when absent. Fails with
+/// `Unsupported` for a refused name or a path past a cap, otherwise as `TreeIndex::build`.
+pub fn lookup(repo: &Repo, tree: gix::ObjectId, rel: &str) -> Result<Option<Child>, Reason> {
+    if rel.is_empty() {
+        return Ok(None);
+    }
+    let parts = rel.split('/').count();
+    let plain = rel.split('/').all(|part| plain_name(part.into()));
+    if !plain || parts > MAX_DEPTH || rel.len() > MAX_PATH_BYTES {
+        return Err(Reason::Unsupported);
+    }
+    let local = repo.local();
+    let found = catch_unwind(AssertUnwindSafe(|| {
+        let tree = local
+            .find_tree(tree)
+            .map_err(|error| object_problem(&error))?;
+        let entry = tree
+            .lookup_entry(rel.split('/'))
+            .map_err(|error| object_problem(&error))?;
+        let Some(entry) = entry else {
+            return Ok(None);
+        };
+        let id = entry.object_id();
+        let (kind, size) = kind_and_size(&local, entry.mode(), &id)?;
+        Ok(Some(Child {
+            name: entry.filename().to_str_lossy().into_owned(),
+            kind,
+            size,
+            id,
+            readable: true,
+        }))
+    }));
+    found.map_err(|_| Reason::ReadError)?
+}
+
+/// The engine kind of a tree entry with `mode`, and its size in bytes from the object header
+/// (0 for folders and submodules). Fails with `MissingBlob` or `ReadError`.
+fn kind_and_size(
+    repo: &gix::Repository,
+    mode: gix::objs::tree::EntryMode,
+    id: &gix::oid,
+) -> Result<(EntryKind, u64), Reason> {
+    Ok(match mode.kind() {
+        GitKind::Tree => (EntryKind::Folder, 0),
+        GitKind::Blob | GitKind::BlobExecutable => (EntryKind::File, header_size(repo, id)?),
+        GitKind::Link => (EntryKind::Link, header_size(repo, id)?),
+        GitKind::Commit => (EntryKind::Submodule, 0),
+    })
+}
+
+/// The stored size of object `id` from its header, in bytes, without reading it.
+fn header_size(repo: &gix::Repository, id: &gix::oid) -> Result<u64, Reason> {
+    match repo.try_find_header(id) {
+        Ok(Some(header)) => Ok(header.size()),
+        Ok(None) => Err(Reason::MissingBlob),
+        Err(_) => Err(Reason::ReadError),
+    }
 }
 
 /// Maps an object lookup error: absence is `MissingBlob`, anything else `ReadError`.
@@ -118,12 +192,15 @@ struct Collect<'a> {
     open: Vec<Child>,
     folders: HashMap<String, Vec<Child>>,
     records: usize,
+    /// Bytes of folder keys and names stored so far, and the most allowed.
+    used: usize,
+    budget: usize,
     stop: Option<Reason>,
 }
 
 impl<'a> Collect<'a> {
     /// A delegate positioned at the root folder.
-    fn new(repo: &'a gix::Repository, cancel: &'a CancelToken) -> Self {
+    fn new(repo: &'a gix::Repository, cancel: &'a CancelToken, budget: usize) -> Self {
         let root = Folder {
             key: String::new(),
             depth: 0,
@@ -138,6 +215,8 @@ impl<'a> Collect<'a> {
             open: Vec::new(),
             folders: HashMap::new(),
             records: 0,
+            used: 0,
+            budget,
             stop: None,
         }
     }
@@ -159,14 +238,19 @@ impl<'a> Collect<'a> {
         self.folders.entry(done.key).or_default().extend(children);
     }
 
-    /// Flushes the last folder, sorts every folder by name bytes and returns them.
-    fn finish(mut self) -> HashMap<String, Vec<Child>> {
+    /// Flushes the last folder, sorts every folder by name bytes and returns them. Fails with
+    /// `Unsupported` when two siblings share a shown name (lossy non-UTF-8 names can), since
+    /// their rows, ids and folders would merge.
+    fn finish(mut self) -> Result<HashMap<String, Vec<Child>>, Reason> {
         self.path.clear();
         self.enter_folder();
         for children in self.folders.values_mut() {
             children.sort_by(|left, right| left.name.cmp(&right.name));
+            if children.windows(2).any(|pair| pair[0].name == pair[1].name) {
+                return Err(Reason::Unsupported);
+            }
         }
-        self.folders
+        Ok(self.folders)
     }
 
     /// Stores the entry or records why the traversal must stop, and says whether to go on.
@@ -190,33 +274,24 @@ impl<'a> Collect<'a> {
         if self.records > MAX_ENTRIES || deep || !plain_name(entry.filename) {
             return Err(Reason::Unsupported);
         }
-        let (kind, size) = match entry.mode.kind() {
-            GitKind::Tree => (EntryKind::Folder, 0),
-            GitKind::Blob | GitKind::BlobExecutable => (EntryKind::File, self.size(entry.oid)?),
-            GitKind::Link => (EntryKind::Link, self.size(entry.oid)?),
-            GitKind::Commit => (EntryKind::Submodule, 0),
-        };
-        if kind == EntryKind::Folder {
-            let key = self.path.to_str_lossy().into_owned();
+        let (kind, size) = kind_and_size(self.repo, entry.mode, entry.oid)?;
+        let name = entry.filename.to_str_lossy().into_owned();
+        let key = (kind == EntryKind::Folder).then(|| self.path.to_str_lossy().into_owned());
+        self.used += name.len() + key.as_ref().map_or(0, String::len);
+        if self.used > self.budget {
+            return Err(Reason::Unsupported);
+        }
+        if let Some(key) = key {
             self.folders.entry(key).or_default();
         }
         self.open.push(Child {
-            name: entry.filename.to_str_lossy().into_owned(),
+            name,
             kind,
             size,
             id: entry.oid.to_owned(),
             readable: self.folder.readable && entry.filename.to_str().is_ok(),
         });
         Ok(())
-    }
-
-    /// The stored size of object `id` from its header, in bytes, without reading it.
-    fn size(&self, id: &gix::oid) -> Result<u64, Reason> {
-        match self.repo.try_find_header(id) {
-            Ok(Some(header)) => Ok(header.size()),
-            Ok(None) => Err(Reason::MissingBlob),
-            Err(_) => Err(Reason::ReadError),
-        }
     }
 
     /// Appends `name` to the current path, as `Recorder` does.

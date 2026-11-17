@@ -195,3 +195,90 @@ fn a_non_utf8_name_is_listed_lossy_and_unreadable() {
         "a path through a non-UTF-8 folder cannot be read"
     );
 }
+
+/// A commit whose root tree is written raw with one entry `name`, which `edit_tree` refuses.
+fn commit_raw_entry(fixture: &Fixture, name: &[u8]) -> Commit {
+    let id = blob(fixture, b"raw");
+    let repo = gix::open_opts(fixture.path(), gix::open::Options::isolated()).expect("open");
+    let tree = gix::objs::Tree {
+        entries: vec![gix::objs::tree::Entry {
+            mode: GitKind::Blob.into(),
+            filename: name.into(),
+            oid: id,
+        }],
+    };
+    let tree = repo.write_object(&tree).expect("write raw tree").detach();
+    let signature = gix::actor::SignatureRef {
+        name: "admin".into(),
+        email: "admin@example.invalid".into(),
+        time: "0 +0000",
+    };
+    let _ = repo
+        .commit_as(
+            signature,
+            signature,
+            "refs/heads/main",
+            "raw",
+            tree,
+            None::<gix::ObjectId>,
+        )
+        .expect("write commit");
+    open(fixture).resolve("main").expect("resolve main")
+}
+
+#[test]
+fn a_dot_dot_or_slash_name_in_a_raw_tree_is_unsupported() {
+    for name in [&b".."[..], b"a/b", b"."] {
+        let fixture = Fixture::new();
+        let _ = commit_raw_entry(&fixture, name);
+        assert_eq!(
+            build_main(&fixture).err(),
+            Some(Reason::Unsupported),
+            "{:?} must be refused",
+            gix::bstr::BStr::new(name)
+        );
+    }
+}
+
+#[test]
+fn two_sibling_names_equal_after_the_lossy_conversion_are_unsupported() {
+    let fixture = Fixture::new();
+    let one = blob(&fixture, b"one");
+    let two = blob(&fixture, b"two");
+    let _ = commit_entries(
+        &fixture,
+        &[
+            (&b"a\xff"[..], GitKind::Blob, one),
+            (&b"a\xfe"[..], GitKind::Blob, two),
+        ],
+    );
+    assert_eq!(build_main(&fixture).err(), Some(Reason::Unsupported));
+    let folders = Fixture::new();
+    let one = blob(&folders, b"one");
+    let _ = commit_entries(
+        &folders,
+        &[
+            (&b"p\xff/x"[..], GitKind::Blob, one),
+            (&b"p\xfe/y"[..], GitKind::Blob, one),
+        ],
+    );
+    assert_eq!(build_main(&folders).err(), Some(Reason::Unsupported));
+}
+
+#[test]
+fn the_byte_budget_counts_folder_keys_and_names() {
+    let fixture = Fixture::new();
+    let id = blob(&fixture, b"x");
+    let folder = "d".repeat(40);
+    let _ = commit_entries(
+        &fixture,
+        &[(format!("{folder}/f").as_bytes(), GitKind::Blob, id)],
+    );
+    let repo = open(&fixture);
+    let commit = repo.resolve("main").expect("resolve main");
+    // Names cost 41 bytes and the folder key 40: 60 fits the names only.
+    let over = build_within(&repo, commit.clone(), &CancelToken::new(), 60);
+    assert_eq!(over.err(), Some(Reason::Unsupported));
+    let exact = build_within(&repo, commit, &CancelToken::new(), 81);
+    assert!(exact.is_ok(), "81 bytes hold every key and name");
+}

@@ -57,7 +57,7 @@ pub struct Commit {
     pub short: String,
 }
 
-/// An open repository, shared between threads.
+/// An open repository, shared between threads (gix's `parallel` feature makes it `Send + Sync`).
 #[derive(Clone)]
 pub struct Repo {
     shared: gix::ThreadSafeRepository,
@@ -79,10 +79,12 @@ impl Repo {
     }
 
     /// Opens `path` without the owner check (reads run no program), objects capped at
-    /// `MAX_BLOB`, and no config source that needs the `git` program to locate it.
+    /// `MAX_BLOB`, no config source that needs the `git` program to locate it, and no
+    /// `include`/`includeIf` files (a hostile one can name an SMB share).
     fn open_with(path: &Path, mut permissions: gix::open::Permissions) -> Result<Repo, GitProblem> {
         // On Windows, gix finds the system config by running `git config --show-origin`.
         permissions.config.system = false;
+        permissions.config.includes = false;
         permissions.config.git_binary = false;
         permissions.attributes.system = false;
         permissions.attributes.git_binary = false;
@@ -325,6 +327,29 @@ mod tests {
             !config.system,
             "on Windows the system config path needs `git`"
         );
+    }
+
+    #[test]
+    fn an_include_in_the_repository_config_is_not_followed() {
+        let (fixture, _, _) = two_commits();
+        let included = fixture.path().join("included.cfg");
+        std::fs::write(&included, "[sidewise]\n\tprobe = yes\n").expect("write include");
+        let config = fixture.path().join(".git/config");
+        let mut text = std::fs::read_to_string(&config).expect("read config");
+        let target = included.display().to_string().replace('\\', "/");
+        text.push_str(&format!(
+            "[include]\n\tpath = {target}\n[includeIf \"onbranch:main\"]\n\tpath = {target}\n"
+        ));
+        std::fs::write(&config, text).expect("write config");
+        let repo = Repo::open(fixture.path()).expect("open");
+        let value = repo.local().config_snapshot().string("sidewise.probe");
+        assert_eq!(value, None, "an include can name an SMB share");
+    }
+
+    #[test]
+    fn one_repository_handle_is_shared_between_threads() {
+        fn shared<T: Send + Sync>() {}
+        shared::<Repo>();
     }
 
     #[test]

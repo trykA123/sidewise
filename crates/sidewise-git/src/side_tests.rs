@@ -275,3 +275,27 @@ fn a_missing_revision_or_repository_does_not_open() {
     let none = GitTreeSide::open_isolated(empty.path(), "main", Form::Stored);
     assert_eq!(none.err(), Some(Reason::NotFound));
 }
+
+#[test]
+fn reads_before_any_listing_look_up_one_path_and_build_no_index() {
+    let fixture = two_branches();
+    let side = open_side(&fixture, "main");
+    assert_eq!(read_all(&side, "src/lib.rs"), Ok(b"one\n".to_vec()));
+    assert_eq!(side.stamp(&rel("a.txt")).map(|stamp| stamp.size), Ok(6));
+    assert!(side.object_id(&rel("a.txt")).is_some());
+    assert!(
+        side.object_id(&rel("src")).is_none(),
+        "a folder has no blob id"
+    );
+    assert_eq!(side.stamp(&rel("nope")).err(), Some(Reason::NotFound));
+    assert_eq!(side.stamp(&rel("a.txt/x")).err(), Some(Reason::NotFound));
+    assert_eq!(
+        side.open(&rel("src"), ReadHint::Buffered).err(),
+        Some(Reason::Unsupported)
+    );
+    assert_eq!(side.builds.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(
+        side.stamp(&rel("../a.txt")).err(),
+        Some(Reason::Unsupported)
+    );
+}
