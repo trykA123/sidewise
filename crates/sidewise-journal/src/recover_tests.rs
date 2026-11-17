@@ -17,7 +17,7 @@ use crate::{Expect, ItemMode, JobId, JobKind, Journal, Record, Recovered, encode
 
 /// Writes `NEW` over the first `count` targets in one job, then loses power with every change
 /// kept, so the job stays open and its owner is dead.
-fn crashed_open_job(fixture: &Fixture, count: usize) {
+pub(crate) fn crashed_open_job(fixture: &Fixture, count: usize) {
     let disk = Arc::new(FaultDisk::new(RealDisk, Plan::Pass));
     let journal = Journal::open_raw(&fixture.journal_dir(), disk.clone()).unwrap();
     let mut job = journal.begin(JobKind::CopyMany, "Copy", None).unwrap();

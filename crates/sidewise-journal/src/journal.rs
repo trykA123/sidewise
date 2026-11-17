@@ -14,7 +14,7 @@ use sidewise_fs::native::identity;
 use crate::error::{JournalError, journal_io};
 use crate::job::Job;
 use crate::record::{JobId, JobKind, Record};
-use crate::recover::{Recovered, recover};
+use crate::recover::{Recovered, recover_with};
 
 /// The per-process job counter, the `seq` of every job id (NC143).
 static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -67,7 +67,20 @@ impl Journal {
     /// Fails when the journal cannot open or its folders cannot be listed (writes stay off).
     pub fn open(dir: &Path, disk: Arc<dyn Disk>) -> Result<(Self, Recovered), JournalError> {
         let journal = Self::open_raw(dir, disk)?;
-        let recovered = recover(&journal.inner)?;
+        let recovered = recover_with(&journal.inner, || {})?;
+        Ok((journal, recovered))
+    }
+
+    /// `open` with `between` run after recovery lists the jobs and before it claims any owner,
+    /// so a test can let another process commit there.
+    #[cfg(test)]
+    pub(crate) fn open_with(
+        dir: &Path,
+        disk: Arc<dyn Disk>,
+        between: impl FnOnce(),
+    ) -> Result<(Self, Recovered), JournalError> {
+        let journal = Self::open_raw(dir, disk)?;
+        let recovered = recover_with(&journal.inner, between)?;
         Ok((journal, recovered))
     }
 

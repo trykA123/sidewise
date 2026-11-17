@@ -23,6 +23,8 @@ mod job_tests;
 #[cfg(test)]
 mod recover_crash_tests;
 #[cfg(test)]
+mod recover_race_tests;
+#[cfg(test)]
 mod recover_tests;
 #[cfg(test)]
 mod rollback_crash_tests;

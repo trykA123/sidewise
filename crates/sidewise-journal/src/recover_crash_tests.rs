@@ -1,5 +1,5 @@
-//! Crash loops of recovery at open (J3): a power loss at every op of a two-item job, then
-//! `open`; a power loss at every op of that recovery, then `open` again. Each loop keeps
+//! Crash loops of recovery at open (J3): a power loss at every op of a two-item job (committed
+//! or aborted), then `open`; a power loss at every op of that recovery, then `open` again. Each loop keeps
 //! several subsets of the unsynced changes and tails (`crash_with`). After the last `open`
 //! every target is old with its old time, or new under a durable `Commit` (NC162).
 // Linux only: `RealDisk` is built on Linux until D3.
@@ -106,22 +106,25 @@ fn recover_after_a_crash_at_every_op_of_an_aborted_job() {
     job_crash_loop(false).unwrap();
 }
 
-/// Crashes the job at op `n` (pattern `first`), then crashes recovery at every op with every
-/// pattern, then recovers again with `RealDisk`. Returns the op count of a clean recovery.
-fn recovery_crash_loop_at(n: u64, first: Pattern) -> Result<u64, String> {
-    let probe = crashed_job(n, first, true);
+/// Crashes the job (committed when `commit`, else aborted) at op `n` (pattern `first`), then
+/// crashes recovery at every op with every pattern, then recovers again with `RealDisk`.
+/// Returns the op count of a clean recovery.
+fn recovery_crash_loop_at(n: u64, first: Pattern, commit: bool) -> Result<u64, String> {
+    let probe = crashed_job(n, first, commit);
     let counter = Arc::new(FaultDisk::new(RealDisk, Plan::Pass));
     let _ = Journal::open(&probe.journal_dir(), counter.clone());
     let ops = counter.ops();
     for m in 1..=ops + 1 {
         for second in PATTERNS {
-            let fixture = crashed_job(n, first, true);
+            let fixture = crashed_job(n, first, commit);
             let disk = Arc::new(FaultDisk::new(RealDisk, Plan::CrashAt(m)));
             let _ = Journal::open(&fixture.journal_dir(), disk.clone());
             disk.crash_with(second.1, second.2).unwrap();
             let case = format!(
-                "job crash at op {n}, {}; recovery crash at op {m} of {ops}, {}",
-                first.0, second.0
+                "{} job crash at op {n}, {}; recovery crash at op {m} of {ops}, {}",
+                if commit { "committed" } else { "aborted" },
+                first.0,
+                second.0
             );
             check_open(&fixture, &case)?;
         }
@@ -129,14 +132,26 @@ fn recovery_crash_loop_at(n: u64, first: Pattern) -> Result<u64, String> {
     Ok(ops)
 }
 
-#[test]
-fn recover_after_a_crash_at_every_op_of_recovery_itself() {
+/// Runs `recovery_crash_loop_at` from every job crash; returns the most recovery ops seen.
+fn recovery_crash_loop(commit: bool) -> Result<u64, String> {
     let mut most = 0;
-    for n in 1..=job_ops(true) + 1 {
+    for n in 1..=job_ops(commit) + 1 {
         for first in PATTERNS {
-            most = most.max(recovery_crash_loop_at(n, first).unwrap());
+            most = most.max(recovery_crash_loop_at(n, first, commit)?);
         }
     }
+    Ok(most)
+}
+
+#[test]
+fn recover_after_a_crash_at_every_op_of_recovery_itself() {
+    let most = recovery_crash_loop(true).unwrap();
+    assert!(most > 25, "a recovery rolls back two items ({most} ops)");
+}
+
+#[test]
+fn recover_after_a_crash_at_every_op_of_recovery_of_an_aborted_job() {
+    let most = recovery_crash_loop(false).unwrap();
     assert!(most > 25, "a recovery rolls back two items ({most} ops)");
 }
 

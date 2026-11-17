@@ -55,6 +55,15 @@ struct Job {
     leftover: bool,
 }
 
+/// A job folder as the listing saw it: only where it is. Its log is read again after the
+/// owner is claimed, since a live owner may still commit or abort it before the claim.
+struct Listed {
+    id: JobId,
+    dir: PathBuf,
+    /// The log was complete at the listing; a complete job stays complete.
+    complete: bool,
+}
+
 impl Job {
     /// True when the log holds `Commit` or `Aborted`: the job is never written again.
     fn complete(&self) -> bool {
@@ -65,12 +74,16 @@ impl Job {
 }
 
 /// Recovers the journal under `inner.root`: reads every job, then, owner by owner, claims the
-/// owner's lock and settles its jobs. Live owners and this process are skipped. Fails only
-/// when a folder cannot be listed; a job that fails is counted and left for the next start.
-pub(crate) fn recover(inner: &Inner) -> Result<Recovered, JournalError> {
+/// owner's lock and settles its jobs. Live owners and this process are skipped. `between` runs
+/// after the listing and before the first claim (a test hook). Fails only when a folder
+/// cannot be listed; a job that fails is counted and left for the next start.
+pub(crate) fn recover_with(
+    inner: &Inner,
+    between: impl FnOnce(),
+) -> Result<Recovered, JournalError> {
     let disk = inner.disk.as_ref();
     let mut recovered = Recovered::default();
-    let mut owners: BTreeMap<String, Vec<Job>> = BTreeMap::new();
+    let mut owners: BTreeMap<String, Vec<Listed>> = BTreeMap::new();
     let names = disk
         .list(&inner.root)
         .map_err(|error| journal_io("list journal", &error))?;
@@ -83,7 +96,11 @@ pub(crate) fn recover(inner: &Inner) -> Result<Recovered, JournalError> {
         match read_job(disk, dir, id) {
             Ok(Found::Empty) => {}
             Ok(Found::Damaged) => recovered.damaged += 1,
-            Ok(Found::Job(owner, job)) => owners.entry(owner).or_default().push(job),
+            Ok(Found::Job(owner, job)) => owners.entry(owner).or_default().push(Listed {
+                complete: job.complete(),
+                id: job.id,
+                dir: job.dir,
+            }),
             Err(_) => recovered.failed += 1,
         }
     }
@@ -97,6 +114,7 @@ pub(crate) fn recover(inner: &Inner) -> Result<Recovered, JournalError> {
         }
     }
     owners.remove(&inner.owner);
+    between();
     for (owner, jobs) in &owners {
         let lock = owners_dir.join(format!("{owner}.lock"));
         settle_owner(disk, &lock, jobs, &mut recovered);
@@ -155,22 +173,38 @@ fn is_owner(stem: &str) -> bool {
         .is_some_and(|(pid, start)| digits(pid) && digits(start))
 }
 
-/// Claims the owner lock file `lock` and settles the owner's jobs; when every job ends
-/// complete, deletes the lock file. Skips a live owner. A lock that cannot be checked fails closed: its open jobs count
-/// as failed and nothing is touched.
-fn settle_owner(disk: &dyn Disk, lock: &Path, jobs: &[Job], recovered: &mut Recovered) {
+/// Claims the owner lock file `lock` (`<owner>.lock`), then reads each listed job again and
+/// settles it; when every job ends complete, deletes the lock file. Skips a live owner. A lock
+/// that cannot be checked fails closed: the jobs open at the listing count as failed and
+/// nothing is touched.
+fn settle_owner(disk: &dyn Disk, lock: &Path, jobs: &[Listed], recovered: &mut Recovered) {
+    let owner = lock.file_stem().and_then(|stem| stem.to_str());
     let _held = match claim(lock) {
         Ok(Some(lock)) => lock,
         Ok(None) => return,
         Err(_) => {
-            let open = jobs.iter().filter(|job| !job.complete()).count();
+            let open = jobs.iter().filter(|job| !job.complete).count();
             recovered.failed += u32::try_from(open).unwrap_or(u32::MAX);
             return;
         }
     };
     let mut settled = true;
-    for job in jobs {
-        settled &= settle_job(disk, job, recovered);
+    for listed in jobs {
+        // Read only now, under the claim: the copy read at the listing may be stale.
+        settled &= match read_job(disk, listed.dir.clone(), listed.id.clone()) {
+            Ok(Found::Job(found, job)) if owner == Some(found.as_str()) => {
+                settle_job(disk, &job, recovered)
+            }
+            Ok(Found::Job(..) | Found::Damaged) => {
+                recovered.damaged += 1;
+                true
+            }
+            Ok(Found::Empty) => true,
+            Err(_) => {
+                recovered.failed += 1;
+                false
+            }
+        };
     }
     // While we hold the lock no one else deletes or recreates the name. A failed delete only
     // leaves a lock file of a dead owner: the next start tries again.

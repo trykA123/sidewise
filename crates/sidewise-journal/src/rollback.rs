@@ -5,9 +5,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use navo_core::FileStamp;
-use sidewise_fs::durable::{Disk, ReplaceError};
+use sidewise_fs::durable::{Disk, Meta, ReplaceError};
 
 use crate::files::{Temp, backup_path, copy_hashed, hash_file, remove_if_present, temp_path};
+use crate::item::check_same;
 use crate::record::{ItemMode, JobId, Record};
 
 /// What a rollback did, counted in items, and whether the job's log was closed.
@@ -147,11 +148,19 @@ fn settle(
         ));
     }
     let is_new = |hash: [u8; 32]| item.new.is_some_and(|new| new.hash == hash);
+    // Read before the hash, so a save during the hash or the copy shows at the re-check.
+    let seen = disk.meta(places.target)?;
     match hash_file(disk, places.target)? {
         Some(hash) if hash == old.hash => Ok(End::Clean),
         Some(hash) if is_new(hash) => {
-            restore_from(disk, old, places, true)?;
-            Ok(End::Restored)
+            let seen = seen.filter(|meta| meta.identity.is_some()).ok_or_else(|| {
+                io::Error::other("target changed while hashed, or its identity is unknown")
+            })?;
+            if restore_from(disk, old, places, Some(&seen))? {
+                Ok(End::Restored)
+            } else {
+                Ok(End::Kept)
+            }
         }
         Some(_) => Ok(End::Kept),
         None if hash_file(disk, &places.old_temp)? == Some(old.hash) => {
@@ -160,7 +169,7 @@ fn settle(
             Ok(End::Restored)
         }
         None => {
-            restore_from(disk, old, places, false)?;
+            restore_from(disk, old, places, None)?;
             Ok(End::Restored)
         }
     }
@@ -168,19 +177,21 @@ fn settle(
 
 /// Copies the backup to the restore temp with the old modified time (and, over a `present`
 /// target, its mode), syncs it, then replaces the target, or renames it into place with no
-/// replace when the target is gone. Fails when the copy does not hash to `old`.
+/// replace when the target is gone. Returns false, with the temp removed and the target left
+/// alone, when the target no longer matches `present` (NC160). Fails when the copy does not
+/// hash to `old` or a step fails.
 fn restore_from(
     disk: &dyn Disk,
     old: &FileStamp,
     places: &Places<'_>,
-    present: bool,
-) -> io::Result<()> {
+    present: Option<&Meta>,
+) -> io::Result<bool> {
     let (target, restore) = (places.target, places.restore.as_path());
     let (_, hash) = copy_hashed(disk, &places.backup, restore, || {
         if let Some(ms) = old.modified_ms {
             disk.set_modified(restore, ms)?;
         }
-        if present {
+        if present.is_some() {
             disk.copy_mode(target, restore)?;
         }
         Ok(())
@@ -191,17 +202,24 @@ fn restore_from(
             "restore copy does not verify",
         ));
     }
-    if present {
-        return disk
-            .replace(restore, target, &places.old_temp)
+    if let Some(seen) = present {
+        // NC160: a user save during the copy wins; the backup stays in the job folder.
+        if check_same(seen, disk.meta(target)?).is_err() {
+            disk.remove_file(restore)?;
+            sync_parent(disk, target)?;
+            return Ok(false);
+        }
+        disk.replace(restore, target, &places.old_temp)
             .map_err(|error| match error {
                 ReplaceError::Unchanged(error)
                 | ReplaceError::NotDurable(error)
                 | ReplaceError::TargetMoved(error) => error,
-            });
+            })?;
+        return Ok(true);
     }
     disk.rename_new(restore, target)?;
-    sync_parent(disk, target)
+    sync_parent(disk, target)?;
+    Ok(true)
 }
 
 /// Syncs the folder that holds `path`.
