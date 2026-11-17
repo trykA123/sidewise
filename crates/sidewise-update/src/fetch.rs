@@ -11,11 +11,14 @@ pub const PATH: &str = "/repos/trykA123/sidewise/releases?per_page=20";
 /// The user agent GitHub sees.
 pub const USER_AGENT: &str = "Sidewise";
 
-/// The extra request headers, each line ending in CRLF.
+/// The extra request headers: lines joined by CRLF, the last line has none.
 pub const HEADERS: &str = "Accept: application/vnd.github+json\r\nX-GitHub-Api-Version: 2022-11-28";
 
 /// WinHTTP timeouts in milliseconds: resolve, connect, send, receive.
 pub const TIMEOUTS_MS: [i32; 4] = [5_000, 5_000, 5_000, 10_000];
+
+/// Whole-fetch limit: per-call timeouts alone let a slow sender hold the thread.
+pub const FETCH_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// The largest body chunk read at a time, in bytes.
 pub const CHUNK_BYTES: usize = 64 * 1024;
@@ -64,6 +67,13 @@ mod tests {
         for secret in ["user-agent", "authorization", "cookie"] {
             assert!(!lower.contains(secret), "{secret} must not be sent");
         }
+    }
+
+    #[test]
+    fn the_deadline_outlasts_one_receive_and_stays_short() {
+        let receive = std::time::Duration::from_millis(TIMEOUTS_MS[3].unsigned_abs().into());
+        assert!(FETCH_DEADLINE > receive);
+        assert!(FETCH_DEADLINE <= std::time::Duration::from_secs(60));
     }
 
     #[cfg(not(windows))]

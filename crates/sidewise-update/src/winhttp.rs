@@ -4,8 +4,9 @@
 use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
+use std::time::Instant;
 
-use windows_sys::Win32::Foundation::{ERROR_INVALID_PARAMETER, GetLastError};
+use windows_sys::Win32::Foundation::{ERROR_INVALID_PARAMETER, ERROR_TIMEOUT, GetLastError};
 use windows_sys::Win32::Networking::WinHttp::{
     INTERNET_DEFAULT_HTTPS_PORT, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
     WINHTTP_AUTOLOGON_SECURITY_LEVEL_HIGH, WINHTTP_DISABLE_COOKIES, WINHTTP_FLAG_SECURE,
@@ -19,7 +20,7 @@ use windows_sys::Win32::Networking::WinHttp::{
 };
 use windows_sys::core::BOOL;
 
-use super::{CHUNK_BYTES, HEADERS, TIMEOUTS_MS, USER_AGENT};
+use super::{CHUNK_BYTES, FETCH_DEADLINE, HEADERS, TIMEOUTS_MS, USER_AGENT};
 use crate::check::CheckError;
 use crate::feed::MAX_FEED_BYTES;
 
@@ -49,6 +50,7 @@ impl Drop for Handle {
 /// Fetches `https://{host}{path}` and returns the body of a 200 answer, at most `MAX_FEED_BYTES`.
 /// Fails with `Network(win32 code)`, `Status(http status)` or `TooLarge`.
 pub(super) fn get(host: &str, path: &str) -> Result<Vec<u8>, CheckError> {
+    let start = Instant::now();
     // Declared session, connection, request: they drop, and close, in reverse.
     let session = open_session()?;
     let connection = connect(&session, host)?;
@@ -60,7 +62,7 @@ pub(super) fn get(host: &str, path: &str) -> Result<Vec<u8>, CheckError> {
             u16::try_from(status).unwrap_or(u16::MAX),
         ));
     }
-    read_body(&request)
+    read_body(&request, start)
 }
 
 /// Reads the calling thread's last Win32 error as a `Network` error.
@@ -207,14 +209,18 @@ fn status_code(request: &Handle) -> Result<u32, CheckError> {
     Ok(code)
 }
 
-/// Reads the body in chunks of at most `CHUNK_BYTES`; fails with `TooLarge` before passing `MAX_FEED_BYTES`.
+/// Reads the body in chunks of at most `CHUNK_BYTES`; fails with `TooLarge` before passing `MAX_FEED_BYTES`,
+/// or with `Network(ERROR_TIMEOUT)` once `FETCH_DEADLINE` has passed since `start`.
 #[allow(
     unsafe_code,
     reason = "WinHttpQueryDataAvailable and WinHttpReadData are FFI calls"
 )]
-fn read_body(request: &Handle) -> Result<Vec<u8>, CheckError> {
+fn read_body(request: &Handle, start: Instant) -> Result<Vec<u8>, CheckError> {
     let mut body = Vec::new();
     loop {
+        if start.elapsed() >= FETCH_DEADLINE {
+            return Err(CheckError::Network(ERROR_TIMEOUT));
+        }
         let mut available = 0_u32;
         // SAFETY: `request` has a response and `available` is a live local.
         check(unsafe { WinHttpQueryDataAvailable(request.0, &raw mut available) })?;
