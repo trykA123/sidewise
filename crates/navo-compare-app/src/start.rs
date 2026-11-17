@@ -15,6 +15,7 @@ use sidewise_kit::prelude::*;
 use sidewise_kit::primitives::{TextFieldState, text_field_state};
 
 use crate::menu_host::MenuSlot;
+use crate::start_git::git_hint;
 use crate::start_menu::{CopyPaths, ForgetSelected, ShowRowMenu};
 use crate::start_rows::{LIST_CONTEXT, RowBounds, row_at, row_count};
 use crate::start_tabs::{StartChoice, StartMode, StartTabs};
@@ -42,6 +43,7 @@ pub enum SideHint {
     Checking,
     Path(SideSpec),
     GitRef(SideSpec),
+    GitProblem(sidewise_git::repo::GitProblem),
     NotFound,
 }
 
@@ -101,22 +103,20 @@ fn probe(text: &str, cwd: &Path) -> SideHint {
     let found = Cell::new(false);
     let exists = |path: &Path| {
         let answer = path.exists();
-        if answer {
-            found.set(true);
-        }
+        found.set(found.get() || answer);
         answer
     };
     match args::side(text, cwd, &exists) {
-        Ok(spec @ SideSpec::GitRev { .. }) => SideHint::GitRef(spec),
+        Ok(spec @ SideSpec::GitRev { .. }) => git_hint(spec),
         Ok(spec @ SideSpec::Path(_)) if found.get() => SideHint::Path(spec),
         Ok(SideSpec::Path(_)) | Err(_) => SideHint::NotFound,
     }
 }
 
-/// The side a good hint stands for; only a path is good, a git ref is not in the alpha (NC89).
+/// The side a good hint stands for: a path that exists or a git revision that resolved.
 fn good(hint: &SideHint) -> Option<&SideSpec> {
     match hint {
-        SideHint::Path(spec) => Some(spec),
+        SideHint::Path(spec) | SideHint::GitRef(spec) => Some(spec),
         _ => None,
     }
 }

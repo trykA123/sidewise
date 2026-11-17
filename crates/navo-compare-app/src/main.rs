@@ -58,6 +58,7 @@ mod shell_prefs_tests;
 mod shell_tests;
 mod start;
 mod start_focus;
+mod start_git;
 #[cfg(test)]
 mod start_keys_tests;
 mod start_menu;

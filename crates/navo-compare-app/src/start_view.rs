@@ -6,6 +6,7 @@ use gpui_kit::base::TestTextExt as _;
 use sidewise_kit::prelude::*;
 use sidewise_kit::primitives::{Button, ButtonVariant, IconButton, Kbd, TextField};
 use sidewise_kit::tokens;
+use sidewise_l10n::t;
 
 use crate::menu_host::menu_view;
 use crate::start::{
@@ -20,9 +21,13 @@ use crate::theme_data::palettes::DIMS;
 fn chip(hint: &SideHint, cx: &App) -> Option<Div> {
     let t = tokens::current(cx);
     let (label, color) = match hint {
-        SideHint::Path(_) => ("Path", t.colors.muted),
-        SideHint::GitRef(_) => ("Git compare is not in this alpha", t.colors.warn),
-        SideHint::NotFound => ("Not found", t.colors.warn),
+        SideHint::Path(_) => ("Path".to_string(), t.colors.muted),
+        SideHint::GitRef(_) => (
+            "Git compare is not in this alpha".to_string(),
+            t.colors.warn,
+        ),
+        SideHint::GitProblem(p) => (t!(p.l10n_id()), t.colors.warn),
+        SideHint::NotFound => ("Not found".to_string(), t.colors.warn),
         SideHint::Empty | SideHint::Checking => return None,
     };
     Some(
@@ -35,7 +40,7 @@ fn chip(hint: &SideHint, cx: &App) -> Option<Div> {
             .border_color(color)
             .text_size(t.typography.tiny)
             .text_color(color)
-            .child(label.test_text(label)),
+            .child(label.clone().test_text(label)),
     )
 }
 

@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use gpui_kit::base::test_support::texts;
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, AppContext as _, Context, Entity, TestAppContext, Window};
 use navo_compare_cli::args::SideSpec;
@@ -131,11 +130,9 @@ fn path(p: &Path) -> SideHint {
     SideHint::Path(SideSpec::Path(p.to_path_buf()))
 }
 
-fn git(repo: &Path, rev: &str) -> SideHint {
-    SideHint::GitRef(SideSpec::GitRev {
-        repo: repo.to_path_buf(),
-        rev: rev.into(),
-    })
+/// The hint of `folder@rev` where the folder is no repository.
+fn not_repo() -> SideHint {
+    SideHint::GitProblem(sidewise_git::repo::GitProblem::NotRepository)
 }
 
 #[gpui_kit::test]
@@ -148,7 +145,7 @@ fn the_four_settled_hints(cx: &mut TestAppContext) {
     assert_eq!(got.0, path(dir.path()));
     assert_eq!(got.1, SideHint::NotFound);
     let got = settle(cx, &s, &at_main, "   ");
-    assert_eq!(got, (git(dir.path(), "main"), SideHint::Empty));
+    assert_eq!(got, (not_repo(), SideHint::Empty));
     let got = settle(cx, &s, &format!("{}@", dir.text()), "");
     assert_eq!(got.0, SideHint::NotFound);
 }
@@ -174,7 +171,7 @@ fn two_quick_set_sides_end_with_the_second_hints(cx: &mut TestAppContext) {
         screen.set_sides(&dir.text(), &format!("{}@dev", dir.text()), window, cx);
     });
     cx.run_until_parked();
-    assert_eq!(hints(cx, &s.1), (path(dir.path()), git(dir.path(), "dev")));
+    assert_eq!(hints(cx, &s.1), (path(dir.path()), not_repo()));
 }
 
 #[gpui_kit::test]
@@ -195,9 +192,9 @@ fn swap_exchanges_texts_and_hints(cx: &mut TestAppContext) {
     let at_main = format!("{}@main", dir.text());
     settle(cx, &s, &dir.text(), &at_main);
     act(cx, &s, |screen, window, cx| screen.swap(window, cx));
-    assert_eq!(hints(cx, &s.1), (git(dir.path(), "main"), path(dir.path())));
+    assert_eq!(hints(cx, &s.1), (not_repo(), path(dir.path())));
     cx.run_until_parked();
-    assert_eq!(hints(cx, &s.1), (git(dir.path(), "main"), path(dir.path())));
+    assert_eq!(hints(cx, &s.1), (not_repo(), path(dir.path())));
 }
 
 #[gpui_kit::test]
@@ -241,28 +238,27 @@ fn submit_emits_one_compare_with_the_choice_before_the_first_render(cx: &mut Tes
 }
 
 #[gpui_kit::test]
-fn a_git_ref_side_never_emits_and_takes_the_focus(cx: &mut TestAppContext) {
+fn a_resolved_git_side_emits_compare(cx: &mut TestAppContext) {
+    let fixture = sidewise_git::fixture::Fixture::new();
+    let _ = fixture.commit("main", &[("a.txt", b"one\n")]);
     let dir = TempDir::new("gitref");
     let s = screen(cx, StartRows::default(), dir.path());
     let log = record(cx, &s.1);
-    let git_text = format!("{}@main", dir.text());
-    for (left, right, want) in [
-        (git_text.clone(), dir.text(), Side::Left),
-        (dir.text(), git_text.clone(), Side::Right),
-    ] {
-        settle(cx, &s, &left, &right);
-        act(cx, &s, |screen, window, cx| screen.submit(window, cx));
-        assert!(log.borrow().is_empty(), "a git ref side must not compare");
-        assert_eq!(focused(cx, &s), Some(want));
-    }
-    let shown = cx
-        .update_window(s.0, |_, w, _| {
-            texts(w)
-                .iter()
-                .any(|t| t.text() == "Git compare is not in this alpha")
-        })
-        .expect("window");
-    assert!(shown, "the git ref chip says Git is not in the alpha");
+    let repo = fixture.dir.path().to_path_buf();
+    let git_text = format!("{}@main", repo.display());
+    settle(cx, &s, &git_text, &dir.text());
+    act(cx, &s, |screen, window, cx| screen.submit(window, cx));
+    let want = SideSpec::GitRev {
+        repo,
+        rev: "main".into(),
+    };
+    let log = log.borrow();
+    assert_eq!(log.len(), 1, "a resolved git side compares");
+    assert!(matches!(
+        &log[0],
+        StartEvent::Compare { left, right, .. }
+            if *left == want && *right == SideSpec::Path(dir.path().to_path_buf())
+    ));
 }
 
 #[gpui_kit::test]

@@ -275,13 +275,10 @@ fn narrow_500px_handles_path_gitref_and_empty_hints_without_overflow(cx: &mut Te
             hw.2.read(cx).hints(),
             (
                 &SideHint::Path(SideSpec::Path(dir.0.clone())),
-                &SideHint::GitRef(SideSpec::GitRev {
-                    repo: dir.0.clone(),
-                    rev: "main".into()
-                }),
+                &SideHint::GitProblem(sidewise_git::repo::GitProblem::NotRepository),
             )
         );
-        assert_narrow_wrapped(window, 500., &["Path", "Git compare is not in this alpha"]);
+        assert_narrow_wrapped(window, 500., &["Path", "Not a Git repository"]);
     })
     .expect("window");
 
