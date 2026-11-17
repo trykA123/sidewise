@@ -20,15 +20,16 @@ use crate::repo::{Commit, GitProblem, MAX_BLOB, Repo};
 /// How a side opens its repository: `Repo::open`, or `Repo::open_isolated` in tests.
 type Opener = fn(&Path) -> Result<Repo, GitProblem>;
 
-/// One revision of a repository as a compare side. The commit is pinned at open and moves
-/// only on `refresh`; the tree index is built on the first `list` and shared by every caller.
+/// One revision of a repository as a compare side: a snapshot of the commit pinned at open.
+/// It never moves, so tabs sharing it agree; a new run re-resolves through the side cache.
+/// The tree index is built on the first `list` and shared by every caller.
 /// It holds one thread-safe repository handle; each call takes a thread-local view of it.
 pub struct GitTreeSide {
     repo: Repo,
     rev: String,
     form: Form,
     provider: ProviderId,
-    commit: Mutex<Commit>,
+    commit: Commit,
     index: Mutex<Option<Arc<TreeIndex>>>,
     #[cfg(test)]
     builds: std::sync::atomic::AtomicUsize,
@@ -63,17 +64,17 @@ impl GitTreeSide {
             rev: rev.to_owned(),
             form,
             provider,
-            commit: Mutex::new(commit),
+            commit,
             index: Mutex::new(None),
             #[cfg(test)]
             builds: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
-    /// The commit this side shows now.
+    /// The commit this side shows: the one pinned at open.
     #[must_use]
     pub fn commit(&self) -> Commit {
-        lock(&self.commit).clone()
+        self.commit.clone()
     }
 
     /// The revision text this side was opened with.
@@ -103,7 +104,6 @@ impl GitTreeSide {
     /// The tree index of the pinned commit, built under the lock on first use so concurrent
     /// callers share one build. Fails as `TreeIndex::build`; a failed build is retried later.
     fn index(&self, cancel: &CancelToken) -> Result<Arc<TreeIndex>, Reason> {
-        // Lock order everywhere: index, then commit.
         let mut slot = lock(&self.index);
         if let Some(index) = slot.as_ref() {
             return Ok(Arc::clone(index));
@@ -261,28 +261,6 @@ impl SideSource for GitTreeSide {
 
     fn may_have_unknown_size(&self) -> bool {
         false
-    }
-
-    /// Resolves the revision again; a new commit drops the index. A failed resolve (such as
-    /// a deleted branch) keeps the pinned commit and its listing.
-    fn refresh(&self) {
-        let resolved = self.repo.resolve(&self.rev).map_err(GitProblem::reason);
-        let fresh = match resolved {
-            Ok(commit) => commit,
-            Err(reason) => {
-                tracing::warn!(
-                    ?reason,
-                    "git side: the revision no longer resolves; kept the pinned commit"
-                );
-                return;
-            }
-        };
-        let mut index = lock(&self.index);
-        let mut commit = lock(&self.commit);
-        if *commit != fresh {
-            *commit = fresh;
-            *index = None;
-        }
     }
 }
 

@@ -7,14 +7,12 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 use sidewise_core::{Location, ProviderPath};
 use sidewise_engine::model::{EntryKind, Reason, RelPath, SideEntry, SideSource};
 use sidewise_git::location::{Form, GitAt, parse};
+use sidewise_git::repo::Commit;
 use sidewise_git::side::GitTreeSide;
 use sidewise_host::compare::diff::hooks::SideFn;
 use sidewise_host::compare::diff::sides::side_of;
 use sidewise_host::compare::handle::CompareTarget;
 use sidewise_host::compare::pane::LocalTarget;
-
-/// How many entries the cache keeps. Dead entries go first; past this, the oldest live one.
-pub const GIT_SIDES: usize = 32;
 
 /// The app's one cache, shared by the compare engine and every diff backend; made on first use.
 pub fn shared_sides() -> Arc<GitSides> {
@@ -90,19 +88,22 @@ impl GitSides {
     /// Opens `at` and keeps it as the newest side for `key`. Fails as the opener.
     fn open_and_keep(&self, at: &GitAt, key: Key) -> Result<Arc<GitTreeSide>, Reason> {
         let opened = Arc::new((self.open)(&at.repo, &at.rev, at.form)?);
-        let (side, displaced) = self.keep(key, opened);
+        // Read outside the lock; `keep` uses it only when two threads opened different commits.
+        let tip = opened.resolve_now().ok();
+        let (side, displaced) = self.keep(key, opened, tip);
         // The last reference to a displaced side may close its repository: not under the lock.
         drop(displaced);
         Ok(side)
     }
 
-    /// Stores `opened` under `key`, unless a live side of the same commit is there (another
-    /// thread opened it meanwhile): that one is kept and returned. Prunes dead entries, then
-    /// drops the oldest past `GIT_SIDES`. Returns the side to use and the one replaced.
+    /// Stores `opened` under `key`. When a live side is already there, the one whose commit is
+    /// `tip` (what the revision names now) wins; with no match, `opened` does. Prunes dead
+    /// entries. Returns the side to use and the one replaced.
     fn keep(
         &self,
         key: Key,
         opened: Arc<GitTreeSide>,
+        tip: Option<Commit>,
     ) -> (Arc<GitTreeSide>, Option<Arc<GitTreeSide>>) {
         let mut list = lock(&self.entries);
         list.retain(|(_, weak)| weak.strong_count() > 0);
@@ -110,17 +111,15 @@ impl GitSides {
             .iter()
             .position(|(found, _)| *found == key)
             .and_then(|found| list.remove(found).1.upgrade());
-        if let Some(same) = held
-            .as_ref()
-            .filter(|side| side.commit() == opened.commit())
-        {
+        let keep_held = held.as_ref().filter(|side| {
+            let commit = side.commit();
+            commit == opened.commit() || tip.as_ref() == Some(&commit)
+        });
+        if let Some(same) = keep_held {
             list.push((key, Arc::downgrade(same)));
             return (Arc::clone(same), Some(opened));
         }
         list.push((key, Arc::downgrade(&opened)));
-        if list.len() > GIT_SIDES {
-            list.remove(0);
-        }
         (opened, held)
     }
 }

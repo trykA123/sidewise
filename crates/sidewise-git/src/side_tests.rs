@@ -220,25 +220,25 @@ fn stamp_ids_and_flags_describe_a_read_only_commit() {
 }
 
 #[test]
-fn refresh_after_a_new_commit_shows_the_new_file() {
+fn refresh_after_a_new_commit_keeps_the_pinned_commit() {
     let fixture = two_branches();
     let side = open_side(&fixture, "main");
     let before = side.commit();
     assert_eq!(listed(&side, "").map(|rows| rows.len()), Ok(2));
     let _ = fixture.commit("main", &[("a.txt", b"alpha\n"), ("new.txt", b"n")]);
-    assert_eq!(
-        listed(&side, "").map(|rows| rows.len()),
-        Ok(2),
-        "pinned until refresh"
-    );
     side.refresh();
-    assert_ne!(side.commit(), before);
+    assert_eq!(
+        side.commit(),
+        before,
+        "a side is one commit; it never moves"
+    );
     let names: Vec<String> = listed(&side, "")
         .expect("root")
         .into_iter()
         .map(|row| row.0)
         .collect();
-    assert_eq!(names, ["a.txt", "new.txt"]);
+    assert_eq!(names, ["a.txt", "src"]);
+    assert_ne!(side.resolve_now().expect("tip"), before);
 }
 
 #[test]

@@ -7,11 +7,15 @@ use sidewise_core::{Location, ProviderPath};
 use sidewise_engine::model::{CancelToken, EntryKind, Reason, RelPath, SideSource};
 use sidewise_git::fixture::Fixture;
 use sidewise_git::location::{Form, GitAt, encode};
+use sidewise_git::side::GitTreeSide;
 use sidewise_host::compare::diff::hooks::SideFn;
 use sidewise_host::compare::handle::CompareTarget;
 use sidewise_host::compare::settings::CompareSettings;
 
-use super::{GIT_SIDES, GitSides, side_fn, target_for};
+use super::{GitSides, key_of, side_fn, target_for};
+
+/// More keys than any cache bound a reader might expect.
+const MANY: usize = 40;
 
 fn at(fixture: &Fixture, rev: &str) -> GitAt {
     GitAt {
@@ -79,7 +83,7 @@ fn live_side_survives_many_other_keys() {
     let fixture = fixture();
     let sides = isolated();
     let first = sides.side(&at(&fixture, "main")).expect("open");
-    for n in 0..=GIT_SIDES {
+    for n in 0..MANY {
         let branch = format!("b{n}");
         let _ = fixture.commit(&branch, &[("f", b"x")]);
         drop(sides.side(&at(&fixture, &branch)).expect("open"));
@@ -89,18 +93,73 @@ fn live_side_survives_many_other_keys() {
 }
 
 #[test]
-fn past_the_bound_the_oldest_live_entry_goes() {
+fn past_the_bound_live_sides_are_never_opened_twice() {
     let fixture = fixture();
     let sides = isolated();
-    let first = sides.side(&at(&fixture, "main")).expect("open");
     let mut held = Vec::new();
-    for n in 0..GIT_SIDES {
+    for n in 0..MANY {
         let branch = format!("b{n}");
         let _ = fixture.commit(&branch, &[("f", b"x")]);
-        held.push(sides.side(&at(&fixture, &branch)).expect("open"));
+        held.push((
+            branch.clone(),
+            sides.side(&at(&fixture, &branch)).expect("open"),
+        ));
     }
-    let again = sides.side(&at(&fixture, "main")).expect("reopen");
-    assert!(!Arc::ptr_eq(&first, &again));
+    for (branch, first) in &held {
+        let again = sides.side(&at(&fixture, branch)).expect("hit");
+        assert!(Arc::ptr_eq(first, &again), "{branch} was opened twice");
+    }
+}
+
+#[test]
+fn a_stale_keep_does_not_replace_the_side_of_the_current_tip() {
+    let fixture = fixture();
+    let sides = isolated();
+    let target = at(&fixture, "main");
+    let old =
+        Arc::new(GitTreeSide::open_isolated(&target.repo, "main", Form::Stored).expect("old"));
+    let _ = fixture.commit("main", &[("a.txt", b"a"), ("b.txt", b"b")]);
+    let new =
+        Arc::new(GitTreeSide::open_isolated(&target.repo, "main", Form::Stored).expect("new"));
+    let tip = new.commit();
+    let (kept, _) = sides.keep(key_of(&target), Arc::clone(&new), Some(tip.clone()));
+    assert!(Arc::ptr_eq(&kept, &new));
+    let (kept, displaced) = sides.keep(key_of(&target), Arc::clone(&old), Some(tip));
+    assert!(Arc::ptr_eq(&kept, &new), "the stale side took the entry");
+    assert!(displaced.is_some_and(|side| Arc::ptr_eq(&side, &old)));
+    let hit = sides.side(&target).expect("hit");
+    assert!(Arc::ptr_eq(&hit, &new));
+}
+
+#[test]
+fn a_keep_of_the_tip_replaces_a_stale_held_side() {
+    let fixture = fixture();
+    let sides = isolated();
+    let target = at(&fixture, "main");
+    let old =
+        Arc::new(GitTreeSide::open_isolated(&target.repo, "main", Form::Stored).expect("old"));
+    let _ = fixture.commit("main", &[("a.txt", b"a"), ("b.txt", b"b")]);
+    let new =
+        Arc::new(GitTreeSide::open_isolated(&target.repo, "main", Form::Stored).expect("new"));
+    let tip = new.commit();
+    let _ = sides.keep(key_of(&target), Arc::clone(&old), Some(tip.clone()));
+    let (kept, _) = sides.keep(key_of(&target), Arc::clone(&new), Some(tip));
+    assert!(Arc::ptr_eq(&kept, &new));
+}
+
+#[test]
+fn a_keep_with_no_matching_tip_keeps_the_incoming_side() {
+    let fixture = fixture();
+    let sides = isolated();
+    let target = at(&fixture, "main");
+    let old =
+        Arc::new(GitTreeSide::open_isolated(&target.repo, "main", Form::Stored).expect("old"));
+    let _ = fixture.commit("main", &[("a.txt", b"a"), ("b.txt", b"b")]);
+    let new =
+        Arc::new(GitTreeSide::open_isolated(&target.repo, "main", Form::Stored).expect("new"));
+    let _ = sides.keep(key_of(&target), Arc::clone(&old), None);
+    let (kept, _) = sides.keep(key_of(&target), Arc::clone(&new), None);
+    assert!(Arc::ptr_eq(&kept, &new));
 }
 
 #[test]

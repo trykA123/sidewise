@@ -7807,7 +7807,6 @@ dependencies = [
  "sidewise-core",
  "sidewise-engine",
  "tempfile",
- "tracing",
 ]
 
 [[package]]
