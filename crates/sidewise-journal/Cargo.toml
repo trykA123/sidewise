@@ -12,9 +12,12 @@ blake3 = "=1.8.7"
 navo-core = { package = "sidewise-core", path = "../sidewise-core" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sidewise-fs = { path = "../sidewise-fs" }
 
 [dev-dependencies]
 proptest = "1.12.0"
+# `FaultDisk` for the job fault and crash loops.
+sidewise-fs = { path = "../sidewise-fs", features = ["test-support"] }
 tempfile = "3.27.0"
 
 [lints]

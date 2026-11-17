@@ -6971,6 +6971,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sidewise-core",
+ "sidewise-fs",
  "tempfile",
 ]
 
