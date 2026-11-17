@@ -177,24 +177,74 @@ fn wof_compress(path: &Path) -> String {
     run("fsutil", &["reparsepoint", "query"])
 }
 
+/// WOF hides its reparse point (fsutil: error 4390), so the file must read its real bytes;
+/// were the tag ever visible, the file would have to be refused as a placeholder instead.
 #[test]
-fn a_wof_compressed_file_is_refused_as_a_placeholder() {
+fn a_wof_compressed_file_reads_its_real_bytes_or_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let packed = dir.path().join("packed.txt");
     let text = "sidewise ".repeat(8192);
     put(&packed, &text);
     let fsutil = wof_compress(&packed);
-    let mut seen = String::new();
-    let read = RealDisk
-        .open_read(&packed)
-        .map(|mut file| file.read_to_string(&mut seen));
-    let note = format!("same bytes: {}; fsutil: {fsutil}", seen == text);
+    match RealDisk.open_read(&packed) {
+        Ok(mut file) => {
+            let mut seen = String::new();
+            file.read_to_string(&mut seen).unwrap();
+            assert!(seen == text, "WOF bytes differ; fsutil: {fsutil}");
+            assert_eq!(RealDisk.meta(&packed).unwrap().unwrap().size, 73_728);
+        }
+        Err(error) => assert!(error.to_string().contains("placeholder"), "{error}"),
+    }
+}
+
+/// Puts a third-party, non-link reparse point (tag 0x1234, as a sync or HSM filter would)
+/// on `path`. No filter owns the tag, so only a no-follow open reaches the file.
+#[allow(unsafe_code, reason = "FSCTL_SET_REPARSE_POINT is a Win32 call")]
+fn tag_as_placeholder(path: &Path) {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    };
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+    use windows_sys::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
+    let file = OpenOptions::new()
+        .write(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .unwrap();
+    // REPARSE_GUID_DATA_BUFFER: tag, data length, reserved, a 16-byte GUID, then the data.
+    let mut buffer = 0x0000_1234_u32.to_le_bytes().to_vec();
+    buffer.extend(4_u16.to_le_bytes());
+    buffer.extend(0_u16.to_le_bytes());
+    buffer.extend(*b"sidewise-test-id");
+    buffer.extend(*b"stub");
+    let mut returned = 0_u32;
+    // SAFETY: the handle, the input buffer and `returned` live through the call; no output.
+    let ok = unsafe {
+        DeviceIoControl(
+            file.as_raw_handle(),
+            FSCTL_SET_REPARSE_POINT,
+            buffer.as_ptr().cast(),
+            buffer.len() as u32,
+            std::ptr::null_mut(),
+            0,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_ne!(ok, 0, "{}", std::io::Error::last_os_error());
+}
+
+#[test]
+fn a_file_with_a_non_link_reparse_tag_is_refused_as_a_placeholder() {
+    let dir = tempfile::tempdir().unwrap();
+    let stub = dir.path().join("cloud.txt");
+    put(&stub, "stub bytes, not the real file");
+    tag_as_placeholder(&stub);
     let errors = [
-        read.expect_err(&note),
-        RealDisk.meta(&packed).unwrap_err(),
-        RealDisk
-            .set_modified(&packed, 1_600_000_000_000)
-            .unwrap_err(),
+        RealDisk.open_read(&stub).err().unwrap(),
+        RealDisk.meta(&stub).unwrap_err(),
+        RealDisk.set_modified(&stub, 1_600_000_000_000).unwrap_err(),
     ];
     for error in errors {
         assert_eq!(error.kind(), ErrorKind::InvalidInput, "{error}");
