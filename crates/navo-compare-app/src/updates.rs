@@ -94,10 +94,6 @@ pub(crate) fn view(cx: &App) -> Option<UpdateView> {
     })
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "U11 shows the status-bar notice")
-)]
 /// The newer version to announce: choice On, one is known and the user has not hidden it.
 pub(crate) fn notice(cx: &App) -> Option<Version> {
     let updates = cx.try_global::<Updates>()?;

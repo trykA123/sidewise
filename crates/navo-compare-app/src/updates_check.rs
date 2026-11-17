@@ -105,10 +105,6 @@ pub(crate) fn set_choice(choice: UpdateCheck, cx: &mut App) {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "U11 hides the status-bar notice")
-)]
 /// Hides the notice for the version found: remembers it as dismissed, saves and redraws.
 pub(crate) fn dismiss(cx: &mut App) {
     let Some(updates) = updates_mut(cx) else {
