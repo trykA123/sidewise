@@ -14,6 +14,7 @@ pub mod sides;
 pub mod sources;
 pub mod stream;
 pub mod viewed;
+pub mod write;
 
 #[cfg(test)]
 mod tests;
