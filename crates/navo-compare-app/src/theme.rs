@@ -19,6 +19,9 @@ use crate::theme_data::palettes::{
     DIMS, DimTokens, MOTION, ModeTokens, MotionTokens, PALETTES, PaletteSpec,
 };
 
+#[path = "theme_gate.rs"]
+pub mod gate;
+
 /// The active Sidewise design tokens (NC66): one palette in one mode, with the shared geometry.
 #[derive(Clone, Copy, Debug)]
 pub struct SidewiseTheme {
