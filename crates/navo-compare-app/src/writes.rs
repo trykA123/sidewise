@@ -18,7 +18,7 @@ use crate::layers::toast;
 static HOST: OnceLock<Arc<LocalCopyHost>> = OnceLock::new();
 
 /// Opens the journal in the profile (`explicit` folder, else the platform folders) and installs
-/// the copy host. `Ok(Some(note))` when recovery restored, kept or failed anything;
+/// the copy host. `Ok(Some(note))` when recovery rolled back, kept or failed anything;
 /// `Err("Copying is off: <reason>")` when the profile or the journal did not open (fail closed).
 pub(crate) fn install_writes(explicit: Option<&Path>) -> Result<Option<String>, String> {
     if HOST.get().is_some() {
@@ -81,11 +81,18 @@ fn off(reason: &str) -> String {
     t!("compare-writes-off", reason = reason)
 }
 
-/// The recovery toast: files restored after an interrupted copy, what was left, old backups the
-/// sweep could not remove, and the journal folder that keeps the backups. `None` when there
-/// is nothing to report.
+/// The recovery toast: copies rolled back, files restored after an interrupted copy, what was
+/// left, old backups the sweep could not remove, and the journal folder that keeps the
+/// backups. `None` when there is nothing to report.
 pub(crate) fn recovery_note(recovered: &Recovered, dir: &Path) -> Option<String> {
+    // The restored line already says a copy was rolled back: show this one only without it.
+    let rolled_back = if recovered.restored == 0 {
+        recovered.rolled_back
+    } else {
+        0
+    };
     let counts = [
+        ("compare-recovery-rolled-back", rolled_back),
         ("compare-recovery-restored", recovered.restored),
         ("compare-recovery-kept", recovered.kept),
         ("compare-recovery-failed", recovered.failed),
@@ -97,7 +104,7 @@ pub(crate) fn recovery_note(recovered: &Recovered, dir: &Path) -> Option<String>
         .filter(|(_, count)| *count > 0)
         .map(|(id, count)| t!(id, count = *count))
         .collect();
-    if counts[1..].iter().any(|(_, count)| *count > 0) {
+    if counts[2..].iter().any(|(_, count)| *count > 0) {
         let folder = dir.display().to_string();
         parts.push(t!("compare-recovery-folder", folder = folder));
     }

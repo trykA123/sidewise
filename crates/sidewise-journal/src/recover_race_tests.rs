@@ -98,6 +98,7 @@ fn recover_keeps_a_user_save_made_during_the_restore_copy() {
     let (_journal, recovered) = Journal::open(&fixture.journal_dir(), disk).unwrap();
     let want = Recovered {
         kept: 1,
+        rolled_back: 1,
         swept: recovered.swept,
         ..Recovered::default()
     };

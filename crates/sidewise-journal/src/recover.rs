@@ -20,9 +20,13 @@ const LOG: &str = "log";
 const NEW_LOG: &str = "log.sw-new";
 const OLD_LOG: &str = "log.sw-old";
 
-/// What recovery at open did: items restored, kept or left for the next start, and damaged logs.
+/// What recovery at open did: jobs rolled back, items restored, kept or left for the next
+/// start, and damaged logs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Recovered {
+    /// Open jobs that recovery closed as `Aborted`, whatever each item's outcome (an item killed
+    /// before its target changed restores nothing, yet the job was still rolled back).
+    pub rolled_back: u32,
     /// Targets put back to their old bytes and modified time.
     pub restored: u32,
     /// Targets changed by someone else since the write: file and backup are both kept.
@@ -261,6 +265,7 @@ fn settle_job(disk: &dyn Disk, job: &Job, recovered: &mut Recovered) -> bool {
         recovered.failed += 1;
         return false;
     }
+    recovered.rolled_back += 1;
     true
 }
 

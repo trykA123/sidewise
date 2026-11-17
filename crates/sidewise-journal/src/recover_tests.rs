@@ -57,6 +57,7 @@ fn recover_rolls_back_an_open_job_of_a_dead_owner() {
     let (journal, recovered) = open(&fixture);
     let want = Recovered {
         restored: 2,
+        rolled_back: 1,
         ..Recovered::default()
     };
     assert_eq!(recovered, want);
@@ -65,6 +66,28 @@ fn recover_rolls_back_an_open_job_of_a_dead_owner() {
     let reason = "recovered".to_owned();
     assert_eq!(last, Some(Record::Aborted { reason }));
     assert_eq!(owner_files(&fixture), [format!("{}.lock", journal.owner())]);
+}
+
+/// A job killed before any target changed restores nothing, yet recovery still closes it, so
+/// it counts once as rolled back (the start-up note relies on it).
+#[test]
+fn recover_counts_an_open_job_that_changed_no_target_as_rolled_back() {
+    let fixture = Fixture::new(1);
+    crashed_open_job(&fixture, 0);
+    let (_journal, recovered) = open(&fixture);
+    let want = Recovered {
+        rolled_back: 1,
+        ..Recovered::default()
+    };
+    assert_eq!(recovered, want);
+    let last = only_log(&fixture).records.pop();
+    let reason = "recovered".to_owned();
+    assert_eq!(last, Some(Record::Aborted { reason }));
+    assert_eq!(
+        fs::read(&fixture.targets[0]).unwrap(),
+        OLD,
+        "target untouched"
+    );
 }
 
 #[test]

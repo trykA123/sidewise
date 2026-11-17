@@ -241,8 +241,9 @@ fn a_journal_folder_that_is_a_file_turns_copying_off() {
     assert!(text.starts_with(&off), "{text}");
 }
 
-/// The recovery note counts restored files, then names the journal folder when anything was
-/// left, old backups that could not be removed included; a clean recovery says nothing.
+/// The recovery note says a rolled-back copy (once, not beside a restore), counts restored
+/// files, then names the journal folder when anything was left, old backups that could not be
+/// removed included; a clean recovery says nothing.
 #[test]
 fn the_recovery_note_counts_and_names_the_folder() {
     use sidewise_journal::Swept;
@@ -255,7 +256,14 @@ fn the_recovery_note_counts_and_names_the_folder() {
     };
     let one = t!("compare-recovery-restored", count = 1);
     assert_eq!(recovery_note(&restored, dir), Some(one));
+    let rolled = Recovered {
+        rolled_back: 1,
+        ..Recovered::default()
+    };
+    let note = t!("compare-recovery-rolled-back", count = 1);
+    assert_eq!(recovery_note(&rolled, dir), Some(note));
     let left = Recovered {
+        rolled_back: 2,
         restored: 2,
         kept: 1,
         failed: 2,

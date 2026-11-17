@@ -197,6 +197,10 @@ compare-undo-not-newest = Only the latest copy can be undone here; use Ctrl+Z.
 compare-undo-gone = That copy was already undone.
 compare-undo-tab-closed = Use Ctrl+Z in an open compare tab.
 compare-writes-off = Copying is off: { $reason }
+compare-recovery-rolled-back = { $count ->
+    [one] Rolled back an interrupted copy.
+   *[other] Rolled back { $count } interrupted copies.
+}
 compare-recovery-restored = Sidewise restored { $count ->
     [one] 1 file
    *[other] { $count } files

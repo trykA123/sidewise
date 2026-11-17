@@ -110,6 +110,7 @@ mod recover {
         let (_journal, recovered) = Journal::open(&fixture.journal_dir(), disk.clone()).unwrap();
         let want = Recovered {
             kept: 1,
+            rolled_back: 1,
             swept: recovered.swept,
             ..Recovered::default()
         };
