@@ -162,31 +162,35 @@ fn a_junction_or_a_relative_path_is_refused() {
     assert_eq!(error.kind(), ErrorKind::InvalidInput);
 }
 
-/// WOF-compresses `path` (`compact /EXE:xpress4k`), which makes it a non-link reparse file.
-fn wof_compress(path: &Path) {
-    use std::os::windows::fs::MetadataExt;
-    let done = std::process::Command::new("compact")
-        .args(["/C", "/EXE:xpress4k"])
-        .arg(path)
-        .output()
-        .unwrap();
-    assert!(done.status.success(), "{done:?}");
-    let attributes = std::fs::symlink_metadata(path).unwrap().file_attributes();
-    assert_ne!(
-        attributes & 0x400,
-        0,
-        "compact left no reparse point: {done:?}"
-    );
+/// WOF-compresses `path` (`compact /EXE:xpress4k`); returns what `fsutil` sees, for messages.
+fn wof_compress(path: &Path) -> String {
+    let run = |program: &str, args: &[&str]| {
+        let done = std::process::Command::new(program)
+            .args(args)
+            .arg(path)
+            .output()
+            .unwrap();
+        assert!(done.status.success() || program == "fsutil", "{done:?}");
+        String::from_utf8_lossy(&done.stdout).into_owned()
+    };
+    run("compact", &["/C", "/EXE:xpress4k"]);
+    run("fsutil", &["reparsepoint", "query"])
 }
 
 #[test]
 fn a_wof_compressed_file_is_refused_as_a_placeholder() {
     let dir = tempfile::tempdir().unwrap();
     let packed = dir.path().join("packed.txt");
-    put(&packed, &"sidewise ".repeat(8192));
-    wof_compress(&packed);
+    let text = "sidewise ".repeat(8192);
+    put(&packed, &text);
+    let fsutil = wof_compress(&packed);
+    let mut seen = String::new();
+    let read = RealDisk
+        .open_read(&packed)
+        .map(|mut file| file.read_to_string(&mut seen));
+    let note = format!("same bytes: {}; fsutil: {fsutil}", seen == text);
     let errors = [
-        RealDisk.open_read(&packed).err().unwrap(),
+        read.err().expect(&note),
         RealDisk.meta(&packed).unwrap_err(),
         RealDisk
             .set_modified(&packed, 1_600_000_000_000)
