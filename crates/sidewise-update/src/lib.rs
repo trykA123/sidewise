@@ -3,4 +3,5 @@
 
 pub mod check;
 pub mod feed;
+pub mod fetch;
 pub mod version;
