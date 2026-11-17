@@ -83,10 +83,10 @@ pub enum LayoutPref {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateCheck {
-    /// Ask before checking GitHub for a new version.
+    /// Not chosen yet: never checks; the Start screen offers the choice (the default).
     #[default]
     Ask,
-    /// Check GitHub without asking.
+    /// Check GitHub at most once a day.
     On,
     /// Never check GitHub.
     Off,
