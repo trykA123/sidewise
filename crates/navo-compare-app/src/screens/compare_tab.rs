@@ -229,6 +229,12 @@ impl CompareTab {
         rows.iter().find(|row| row.path == path).map(|row| row.id)
     }
 
+    /// How many lines the Folders view shows; for tests.
+    #[cfg(test)]
+    pub(crate) fn folder_line_count(&self, cx: &App) -> usize {
+        self.folders.read(cx).line_count()
+    }
+
     /// Focuses the shown view's keys.
     pub fn focus_view(&self, window: &mut Window, cx: &mut Context<Self>) {
         if self.failure.is_some() {

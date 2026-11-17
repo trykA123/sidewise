@@ -10,6 +10,7 @@ use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext};
 use navo_compare_cli::args::SideSpec;
 use sidewise_core::Location;
 use sidewise_git::fixture::Fixture;
+use sidewise_git::location::{Form, GitAt};
 use sidewise_host::compare::pane::PaneCompare;
 use sidewise_ui::browser::{CompareControl, CompareHooks, CompareSink, CompareUpdate};
 use sidewise_ui::compare_diff::CompareOptions;
@@ -65,11 +66,13 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// Installs the real engine over one isolated Git side cache; returns its run list.
 fn install_relay(cx: &mut TestAppContext) -> Arc<Mutex<Vec<Run>>> {
+    install_relay_over(cx, Arc::new(GitSides::isolated()))
+}
+
+/// As `install_relay`, over the given cache, so a test can look at the sides it holds.
+fn install_relay_over(cx: &mut TestAppContext, sides: Arc<GitSides>) -> Arc<Mutex<Vec<Run>>> {
     let runs = Arc::new(Mutex::new(Vec::new()));
-    let engine = PaneCompare::new(
-        Arc::new(NoHashes),
-        target_for(Arc::new(GitSides::isolated())),
-    );
+    let engine = PaneCompare::new(Arc::new(NoHashes), target_for(sides));
     let relay = Relay {
         engine,
         runs: Arc::clone(&runs),
@@ -182,8 +185,17 @@ fn f5_shows_a_new_commit_and_an_older_tab_on_the_same_branch_keeps_its_rows(
     let folder = TempDir::new("g16-f5");
     fs::write(folder.path().join("a.txt"), b"a").expect("write");
     let opened = shell(cx);
-    let runs = install_relay(cx);
+    let sides = Arc::new(GitSides::isolated());
+    let runs = install_relay_over(cx, Arc::clone(&sides));
     open_at(cx, &opened, &runs, (0, git_request(&repo, "main", &folder)));
+    let at = GitAt {
+        repo: repo.path().to_path_buf(),
+        rev: "main".into(),
+        inner: String::new(),
+        form: Form::Stored,
+    };
+    let old = sides.side(&at).expect("the first tab's side");
+    let old_commit = old.commit();
     let (window, shell) = &opened;
     cx.update_window(*window, |_, window, cx| {
         shell.update(cx, |shell, cx| shell.new_tab(window, cx));
@@ -205,4 +217,36 @@ fn f5_shows_a_new_commit_and_an_older_tab_on_the_same_branch_keeps_its_rows(
         !has_row(cx, shell, 0, "b.txt"),
         "the first tab keeps its commit"
     );
+    assert!(
+        has_row(cx, shell, 1, "a.txt"),
+        "the second tab still lists a.txt"
+    );
+    let newest = sides.side(&at).expect("the newest side");
+    assert!(!Arc::ptr_eq(&old, &newest), "F5 opened a new side");
+    assert_eq!(old.commit(), old_commit, "the older side is unchanged");
+    assert_ne!(
+        newest.commit(),
+        old_commit,
+        "the new side shows the new commit"
+    );
+}
+
+#[gpui_kit::test]
+fn f5_empties_the_folders_view_until_the_new_walk_sends_rows(cx: &mut TestAppContext) {
+    let repo = Fixture::new();
+    let _ = repo.commit("main", &[("a.txt", b"a")]);
+    let folder = TempDir::new("g16-f5-empty");
+    fs::write(folder.path().join("a.txt"), b"a").expect("write");
+    let opened = shell(cx);
+    let runs = install_relay(cx);
+    open_at(cx, &opened, &runs, (0, git_request(&repo, "main", &folder)));
+    let (window, shell) = &opened;
+    let lines = |cx: &mut TestAppContext| {
+        shell.read_with(cx, |shell, cx| {
+            shell.compare_tabs()[0].read(cx).folder_line_count(cx)
+        })
+    };
+    assert!(lines(cx) > 0, "the tab lists its rows first");
+    cx.simulate_keystrokes(*window, "f5");
+    assert_eq!(lines(cx), 0, "no stale row ids before the first drain");
 }

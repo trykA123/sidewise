@@ -89,13 +89,17 @@ impl CompareTab {
         cx.notify();
     }
 
-    /// F5: compares again, so a Git side shows its branch's newest commit; the rows stay until
-    /// the new walk sends its own. Clears a failure, so a fixed side can be retried.
+    /// F5: compares again, so a Git side shows its branch's newest commit. The Folders rows are
+    /// cleared at once (old row ids mean nothing to the new session); a restart starts at the
+    /// root with no filter, as intended. Clears a failure, so a fixed side can be retried.
     fn refresh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(hooks) = compare_hooks(cx) else {
             return;
         };
         self.run.restart(&*hooks);
+        self.folders
+            .update(cx, |view, cx| view.set_rows(vec![], cx));
+        self.sync_large(cx);
         if self.failure.take().is_some() {
             self.view = TabView::Folders;
             self.focus_view(window, cx);

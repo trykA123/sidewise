@@ -138,6 +138,12 @@ impl FoldersView {
         at.map(|at| self.move_to(at, &lines, cx)).is_some()
     }
 
+    /// How many lines the tree shows now; for tests.
+    #[cfg(test)]
+    pub(crate) fn line_count(&self) -> usize {
+        self.tree.lines().len()
+    }
+
     /// The path of the line under the cursor.
     pub fn selected_path(&self) -> Option<String> {
         self.cursor_path.clone()
