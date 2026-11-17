@@ -295,12 +295,11 @@ impl Sidebar {
     }
 }
 
-/// The two primary actions of the prototype; future actions drop unimplemented key hints.
+/// The primary action; Git compare is not offered in this alpha.
 #[rustfmt::skip]
 fn primary() -> Vec<Entry> {
     vec![
         Entry { mark: Mark::Chrome(IconName::Plus), label: "New comparison".into(), hint: Some("Ctrl+T") },
-        Entry { mark: Mark::File(MaterialIcon::Git), label: "Git compare".into(), hint: None },
     ]
 }
 

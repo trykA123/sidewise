@@ -222,7 +222,8 @@ impl Shell {
     }
 
     /// Closes the tab at `index`; the tab to its right (else the new last) becomes active.
-    /// A tab left of the active one keeps the active tab. Closing the last tab closes the window.
+    /// A tab left of the active one keeps the active tab. Closing the last tab never closes the
+    /// window: a compare tab becomes a fresh New compare tab, a lone start tab stays as it is.
     /// Only closing the active tab moves the focus; closing another tab leaves it. An index out
     /// of range does nothing.
     pub fn close_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -230,7 +231,11 @@ impl Shell {
             return;
         }
         if self.tabs.len() == 1 {
-            window.remove_window();
+            if matches!(self.tabs[0].kind, TabKind::Compare(_)) {
+                self.tabs[0] = start_tab(window, cx);
+                self.sync_chrome(cx);
+                self.activated(window, cx);
+            }
             return;
         }
         let was_active = index == self.active;

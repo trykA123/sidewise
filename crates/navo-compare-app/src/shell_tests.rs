@@ -1,4 +1,4 @@
-//! View tests of the shell: tab rules (NS11), keys, focus and closing the last tab.
+//! View tests of the shell: tab rules (NS11), keys, focus and closing the last tab (CHR).
 
 use gpui_kit::base::test_support::{snapshots, texts};
 use gpui_kit::component::theme::{Theme as KitTheme, ThemeMode};
@@ -223,11 +223,13 @@ fn the_new_tabs_left_field_has_focus(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn closing_the_only_tab_closes_the_window(cx: &mut TestAppContext) {
+fn closing_the_only_start_tab_keeps_it_and_the_window(cx: &mut TestAppContext) {
     let s = shell(cx);
+    let before = ids(cx, &s.1);
     act(cx, &s, |shell, window, cx| shell.close_tab(0, window, cx));
     cx.run_until_parked();
-    assert_eq!(cx.windows().len(), 0);
+    assert_eq!(cx.windows().len(), 1);
+    assert_eq!(ids(cx, &s.1), before);
 }
 
 /// Finds the static specification for `palette` by id.
@@ -640,16 +642,18 @@ fn inactive_sidebar_close_shifts_indices_and_keeps_right_input_focus(cx: &mut Te
     .expect("window");
 }
 
-/// Clicking the sole open tab's close button removes the window.
+/// Clicking the sole open tab's close button keeps that tab and the window open.
 #[gpui_kit::test]
-fn clicking_last_sidebar_tab_close_removes_window(cx: &mut TestAppContext) {
+fn clicking_last_sidebar_tab_close_keeps_the_window(cx: &mut TestAppContext) {
     let s = shell(cx);
+    let before = ids(cx, &s.1);
     cx.update_window(s.0, |_, window, cx| {
         window.within("tabs").click(("tab-close", 0usize), cx);
     })
     .expect("window");
     cx.run_until_parked();
-    assert_eq!(cx.windows().len(), 0);
+    assert_eq!(cx.windows().len(), 1);
+    assert_eq!(ids(cx, &s.1), before);
 }
 
 /// At 780 and 1200 px in Light and Dark, the title bar hides its menu arrow and a 280 px Sidebar

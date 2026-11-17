@@ -118,7 +118,7 @@ fn reduced_motion_snaps_the_width(cx: &mut TestAppContext) {
     .expect("window");
 }
 
-/// The sections and the two primary actions match `sidewise-chosen`.
+/// The sections and the one primary action match `sidewise-chosen`; no Git compare in alpha.
 #[gpui_kit::test]
 fn the_sections_match_the_prototype(cx: &mut TestAppContext) {
     let (_window, view) = sidebar(cx);
@@ -130,14 +130,10 @@ fn the_sections_match_the_prototype(cx: &mut TestAppContext) {
             ["", "Open tabs", "Recent", "Named"],
             "section order"
         );
-        assert_eq!(sections[0].entries.len(), 2, "two primary actions");
+        assert_eq!(sections[0].entries.len(), 1, "one primary action");
         assert_eq!(
             sections[0].entries[0].label,
             SharedString::from("New comparison")
-        );
-        assert_eq!(
-            sections[0].entries[1].label,
-            SharedString::from("Git compare")
         );
         assert_eq!(sections[2].entries.len(), 1, "the recent list");
         assert_eq!(sections[3].entries.len(), 1, "the named list");
@@ -372,7 +368,11 @@ fn assert_static_rows_and_rail_labels(rig: &HostRig, cx: &mut TestAppContext) {
         let tab0 = window.find(("open-tab", 0usize));
         assert_eq!(tab0.role(), Some(Role::Tab));
         assert_eq!(tab0.selected(), Some(true));
-        for label in ["Git compare", "left ↔ right", "Saved"] {
+        assert!(
+            window.try_find_by_label("Git compare").is_none(),
+            "no Git compare entry in alpha"
+        );
+        for label in ["left ↔ right", "Saved"] {
             let snap = window.find_by_label(label);
             assert_ne!(snap.role(), Some(Role::Button));
             assert_ne!(snap.role(), Some(Role::Tab));
@@ -386,18 +386,11 @@ fn assert_static_rows_and_rail_labels(rig: &HostRig, cx: &mut TestAppContext) {
             window.try_find("footer-appearance").is_none(),
             "the Appearance row is hidden in alpha"
         );
-        assert!(rig.view.read(cx).sections()[0].entries[1].hint.is_none());
 
         rig.view.update(cx, |sb, cx| sb.toggle_rail(cx));
         window.render_frame(cx);
         assert_eq!(window.find("tabs").role(), Some(Role::TabList));
-        for label in [
-            "New comparison",
-            "Git compare",
-            "tab",
-            "left ↔ right",
-            "Saved",
-        ] {
+        for label in ["New comparison", "tab", "left ↔ right", "Saved"] {
             assert!(window.try_find_by_label(label).is_some(), "{label} in rail");
         }
     })

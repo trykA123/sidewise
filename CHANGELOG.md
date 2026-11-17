@@ -4,9 +4,20 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Closing the last tab leaves a New compare tab open instead of quitting.
+- Copy commands confirm with a short message.
+
 ### Fixed
 
 - The Keys sheet lists all viewer keys (line and page scrolling, find results, undo).
+- The View menu closes on a click outside it and when you switch tabs.
+- Closing a menu with Esc returns focus to where it was.
+
+### Removed
+
+- The Git compare entry in the sidebar; Git compare is not in this alpha.
 
 ## [0.1.0-alpha.2] — 2026-11-17
 
