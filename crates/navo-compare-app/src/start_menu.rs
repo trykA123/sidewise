@@ -1,7 +1,8 @@
 //! The context menu of a start row: Open, Copy paths, Remove from recent (NC136).
 //! Part of the start screen; `start_rows` opens it on a right click, `Shift+F10` or the list key.
+//! The shell reuses its lines and copy for the sidebar's Recent entries (B5).
 
-use gpui_kit::{Bounds, ClipboardItem, Pixels, Point};
+use gpui_kit::{App, Bounds, ClipboardItem, Pixels, Point};
 use navo_compare_profile::recent::StartRow;
 use sidewise_kit::prelude::*;
 
@@ -12,7 +13,7 @@ use crate::start_rows::row_at;
 gpui_kit::actions!(start, [CopyPaths, ForgetSelected, ShowRowMenu]);
 
 /// The three lines of a row's menu; "Remove from recent" is dimmed for a named row.
-fn lines(row: &StartRow) -> [MenuLine; 3] {
+pub(crate) fn lines(row: &StartRow) -> [MenuLine; 3] {
     let run = |label: &str, action: Box<dyn gpui_kit::Action>, enabled| MenuLine::Run {
         label: label.to_owned().into(),
         action,
@@ -61,8 +62,7 @@ impl StartScreen {
     /// Copies the selected row's two sides, one per line, to the clipboard.
     pub(crate) fn copy_paths(&mut self, cx: &mut Context<Self>) {
         if let Some(row) = self.selected.and_then(|i| row_at(&self.rows, i)) {
-            let text = format!("{}\n{}", row.left, row.right);
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            copy_row_paths(row, cx);
         }
     }
 
@@ -77,4 +77,10 @@ impl StartScreen {
             cx.emit(StartEvent::Forget { id });
         }
     }
+}
+
+/// Copies `row`'s two sides, one per line, to the clipboard.
+pub(crate) fn copy_row_paths(row: &StartRow, cx: &mut App) {
+    let text = format!("{}\n{}", row.left, row.right);
+    cx.write_to_clipboard(ClipboardItem::new_string(text));
 }

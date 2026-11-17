@@ -254,6 +254,7 @@ impl Sidebar {
             match (section.kind, i) {
                 (SectionKind::Primary, 0) => self.primary_row(entry, m, cx),
                 (SectionKind::OpenTabs, i) => self.tab_row(actions::TabRow::new(i, entry), m, cx),
+                (SectionKind::Recent, i) => self.recent_row((i, entry), m, cx),
                 _ => Self::static_row(
                     (section.heading, i).into(),
                     entry.label.clone(),

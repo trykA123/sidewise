@@ -15,6 +15,9 @@ use super::{DismissTip, Entry, ShowTabMenu, Sidebar};
 use crate::theme::SidewiseTheme;
 use crate::theme_data::palettes::{DIMS, ModeTokens};
 
+#[path = "sidebar_recent.rs"]
+mod recent;
+
 /// Typed events emitted by [`Sidebar`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SidebarEvent {
@@ -24,6 +27,8 @@ pub enum SidebarEvent {
     RailToggled(bool),
     /// Ask for the tab menu of tab `.0` at window point `.1`.
     TabMenu(usize, Point<Pixels>),
+    /// Ask for the row menu of Recent entry `.0` at window point `.1`.
+    RecentMenu(usize, Point<Pixels>),
 }
 
 /// Direction for keyboard row traversal inside [`Sidebar`].
@@ -364,8 +369,7 @@ impl Sidebar {
         cx.notify();
     }
 
-    /// The rows shown (lets the shell tests read them).
-    #[cfg(test)]
+    /// The rows shown (the shell reads a Recent entry's row for its menu).
     pub(crate) fn rows(&self) -> &StartRows {
         &self.rows
     }
