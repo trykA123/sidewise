@@ -1,7 +1,5 @@
 //! The main window of Sidewise: starts the app and opens the themed shell.
 
-use std::path::PathBuf;
-
 use navo_compare_cli::args::SideSpec;
 use navo_compare_profile::brand;
 use sidewise_kit::prelude::*;
@@ -51,7 +49,7 @@ pub fn run(opening: Opening) -> std::process::ExitCode {
 }
 
 /// Opens the 1,200 x 760 window titled with the product name, with `pair` on the first compare tab.
-fn open(cx: &mut App, pair: Option<(PathBuf, PathBuf)>) -> Result<(), String> {
+fn open(cx: &mut App, pair: Option<(SideSpec, SideSpec)>) -> Result<(), String> {
     let bounds = Bounds::centered(None, size(px(1200.), px(760.)), cx);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -67,8 +65,8 @@ fn open(cx: &mut App, pair: Option<(PathBuf, PathBuf)>) -> Result<(), String> {
                     (
                         0,
                         CompareRequest {
-                            left: SideSpec::Path(left),
-                            right: SideSpec::Path(right),
+                            left: left,
+                            right,
                             choice: StartChoice::default(),
                         },
                     ),
