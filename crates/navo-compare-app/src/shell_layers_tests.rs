@@ -8,15 +8,16 @@ use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
     AnyWindowHandle, AppContext as _, Entity, Modifiers, TestAppContext, VisualTestContext,
 };
-use navo_compare_profile::appearance::ViewPresetPref;
+use navo_compare_profile::appearance::{UiPrefs, ViewPresetPref};
 use sidewise_core::Location;
 use sidewise_ui::browser::{CompareControl, CompareHooks, CompareSink};
 use sidewise_ui::compare_diff::CompareOptions;
+use sidewise_ui::window_view::LookPreset;
 
 use crate::compare_tab_tests::{TempDir, shell, submit};
 use crate::screens::compare_tab::{CompareRequest, TabView, install_test_hooks};
 use crate::shell::Shell;
-use crate::shell_prefs::{install_prefs, prefs};
+use crate::shell_prefs::{install_prefs, prefs, save_prefs};
 use crate::start_tabs::StartChoice;
 
 type Opened = (AnyWindowHandle, Entity<Shell>);
@@ -189,4 +190,37 @@ fn the_keys_sheet_opens_on_a_compare_tab_too(cx: &mut TestAppContext) {
     assert_eq!(open_state(cx, &opened), (true, false));
     cx.simulate_keystrokes(opened.0, "escape");
     assert_eq!(open_state(cx, &opened), (false, false));
+}
+
+/// The look of the active compare tab's screen.
+fn tab_look(cx: &mut TestAppContext, opened: &Opened) -> sidewise_ui::window_view::LookDefaults {
+    let tab = opened.1.read_with(cx, |s, _| s.active_compare().cloned());
+    let screen = tab.expect("tab").read_with(cx, |t, _| t.screen().clone());
+    screen.read_with(cx, |s, _| s.look_defaults())
+}
+
+#[gpui_kit::test]
+fn a_new_compare_tab_opens_with_the_saved_look(cx: &mut TestAppContext) {
+    let profile = TempDir::new("look-new");
+    cx.update(|cx| install_prefs(Some(profile.path()), cx))
+        .expect("install");
+    let simple = UiPrefs {
+        preset: ViewPresetPref::Simple,
+        ..cx.update(|cx| prefs(cx))
+    };
+    cx.update(|cx| save_prefs(simple, cx)).expect("save");
+    let (opened, _dirs) = on_compare(cx, "look-new", false);
+    assert_eq!(tab_look(cx, &opened).preset, LookPreset::Simple);
+}
+
+#[gpui_kit::test]
+fn changing_the_view_updates_an_open_compare_tab(cx: &mut TestAppContext) {
+    let profile = TempDir::new("look-open");
+    cx.update(|cx| install_prefs(Some(profile.path()), cx))
+        .expect("install");
+    let (opened, _dirs) = on_compare(cx, "look-open", false);
+    assert_eq!(tab_look(cx, &opened).preset, LookPreset::Rich);
+    cx.simulate_keystrokes(opened.0, "alt-v");
+    cx.simulate_keystrokes(opened.0, "up enter");
+    assert_eq!(tab_look(cx, &opened).preset, LookPreset::Simple);
 }

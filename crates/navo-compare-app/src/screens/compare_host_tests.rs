@@ -7,7 +7,11 @@ use sidewise_ui::browser::Waker;
 use sidewise_ui::compare_diff::PairRequest;
 use sidewise_ui::compare_keys::compare_keys;
 
-use super::compare_host::{action_name, bind_compare_keys, new_compare_screen};
+use navo_compare_profile::appearance::{LayoutPref, UiPrefs, ViewPresetPref};
+use sidewise_ui::compare_diff::Layout;
+use sidewise_ui::window_view::{LookDefaults, LookPreset};
+
+use super::compare_host::{action_name, bind_compare_keys, look_of, new_compare_screen};
 use super::compare_run::location_of;
 use super::host_parts::compare_files;
 
@@ -76,7 +80,8 @@ fn compare_screen_opens_a_text_pair(cx: &mut gpui_kit::TestAppContext) {
     fs::write(dir.join("a.txt"), b"one\n").expect("write left");
     fs::write(dir.join("b.txt"), b"two\n").expect("write right");
     let wake: Waker = Arc::new(|| {});
-    let (window, screen) = crate::test_window::open(cx, |_, _| new_compare_screen(wake));
+    let (window, screen) =
+        crate::test_window::open(cx, |_, _| new_compare_screen(wake, LookDefaults::default()));
     let request = PairRequest {
         id: 0,
         path: "a.txt".into(),
@@ -96,4 +101,39 @@ fn compare_screen_opens_a_text_pair(cx: &mut gpui_kit::TestAppContext) {
     let _ = fs::remove_dir_all(&dir);
     assert!(opened);
     assert!(open);
+}
+
+/// `look_of` maps each preset one to one, and words, wrap and layout follow the prefs.
+#[test]
+fn look_of_maps_presets_and_parts() {
+    for (pref, want) in [
+        (ViewPresetPref::Simple, LookPreset::Simple),
+        (ViewPresetPref::Rich, LookPreset::Rich),
+        (ViewPresetPref::Custom, LookPreset::Custom),
+    ] {
+        let prefs = UiPrefs {
+            preset: pref,
+            words: false,
+            wrap_lines: true,
+            layout: LayoutPref::Unified,
+            ..UiPrefs::default()
+        };
+        let look = look_of(&prefs);
+        assert_eq!(look.preset, want);
+        assert!(!look.words && look.wrap);
+        assert_eq!(look.layout, Some(Layout::Unified));
+    }
+    assert_eq!(look_of(&UiPrefs::default()).layout, None);
+}
+
+/// A screen made with a look reports it.
+#[gpui_kit::test]
+fn new_compare_screen_starts_with_the_given_look(cx: &mut gpui_kit::TestAppContext) {
+    let look = LookDefaults {
+        preset: LookPreset::Simple,
+        ..LookDefaults::default()
+    };
+    let wake: Waker = Arc::new(|| {});
+    let (_, screen) = crate::test_window::open(cx, |_, _| new_compare_screen(wake, look));
+    assert_eq!(screen.read_with(cx, |s, _| s.look_defaults()), look);
 }

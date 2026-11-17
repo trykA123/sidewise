@@ -11,9 +11,9 @@ use gpui_kit::{AsyncApp, FocusHandle, Focusable, Global, Subscription, WeakEntit
 use sidewise_host::compare::pane::PaneCompare;
 use sidewise_kit::prelude::*;
 use sidewise_ui::browser::Waker;
-use sidewise_ui::window_view::CompareScreen;
+use sidewise_ui::window_view::{CompareScreen, LookDefaults};
 
-use super::compare_host::new_compare_screen;
+use super::compare_host::{look_of, new_compare_screen};
 use super::compare_run::{CompareRun, RunError};
 use super::compare_tab_large::large_timer;
 use super::folders_view::FoldersView;
@@ -125,7 +125,8 @@ impl CompareTab {
         let roots = [request.left.clone(), request.right.clone()];
         let folders = cx.new(|cx| FoldersView::new(cx).with_roots(roots));
         let large = cx.new(LargeView::new);
-        let screen = cx.new(|_| new_compare_screen(wake));
+        let look = look_of(&crate::shell_prefs::prefs(cx));
+        let screen = cx.new(|_| new_compare_screen(wake, look));
         cx.spawn(async move |this, cx| pump(wakes, this, cx).await)
             .detach();
         cx.spawn(async move |this, cx| large_timer(this, cx).await)
@@ -177,6 +178,15 @@ impl CompareTab {
     #[cfg(test)]
     pub(crate) fn large(&self) -> &Entity<LargeView> {
         &self.large
+    }
+
+    /// Gives the file diff screen a new saved look and redraws.
+    pub fn set_look(&mut self, look: LookDefaults, cx: &mut Context<Self>) {
+        self.screen.update(cx, |screen, cx| {
+            screen.set_look(look);
+            cx.notify();
+        });
+        cx.notify();
     }
 
     /// The compare screen entity that shows the file diff.

@@ -104,6 +104,17 @@ impl Shell {
         }
     }
 
+    /// Every open compare tab, in tab order.
+    pub(crate) fn compare_tabs(&self) -> Vec<Entity<CompareTab>> {
+        self.tabs
+            .iter()
+            .filter_map(|tab| match &tab.kind {
+                TabKind::Compare(tab) => Some(tab.clone()),
+                TabKind::Start(_) => None,
+            })
+            .collect()
+    }
+
     /// The active tab's body: the start screen or the compare tab; empty when no tab is open.
     pub(super) fn stage(&self) -> AnyElement {
         match (self.active_screen(), self.active_compare()) {

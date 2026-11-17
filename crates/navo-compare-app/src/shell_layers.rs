@@ -8,6 +8,7 @@ use super::Shell;
 use crate::chrome::topbar_status::Action;
 use crate::layers::keys_sheet::KeysSheet;
 use crate::layers::view_menu::{ViewMenu, ViewMenuEvent};
+use crate::screens::compare_host::look_of;
 use crate::shell_prefs;
 
 /// The layers the shell owns: the one Keys sheet and the View menu while it is open.
@@ -92,8 +93,13 @@ impl Shell {
         cx.notify();
     }
 
-    /// Hands the saved look to the open compare tabs; VM5 fills it.
-    fn apply_look(&mut self, _cx: &mut Context<Self>) {}
+    /// Hands the saved look to every open compare tab.
+    fn apply_look(&mut self, cx: &mut Context<Self>) {
+        let look = look_of(&shell_prefs::prefs(cx));
+        for tab in self.compare_tabs() {
+            tab.update(cx, |tab, cx| tab.set_look(look, cx));
+        }
+    }
 
     /// The open View menu, for the render.
     pub(super) fn view_menu(&self) -> Option<Entity<ViewMenu>> {

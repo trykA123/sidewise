@@ -5,11 +5,12 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::{App, KeyBinding, KeyBindingContextPredicate};
+use navo_compare_profile::appearance::{LayoutPref, UiPrefs, ViewPresetPref};
 use sidewise_host::compare::diff::hooks::DiffBackend;
 use sidewise_ui::browser::Waker;
-use sidewise_ui::compare_diff::{CompareOptions, DiffHooks};
+use sidewise_ui::compare_diff::{CompareOptions, DiffHooks, Layout};
 use sidewise_ui::compare_keys::compare_keys;
-use sidewise_ui::window_view::{CompareScreen, DiffSlot};
+use sidewise_ui::window_view::{CompareScreen, DiffSlot, LookDefaults, LookPreset};
 
 use super::host_parts::compare_files;
 
@@ -29,14 +30,35 @@ fn diff_hooks() -> Arc<dyn DiffHooks> {
     Arc::new(DiffBackend::default())
 }
 
-/// A compare screen over the in-memory diff backend (NC118); `wake` runs after each diff update.
-pub fn new_compare_screen(wake: Waker) -> CompareScreen {
+/// The screen's look defaults for the saved View preferences: preset, words, wrap and layout
+/// (Split follows the window, Unified is forced).
+pub fn look_of(p: &UiPrefs) -> LookDefaults {
+    LookDefaults {
+        preset: match p.preset {
+            ViewPresetPref::Simple => LookPreset::Simple,
+            ViewPresetPref::Rich => LookPreset::Rich,
+            ViewPresetPref::Custom => LookPreset::Custom,
+        },
+        words: p.words,
+        wrap: p.wrap_lines,
+        layout: match p.layout {
+            LayoutPref::Split => None,
+            LayoutPref::Unified => Some(Layout::Unified),
+        },
+    }
+}
+
+/// A compare screen over the in-memory diff backend (NC118) that opens pairs with `look`;
+/// `wake` runs after each diff update.
+pub fn new_compare_screen(wake: Waker, look: LookDefaults) -> CompareScreen {
     let hooks = diff_hooks();
-    CompareScreen::new(
+    let mut screen = CompareScreen::new(
         DiffSlot::new(Some(hooks), wake),
         CompareOptions::default(),
         compare_files(),
-    )
+    );
+    screen.set_look(look);
+    screen
 }
 
 /// Binds Navo's compare keys (contexts `CompareView`, `CompareStream`); returns how many bindings
