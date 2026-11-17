@@ -3,6 +3,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_mutex;
 #[cfg_attr(
     not(test),
     expect(dead_code, reason = "U13c wires the chrome into the shell")
@@ -110,6 +111,11 @@ fn main() -> ExitCode {
             eprintln!("{text}");
             ExitCode::from(Exit::Error as u8)
         }
-        Launch::Open(opening) => window::run(opening),
+        Launch::Open(opening) => {
+            if let Err(error) = app_mutex::hold() {
+                eprintln!("the installer cannot see this window: {error}");
+            }
+            window::run(opening)
+        }
     }
 }

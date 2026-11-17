@@ -30,6 +30,7 @@ MinVersion=10.0.19045
 PrivilegesRequired=lowest
 DefaultDirName={autopf}\{#AppName}
 DisableDirPage=yes
+AlwaysShowDirOnReadyPage=yes
 DisableProgramGroupPage=yes
 UsePreviousAppDir=yes
 UninstallDisplayName={#AppName}
@@ -39,6 +40,9 @@ WizardStyle=modern dynamic
 Compression=lzma2/max
 SolidCompression=yes
 CloseApplications=yes
+; The app holds this named mutex (crates/navo-compare-app/src/app_mutex.rs, never renamed), so Setup
+; and the uninstaller ask the user to close Sidewise first (IN7, F2). No Global\ prefix: per-user.
+AppMutex=Sidewise-7f3c2a91-5d4e-4b8a-9c61-0e2f7a3b8d54
 RestartApplications=no
 OutputBaseFilename={#Slug}-{#AppVersion}-windows-x64-setup
 #ifdef Sign

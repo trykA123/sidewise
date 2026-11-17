@@ -31,6 +31,9 @@ sidewise-l10n = { path = "../sidewise-l10n" }
 sidewise-ui = { path = "../sidewise-ui" }
 toml = "1.2.1"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
 [build-dependencies]
 embed-resource = "3.0.12"
 navo-compare-profile = { path = "../navo-compare-profile" }
