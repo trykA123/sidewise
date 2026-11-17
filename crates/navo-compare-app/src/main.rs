@@ -17,6 +17,7 @@ mod compare_tab_keys_tests;
 mod compare_tab_large_tests;
 #[cfg(test)]
 mod compare_tab_layout_tests;
+mod compare_tab_menu_tests;
 #[cfg(test)]
 mod compare_tab_pair_tests;
 #[cfg(test)]
