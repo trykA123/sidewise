@@ -67,16 +67,14 @@ pub(super) fn swap(
     sync().map_err(ReplaceError::NotDurable)
 }
 
-/// Maps a failed `ReplaceFileW` to a replace result (NC146): 1176 and 1177 mean the
-/// target may sit at the backup name, so the caller rolls back by hash.
+/// Maps a failed `ReplaceFileW` to a replace result (NC146). `moved_aside` says whether the
+/// target name is gone while `old` exists; that, a failed probe, 1176 or 1177 give
+/// `TargetMoved`, so the caller rolls back by hash. Any other failure is `Unchanged`.
 #[cfg(any(windows, test))]
-pub(super) fn replace_failure(
-    error: io::Error,
-    _moved_aside: io::Result<bool>,
-) -> super::ReplaceError {
-    match error.raw_os_error() {
-        Some(1176 | 1177) => super::ReplaceError::TargetMoved(error),
-        _ => super::ReplaceError::Unchanged(error),
+pub(super) fn replace_failure(error: io::Error, moved_aside: io::Result<bool>) -> ReplaceError {
+    match (error.raw_os_error(), moved_aside) {
+        (Some(1176 | 1177), _) | (_, Ok(true) | Err(_)) => ReplaceError::TargetMoved(error),
+        _ => ReplaceError::Unchanged(error),
     }
 }
 

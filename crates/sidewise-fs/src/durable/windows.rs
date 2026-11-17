@@ -9,8 +9,8 @@ use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
 use windows_sys::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_READONLY, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
-    FILE_WRITE_ATTRIBUTES,
+    FILE_ATTRIBUTE_READONLY, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_READ_ATTRIBUTES, FILE_WRITE_ATTRIBUTES,
 };
 
 use super::real::{from_ms, list_sorted, parent, refused, replace_failure, to_ms};
@@ -18,7 +18,7 @@ use super::windows_reparse::{check_plain, on_a_volume};
 use super::{Disk, DiskFile, Meta, RealDisk, ReplaceError};
 
 /// The verbatim form of an absolute path, so long names and trailing dots pass unchanged.
-/// Fails with `InvalidInput` on a relative path or one with a NUL unit.
+/// Fails with `InvalidInput` on a relative path, one with a NUL unit, or a device path.
 fn verbatim(path: &Path) -> io::Result<PathBuf> {
     if !path.is_absolute() {
         return Err(refused("path is not absolute"));
@@ -42,23 +42,20 @@ fn wide(path: &Path) -> io::Result<Vec<u16>> {
 }
 
 /// Opens a regular file without following a link (symlink or junction).
-/// Fails with `InvalidInput` on a link or anything that is not a regular file.
+/// Fails with `InvalidInput` on a link, placeholder, offline file or anything not a file.
 fn open_regular(path: &Path, options: &mut OpenOptions) -> io::Result<File> {
     let file = options
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
         .open(verbatim(path)?)?;
     check_plain(&file)?;
-    let kind = file.metadata()?.file_type();
-    if kind.is_symlink() {
-        return Err(refused("path is a link"));
-    }
-    if !kind.is_file() {
+    if !file.metadata()?.is_file() {
         return Err(refused("not a regular file"));
     }
     Ok(file)
 }
 
-/// `ReplaceFileW(target, staged, old)`: the target keeps its creation time, ACL and streams.
+/// `ReplaceFileW(target, staged, old)`: the target keeps its creation time, attributes and
+/// streams. Owner and ACL are merged best effort: without `WRITE_DAC` they drop silently.
 /// Fails with the OS error; `replace_failure` maps it.
 #[allow(unsafe_code, reason = "ReplaceFileW is a Win32 call")]
 fn replace_file(target: &[u16], staged: &[u16], old: &[u16]) -> io::Result<()> {
@@ -94,6 +91,21 @@ fn move_new(from: &[u16], to: &[u16]) -> io::Result<()> {
     Ok(())
 }
 
+/// Flushes the swapped target through a write handle, so the replace is durable (NTFS
+/// flushes its log with the file). Fails with the OS error, also when the file is in use.
+fn flush(target: &Path) -> io::Result<()> {
+    OpenOptions::new()
+        .write(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(verbatim(target)?)?
+        .sync_all()
+}
+
+/// After a failed swap: true when the target name is gone and `old` exists (NC145).
+fn moved_aside(target: &Path, old: &Path) -> io::Result<bool> {
+    Ok(RealDisk.meta(target)?.is_none() && RealDisk.meta(old)?.is_some())
+}
+
 impl Disk for RealDisk {
     fn create_new(&self, path: &Path) -> io::Result<Box<dyn DiskFile>> {
         let file = OpenOptions::new()
@@ -113,21 +125,28 @@ impl Disk for RealDisk {
         Ok(Box::new(open_regular(path, OpenOptions::new().read(true))?))
     }
 
-    /// Reads the link itself, never its target; a symlink or junction is refused.
+    /// Reads one `BACKUP_SEMANTICS | OPEN_REPARSE_POINT` handle, never a link's target. A link,
+    /// placeholder or offline file is refused. `identity` is `None` on FAT and exFAT.
     fn meta(&self, path: &Path) -> io::Result<Option<Meta>> {
-        let path = verbatim(path)?;
-        let found = match std::fs::symlink_metadata(&path) {
+        let opened = OpenOptions::new()
+            .access_mode(FILE_READ_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(verbatim(path)?);
+        let file = match opened {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-            found => found?,
+            opened => opened?,
         };
-        if !(found.is_file() || found.is_dir()) {
+        let found = file.metadata()?;
+        if found.is_file() {
+            check_plain(&file)?;
+        } else if !found.is_dir() {
             return Err(refused("not a file or folder"));
         }
         Ok(Some(Meta {
             size: found.len(),
             modified_ms: found.modified().ok().and_then(to_ms),
             read_only: found.file_attributes() & FILE_ATTRIBUTE_READONLY != 0,
-            identity: crate::native::native_identity(&path)?,
+            identity: crate::native::identity::from_file(&file)?,
         }))
     }
 
@@ -141,8 +160,8 @@ impl Disk for RealDisk {
         Ok(())
     }
 
-    /// Both files must share a folder, so the swap stays on one volume. After a swap the
-    /// `old` backup is removed; a failed removal leaves a temp that rollback deletes.
+    /// Both files must share a folder, so the swap stays on one volume. After the swap the
+    /// target is flushed, then `old` is removed; a failed removal is logged and leaves a stray.
     fn replace(&self, staged: &Path, target: &Path, old: &Path) -> Result<(), ReplaceError> {
         let dir = parent(target).map_err(ReplaceError::Unchanged)?;
         if parent(staged).ok() != Some(dir) {
@@ -152,12 +171,18 @@ impl Disk for RealDisk {
         }
         let names = || io::Result::Ok((wide(target)?, wide(staged)?, wide(old)?));
         let (target_w, staged_w, old_w) = names().map_err(ReplaceError::Unchanged)?;
-        replace_file(&target_w, &staged_w, &old_w)
-            .map_err(|error| replace_failure(error, Ok(false)))?;
+        if let Err(error) = replace_file(&target_w, &staged_w, &old_w) {
+            let moved = moved_aside(target, old);
+            if let Err(probe) = &moved {
+                tracing::warn!(path = %target.display(), %probe, "replace: could not probe the target");
+            }
+            return Err(replace_failure(error, moved));
+        }
+        let flushed = flush(target);
         if let Err(error) = verbatim(old).and_then(std::fs::remove_file) {
             tracing::warn!(path = %old.display(), %error, "replace: could not remove the old file");
         }
-        Ok(())
+        flushed.map_err(ReplaceError::NotDurable)
     }
 
     fn rename_new(&self, from: &Path, to: &Path) -> io::Result<()> {

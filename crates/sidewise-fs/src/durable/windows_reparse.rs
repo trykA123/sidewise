@@ -1,21 +1,84 @@
 //! Windows `RealDisk` guards: refuses files a filter driver serves (cloud, dedup, HSM and
 //! WOF placeholders) and device paths, so every write step sees plain bytes on a volume.
 
+const REPARSE_POINT: u32 = 0x400;
+const OFFLINE: u32 = 0x1000;
+const RECALL_ON_OPEN: u32 = 0x4_0000;
+const RECALL_ON_DATA_ACCESS: u32 = 0x40_0000;
+/// Bit 29 of a reparse tag marks a name surrogate: a symlink, junction or mount point.
+const NAME_SURROGATE: u32 = 0x2000_0000;
+
 /// Why a file with these attributes and reparse tag is refused, or `None` for a plain file.
-pub(super) fn refusal(_attributes: u32, _tag: u32) -> Option<&'static str> {
+/// A filter serves a placeholder's bytes; opened without following, it can read as zeros.
+pub(super) fn refusal(attributes: u32, tag: u32) -> Option<&'static str> {
+    if attributes & REPARSE_POINT != 0 {
+        return Some(if tag & NAME_SURROGATE != 0 {
+            "path is a link"
+        } else {
+            "file is a placeholder (cloud, dedup, HSM or WOF-compressed); not supported"
+        });
+    }
+    if attributes & (OFFLINE | RECALL_ON_OPEN | RECALL_ON_DATA_ACCESS) != 0 {
+        return Some("file is offline or not downloaded; not supported");
+    }
     None
 }
 
 /// True when verbatim UTF-16 `units` name a file on a volume: `\\?\X:\`, `\\?\UNC\` or
 /// `\\?\Volume{`. Device paths (`\\.\`, `\\?\GLOBALROOT`, `\\?\C:`) are false.
-pub(super) fn on_a_volume(_units: &[u16]) -> bool {
-    true
+pub(super) fn on_a_volume(units: &[u16]) -> bool {
+    let Some(rest) = strip_ascii(units, r"\\?\", false) else {
+        return false;
+    };
+    match rest {
+        [letter, 0x3A, 0x5C, ..] => u8::try_from(*letter).is_ok_and(|b| b.is_ascii_alphabetic()),
+        _ => {
+            strip_ascii(rest, r"UNC\", true).is_some()
+                || strip_ascii(rest, "Volume{", true).is_some()
+        }
+    }
 }
 
-/// Fails closed: an `InvalidInput` error when `file` is a link, placeholder or offline file.
+/// `units` without the ASCII `prefix`, or `None` when they do not start with it.
+fn strip_ascii<'a>(units: &'a [u16], prefix: &str, ignore_case: bool) -> Option<&'a [u16]> {
+    let head = units.get(..prefix.len())?;
+    let same = head.iter().zip(prefix.bytes()).all(|(&unit, byte)| {
+        u8::try_from(unit)
+            .is_ok_and(|unit| unit == byte || (ignore_case && unit.eq_ignore_ascii_case(&byte)))
+    });
+    same.then(|| &units[prefix.len()..])
+}
+
+/// Reads the attributes and reparse tag of an open handle and refuses a link, placeholder
+/// or offline file with `InvalidInput`. A failed query is returned, so the check fails closed.
 #[cfg(windows)]
-pub(super) fn check_plain(_file: &std::fs::File) -> std::io::Result<()> {
-    refusal(0, 0).map_or(Ok(()), |why| Err(super::real::refused(why)))
+#[allow(unsafe_code, reason = "FileAttributeTagInfo is a handle query")]
+pub(super) fn check_plain(file: &std::fs::File) -> std::io::Result<()> {
+    use std::mem::{MaybeUninit, size_of};
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_TAG_INFO, FileAttributeTagInfo, GetFileInformationByHandleEx,
+    };
+
+    let mut info = MaybeUninit::<FILE_ATTRIBUTE_TAG_INFO>::zeroed();
+    // SAFETY: the handle and the correctly sized output buffer live through the query.
+    let ok = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileAttributeTagInfo,
+            info.as_mut_ptr().cast(),
+            size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        )
+    };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: a successful query initializes FILE_ATTRIBUTE_TAG_INFO.
+    let info = unsafe { info.assume_init() };
+    match refusal(info.FileAttributes, info.ReparseTag) {
+        Some(why) => Err(super::real::refused(why)),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]

@@ -47,7 +47,8 @@ pub enum ReplaceError {
     Unchanged(io::Error),
     /// The target was swapped, but the swap is not durable; roll back by hash (NC145).
     NotDurable(io::Error),
-    /// The target name is gone and the old file is at `old` (Windows 1176/1177).
+    /// The swap failed and the target name may be gone; the old file may be at `old`
+    /// (Windows 1176/1177, or the target found missing). Roll back by hash (NC145).
     TargetMoved(io::Error),
 }
 
@@ -95,8 +96,9 @@ pub trait Disk: Send + Sync {
     fn set_modified(&self, path: &Path, ms: i64) -> io::Result<()>;
     /// Copies the permission bits of `from` to `to`; a no-op on Windows.
     fn copy_mode(&self, from: &Path, to: &Path) -> io::Result<()>;
-    /// Atomically puts `staged` in place of `target` and makes it durable.
-    /// Leaves nothing at `old` unless it returns `TargetMoved`.
+    /// Atomically puts `staged` in place of `target` and makes it durable; `old` is a temp name
+    /// on Windows. A failed removal of `old` after the swap leaves a stray temp, which the
+    /// job's rollback deletes (NC145 step 1); nothing sweeps it after a `Commit` yet.
     fn replace(&self, staged: &Path, target: &Path, old: &Path) -> Result<(), ReplaceError>;
     /// Renames `from` to `to`; fails with `AlreadyExists` and changes nothing if `to` exists.
     fn rename_new(&self, from: &Path, to: &Path) -> io::Result<()>;
