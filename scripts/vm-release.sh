@@ -6,6 +6,12 @@ set -euo pipefail
 readonly LOCK_WAIT_S=3600
 readonly REMOTE_EXE='C:/src/navo-compare/target/release/sidewise.exe'
 readonly TEXT_FILES=(README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE)
+# Licences of the fonts sidewise-kit embeds; the zip holds them flat, next to the exe.
+readonly FONT_LICENSES=(
+  crates/sidewise-kit/fonts/Inter-OFL.txt
+  crates/sidewise-kit/fonts/JetBrainsMono-OFL.txt
+  crates/sidewise-kit/fonts/SpaceGrotesk-OFL.txt
+)
 
 usage() {
   printf '%s\n' "usage: WINVM=<path to winvm.sh> vm-release.sh <rev>" >&2
@@ -37,12 +43,17 @@ build_and_pack() {
   VM_LOCK_HELD=1 "$script_dir/vm-build.sh" "$sha" release || die "VM build failed"
   "$winvm" scp "admin@127.0.0.1:$REMOTE_EXE" "$stage/sidewise.exe" || die "copying the exe failed"
   [[ -s "$stage/sidewise.exe" ]] || die "sidewise.exe is missing or empty"
+  local flat=("${TEXT_FILES[@]}")
   for f in "${TEXT_FILES[@]}"; do
     git -C "$repo" show "$sha:$f" > "$stage/$f" || die "cannot read $f at $sha"
   done
+  for f in "${FONT_LICENSES[@]}"; do
+    git -C "$repo" show "$sha:$f" > "$stage/${f##*/}" || die "cannot read $f at $sha"
+    flat+=("${f##*/}")
+  done
   mkdir -p "$dist"
   rm -f -- "${dist:?}/$name.zip" "$dist/SHA256SUMS"
-  (cd "$stage" && bsdtar -a -cf "$dist/$name.zip" sidewise.exe "${TEXT_FILES[@]}") \
+  (cd "$stage" && bsdtar -a -cf "$dist/$name.zip" sidewise.exe "${flat[@]}") \
     || die "zip failed"
   (cd "$dist" && sha256sum -- "$name.zip" > SHA256SUMS) || die "checksum failed"
 }
