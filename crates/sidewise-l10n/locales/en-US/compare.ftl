@@ -194,6 +194,7 @@ compare-undone = Undid the copy
 compare-undo-changed = The file changed after the copy. Nothing was undone.
 compare-undo-failed = The copy was not undone: { $reason }
 compare-undo-not-newest = Only the latest copy can be undone here; use Ctrl+Z.
+compare-undo-gone = That copy was already undone.
 compare-undo-tab-closed = Use Ctrl+Z in an open compare tab.
 compare-writes-off = Copying is off: { $reason }
 compare-recovery-restored = Sidewise restored { $count ->

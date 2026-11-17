@@ -138,12 +138,14 @@ impl CompareTab {
 }
 
 /// The toast's Undo: undoes copy `job` on `screen` while it is the newest copy; otherwise
-/// toasts why not (tab closed, or a newer copy exists).
+/// toasts why not (tab closed, a newer copy exists, or it is already undone). `Nothing` cannot
+/// come back here: with a job id the host answers `Gone` for an empty stack.
 fn undo_from_toast(screen: &WeakEntity<CompareScreen>, job: &str, cx: &mut App) {
     let started = screen.update(cx, |screen, cx| screen.undo_write(job, cx));
     let id = match started {
         Err(_) => "compare-undo-tab-closed",
         Ok(UndoStart::NotNewest) => "compare-undo-not-newest",
+        Ok(UndoStart::Gone) => "compare-undo-gone",
         Ok(UndoStart::Started | UndoStart::Nothing) => return,
     };
     // The toast host is mid-update while it runs this Undo, so the reply waits a turn.

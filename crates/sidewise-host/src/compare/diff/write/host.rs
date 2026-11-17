@@ -43,12 +43,16 @@ impl State {
     }
 
     /// Pop the newest committed copy when it is `job` (any for `None`). `Err(NotNewest)` when
-    /// `job` is not on top (a newer copy, or already undone), `Ok(None)` for an empty stack.
+    /// `job` is on the stack under a newer copy, `Err(Gone)` when it is not on the stack
+    /// (undone, or dropped), `Ok(None)` for an empty stack.
     fn pop_if(&self, job: Option<&str>) -> Result<Option<Committed>, UndoStart> {
         let mut stack = self.undo.lock().unwrap_or_else(PoisonError::into_inner);
         match (stack.last(), job) {
             (Some(top), Some(job)) if top.job.as_str() == job => Ok(stack.pop()),
-            (_, Some(_)) => Err(UndoStart::NotNewest),
+            (_, Some(job)) if stack.iter().any(|entry| entry.job.as_str() == job) => {
+                Err(UndoStart::NotNewest)
+            }
+            (_, Some(_)) => Err(UndoStart::Gone),
             (_, None) => Ok(stack.pop()),
         }
     }

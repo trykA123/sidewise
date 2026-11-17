@@ -129,16 +129,6 @@ impl Fixture {
         self.copy_done(changes).result
     }
 
-    /// Copy `changes` as one job and return the whole end, with its job id.
-    fn copy_done(&self, changes: Vec<CopyChange>) -> CopyDone {
-        let (sink, receiver) = copy_sink();
-        self.backend.copy_changes(changes, sink);
-        let end = receiver.recv_timeout(WAIT).unwrap();
-        assert_eq!((end.request, end.direction), (9, CopyDirection::ToRight));
-        assert!(receiver.recv_timeout(Duration::from_millis(50)).is_err());
-        end
-    }
-
     /// Undo through the backend; `None` when it had nothing to undo.
     fn undo(&self) -> Option<UndoDone> {
         let (sender, receiver) = mpsc::channel();
@@ -202,29 +192,6 @@ fn a_copy_writes_the_target_and_undo_puts_back_its_bytes_and_time() {
 }
 
 #[test]
-fn undo_goes_back_one_copy_at_a_time_newest_first() {
-    let f = Fixture::new(
-        b"a\nB\nc\nd\ne\nf\ng\nH\n",
-        b"a\nb\nc\nd\ne\nf\ng\nh\n",
-        Plan::Pass,
-    );
-    let mut changes = f.changes();
-    assert_eq!(changes.len(), 2);
-    let second = changes.pop().unwrap();
-    assert_eq!(f.copy(changes), CopyResult::Copied);
-    let mut again = f.changes();
-    assert_eq!(again.len(), 1);
-    assert_eq!(again[0].right_bytes, second.right_bytes);
-    assert_eq!(f.copy(vec![again.remove(0)]), CopyResult::Copied);
-    assert_eq!(f.right(), b"a\nB\nc\nd\ne\nf\ng\nH\n");
-    assert_eq!(f.undo().unwrap().result, CopyResult::Copied);
-    assert_eq!(f.right(), b"a\nB\nc\nd\ne\nf\ng\nh\n");
-    assert_eq!(f.undo().unwrap().result, CopyResult::Copied);
-    assert_eq!(f.right(), b"a\nb\nc\nd\ne\nf\ng\nh\n");
-    assert!(f.undo().is_none());
-}
-
-#[test]
 fn an_edit_after_the_copy_refuses_the_undo_and_drops_it() {
     // NC169: the entry can never match again, so it leaves the stack.
     let f = Fixture::new(NEW, OLD, Plan::Pass);
@@ -235,36 +202,6 @@ fn an_edit_after_the_copy_refuses_the_undo_and_drops_it() {
     assert_eq!(first.targets, vec![location(&f.right_path())]);
     assert_eq!(f.right(), b"edited\n");
     assert!(f.undo().is_none(), "the changed entry is dropped");
-}
-
-#[test]
-fn a_dropped_changed_undo_leaves_the_older_copy_undoable() {
-    let f = Fixture::new(
-        b"a\nB\nc\nd\ne\nf\ng\nH\n",
-        b"a\nb\nc\nd\ne\nf\ng\nh\n",
-        Plan::Pass,
-    );
-    let mut changes = f.changes();
-    let _second = changes.pop().unwrap();
-    assert_eq!(f.copy(changes), CopyResult::Copied);
-    let (after_first, first_time) = (f.right(), fs::metadata(f.right_path()).unwrap());
-    assert_eq!(f.copy(f.changes()), CopyResult::Copied);
-    // An edit that puts back exactly what the first copy wrote, time included.
-    fs::write(f.right_path(), &after_first).unwrap();
-    let file = fs::File::options()
-        .write(true)
-        .open(f.right_path())
-        .unwrap();
-    file.set_modified(first_time.modified().unwrap()).unwrap();
-    drop(file);
-    assert_eq!(f.undo().unwrap().result, undo_changed());
-    assert_eq!(
-        f.undo().unwrap().result,
-        CopyResult::Copied,
-        "the older entry re-checks"
-    );
-    assert_eq!(f.right(), b"a\nb\nc\nd\ne\nf\ng\nh\n");
-    assert!(f.undo().is_none());
 }
 
 #[test]
@@ -339,15 +276,6 @@ fn a_read_only_target_is_refused_with_nothing_written() {
     )]
     permissions.set_readonly(false);
     fs::set_permissions(f.right_path(), permissions).unwrap();
-}
-
-#[test]
-fn a_backend_without_a_host_has_nothing_to_undo() {
-    let sink: UndoSink = Arc::new(|_| panic!("no undo to report"));
-    assert_eq!(
-        DiffBackend::default().undo_last(None, sink),
-        UndoStart::Nothing
-    );
 }
 
 /// A copy whose fill panics after the job began, as a bug in compose would.

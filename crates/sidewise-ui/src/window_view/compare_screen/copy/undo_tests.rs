@@ -159,7 +159,8 @@ fn undo_in_flight_shows_the_running_note(cx: &mut TestAppContext) {
     assert_eq!(note.0, "A copy is still running. Wait for it to end.");
 }
 
-/// A finished copy emits `Wrote` with Undo and its note has no Undo button.
+/// A finished copy emits `Wrote` with Undo and its target, so other tabs reload it; its note
+/// has no Undo button.
 #[gpui_kit::test]
 fn finished_copy_emits_wrote_with_undo(cx: &mut TestAppContext) {
     use crate::compare_diff::{CopyDirection, CopyDone};
@@ -191,7 +192,7 @@ fn finished_copy_emits_wrote_with_undo(cx: &mut TestAppContext) {
         [ScreenEvent::Wrote {
             text: "Copied to the right".into(),
             job: Some("j1".into()),
-            reload: Vec::new(),
+            reload: vec![place("b.txt")],
         }]
     );
     let _ = fake;
@@ -216,8 +217,8 @@ fn unconfirmed_undo_refreshes_the_target(cx: &mut TestAppContext) {
     assert_eq!(seen.lock().expect("events").len(), 1);
 }
 
-/// A copy that may have written (NC168) reloads its pair and shows the text as an error, with
-/// no `Wrote`: there is nothing to undo.
+/// A copy that may have written (NC168) reloads its pair, shows the text as an error, and
+/// emits `Wrote` with its target but no Undo, so other tabs reload it too.
 #[gpui_kit::test]
 fn unconfirmed_copy_refreshes_the_pair(cx: &mut TestAppContext) {
     use crate::compare_diff::{CopyDirection, CopyDone};
@@ -226,7 +227,7 @@ fn unconfirmed_copy_refreshes_the_pair(cx: &mut TestAppContext) {
     let sink = cx.update(|cx| screen.update(cx, |s, _| s.compare.diff.copy_sink()));
     sink(CopyDone {
         request: 0,
-        direction: CopyDirection::ToRight,
+        direction: CopyDirection::ToLeft,
         result: CopyResult::Unconfirmed("unsure".into()),
         job: None,
     });
@@ -234,5 +235,12 @@ fn unconfirmed_copy_refreshes_the_pair(cx: &mut TestAppContext) {
     assert_eq!(fake.refreshes().len(), before + 1, "the pair is reloaded");
     let note = screen.read_with(cx, |s, _| s.copy_note());
     assert_eq!(note, Some(("unsure".into(), false, true)));
-    assert!(seen.lock().expect("events").is_empty());
+    assert_eq!(
+        *seen.lock().expect("events"),
+        [ScreenEvent::Wrote {
+            text: "unsure".into(),
+            job: None,
+            reload: vec![place("a.txt")],
+        }]
+    );
 }

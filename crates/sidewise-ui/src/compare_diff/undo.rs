@@ -20,10 +20,12 @@ pub type UndoSink = Arc<dyn Fn(UndoDone) + Send + Sync>;
 
 /// How an undo request was taken. `Started`: the end comes through the sink (a running write
 /// reports there too). `Nothing`: the stack is empty. `NotNewest`: the asked copy is not the
-/// newest, so nothing was undone (NC166).
+/// newest, so nothing was undone (NC166). `Gone`: the asked copy is no longer on the stack
+/// (already undone, or dropped after a lasting failure), so nothing was undone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UndoStart {
     Started,
     Nothing,
     NotNewest,
+    Gone,
 }

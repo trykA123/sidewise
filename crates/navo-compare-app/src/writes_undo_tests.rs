@@ -1,6 +1,6 @@
 //! Tests of the copy toast's Undo by job id (NC166) and of the reload fan-out after an undo
-//! (NC148): an older copy's Undo undoes nothing, a closed tab's Undo says so, and every other
-//! compare tab reloads the files an undo rewrote.
+//! (NC148): an older or undone copy's Undo undoes nothing, a closed tab's Undo says so, and
+//! every other compare tab reloads the files an undo rewrote.
 
 use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -75,7 +75,8 @@ impl DiffHooks for Probe {
         self.inner.open_stream(options, sink)
     }
 
-    /// Records `job`; refuses one that is not the newest, else counts an undo that never ends.
+    /// Records `job`; refuses it as gone on an empty stack, as not newest when another is on
+    /// top, else counts an undo that never ends.
     fn undo_last(&self, job: Option<&str>, _done: UndoSink) -> UndoStart {
         self.seen
             .asked
@@ -83,6 +84,9 @@ impl DiffHooks for Probe {
             .expect("asked")
             .push(job.map(str::to_owned));
         let top = self.seen.top.lock().expect("top").clone();
+        if job.is_some() && top.is_none() {
+            return UndoStart::Gone;
+        }
         if job.is_some() && job != top.as_deref() {
             return UndoStart::NotNewest;
         }
@@ -159,6 +163,17 @@ fn an_older_copy_toast_does_not_undo_the_newer_copy(cx: &mut TestAppContext) {
     assert_eq!(*seen.asked.lock().expect("asked"), [Some("j1".to_owned())]);
     assert_eq!(seen.undos.load(Ordering::SeqCst), 0, "nothing undone");
     let expected = t!("compare-undo-not-newest");
+    assert_eq!(last_toast(cx, &open).as_deref(), Some(expected.as_str()));
+}
+
+/// Copy j1, then Ctrl+Z undid it: j1's toast Undo undoes nothing and says it is undone.
+#[gpui_kit::test]
+fn an_undone_copy_toast_says_it_is_already_undone(cx: &mut TestAppContext) {
+    let (open, tab, seen, _dirs) = opened(cx, "undo-gone");
+    emit(cx, &open, &tab, copied("j1"));
+    press_toast_undo(cx, &open);
+    assert_eq!(seen.undos.load(Ordering::SeqCst), 0, "nothing undone");
+    let expected = t!("compare-undo-gone");
     assert_eq!(last_toast(cx, &open).as_deref(), Some(expected.as_str()));
 }
 

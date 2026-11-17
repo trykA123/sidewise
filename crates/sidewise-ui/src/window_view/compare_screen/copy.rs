@@ -262,16 +262,21 @@ impl ScreenOwner {
         !done.is_empty() | self.poll_undos(cx)
     }
 
-    /// Shows the note for `done` and, when it may have written, reloads the one pair it touched.
+    /// Shows the note for `done` and, when it may have written, reloads the one pair it touched
+    /// and tells the window, so other tabs reload the target too (Undo only for `Copied`).
     fn finish_copy(&mut self, done: &CopyDone, cx: &mut Context<Self>) {
+        let reload = self.copy_target(done);
         let copy = &mut self.compare.diff.copy;
         (copy.inflight, copy.hover) = (false, None);
         let note = note_of(done, std::mem::take(&mut copy.removing));
-        if done.result == CopyResult::Copied {
+        if done.result.may_have_written() {
             cx.emit(ScreenEvent::Wrote {
                 text: note.text.to_string(),
-                job: done.job.clone(),
-                reload: Vec::new(),
+                job: done
+                    .job
+                    .clone()
+                    .filter(|_| done.result == CopyResult::Copied),
+                reload,
             });
         }
         copy.note = Some(note);
@@ -297,6 +302,26 @@ impl ScreenOwner {
         {
             stream.reload_item(done.request);
         }
+    }
+
+    /// The file copy `done` wrote into: its pair's right side for a copy to the right, else
+    /// the left. Empty when neither the file diff nor the Stream shows that pair any more.
+    fn copy_target(&self, done: &CopyDone) -> Vec<navo_core::Location> {
+        let screen = self.compare.screen.as_ref();
+        let file = screen
+            .and_then(|screen| screen.file.as_ref())
+            .map(|file| &file.request)
+            .filter(|pair| pair.id == done.request);
+        let pair = file.or_else(|| {
+            screen
+                .and_then(|screen| screen.stream.as_ref())
+                .and_then(|stream| stream.requests.get(&done.request))
+        });
+        let side = pair.and_then(|pair| match done.direction {
+            CopyDirection::ToRight => pair.right.clone(),
+            CopyDirection::ToLeft => pair.left.clone(),
+        });
+        side.into_iter().collect()
     }
 
     /// The hovered change of the file diff.
