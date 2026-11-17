@@ -1,11 +1,19 @@
 //! Presentational status bar (NC66): muted summary left and non-focusable `Kbd` hints right.
 
+use std::rc::Rc;
+
 use gpui_kit::{
     RenderOnce, Role,
+    assets::IconName,
     base::{TestSupportExt as _, TestTextExt as _},
     div,
 };
-use sidewise_kit::{prelude::*, primitives::Kbd, tokens};
+use sidewise_kit::{
+    prelude::*,
+    primitives::{Kbd, icon},
+    tokens,
+};
+use sidewise_l10n::t;
 
 /// One keyboard hint displayed on the right side of [`StatusBar`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -15,11 +23,20 @@ pub struct StatusHint {
     pub label: SharedString,
 }
 
+/// An update notice: its text and the two clicks, both run by the caller.
+#[derive(Clone)]
+pub struct StatusNotice {
+    pub text: SharedString,
+    pub on_open: Rc<dyn Fn(&mut App)>,
+    pub on_hide: Rc<dyn Fn(&mut App)>,
+}
+
 /// Presentational status bar showing a truncated summary left and valid key hints right.
 #[derive(IntoElement)]
 pub struct StatusBar {
     summary: SharedString,
     hints: Vec<StatusHint>,
+    notice: Option<StatusNotice>,
 }
 
 impl StatusBar {
@@ -31,7 +48,14 @@ impl StatusBar {
         Self {
             summary: summary.into(),
             hints: hints.into_iter().collect(),
+            notice: None,
         }
+    }
+
+    /// Adds (or clears) the update notice drawn between the summary and the hints.
+    pub fn notice(mut self, notice: Option<StatusNotice>) -> Self {
+        self.notice = notice;
+        self
     }
 }
 
@@ -47,6 +71,39 @@ fn hint_view(hint: StatusHint, gap: Pixels) -> Option<Div> {
             .child(kbd)
             .child(hint.label.clone().test_text(hint.label)),
     )
+}
+
+/// Builds the notice row: accent dot, clickable text and a hide cross; neither takes focus.
+fn notice_view(notice: StatusNotice, t: &tokens::Theme) -> impl IntoElement {
+    let (on_open, on_hide) = (notice.on_open, notice.on_hide);
+    let label = SharedString::from(t!("update-hide"));
+    div()
+        .id("status-update")
+        .test_support()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(t.spacing.sm)
+        .child(div().size(px(6.)).rounded(t.radii.full).bg(t.colors.accent))
+        .child(
+            div()
+                .id("status-update-open")
+                .test_support()
+                .cursor_pointer()
+                .text_color(t.colors.text)
+                .on_click(move |_, _, cx| on_open(cx))
+                .child(notice.text.clone().test_text(notice.text)),
+        )
+        .child(
+            div()
+                .id("status-update-hide")
+                .role(Role::Button)
+                .aria_label(label)
+                .test_support()
+                .cursor_pointer()
+                .on_click(move |_, _, cx| on_hide(cx))
+                .child(icon(IconName::Close, px(12.), t.colors.muted)),
+        )
 }
 
 impl RenderOnce for StatusBar {
@@ -96,6 +153,7 @@ impl RenderOnce for StatusBar {
             .text_size(t.typography.small)
             .text_color(t.colors.muted)
             .child(summary)
+            .children(self.notice.map(|n| notice_view(n, t)))
             .child(keys)
     }
 }

@@ -2,6 +2,8 @@
 //! It owns the tab list, syncs the sidebar, and handles browser-style tab keys (NS11, NS15, NS16),
 //! the sidebar toggle, F6 pane cycling and hover-tip Escape forwarding.
 
+use std::rc::Rc;
+
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{App, FocusHandle, Subscription, WindowAppearance};
 use navo_compare_profile::appearance::PaletteId;
@@ -10,9 +12,10 @@ use navo_compare_profile::recent::{StartRow, StartRows};
 use sidewise_kit::prelude::*;
 use sidewise_kit::title_bar::NavoTitleBar;
 use sidewise_kit::tokens;
+use sidewise_l10n::t;
 
 use crate::chrome::sidebar::{DismissTip, Sidebar, SidebarEvent, ToggleRail};
-use crate::chrome::status_bar::{StatusBar, StatusHint};
+use crate::chrome::status_bar::{StatusBar, StatusHint, StatusNotice};
 use crate::chrome::topbar_status::{
     Action as TopbarAction, Crumbs, Topbar, TopbarMode, ViewMenu as TopbarViewKey,
 };
@@ -22,6 +25,7 @@ use crate::menu_host::{MenuSlot, menu_view};
 use crate::shell_prefs::theme_choice;
 use crate::theme::{SidewiseTheme, apply_sidewise, mode_of};
 use crate::theme_data::palettes::DIMS;
+use crate::{updates, updates_check};
 
 #[path = "shell_keys.rs"]
 mod shell_keys;
@@ -134,7 +138,7 @@ impl Shell {
             .h_full()
             .child(self.topbar.clone())
             .child(self.body(cx))
-            .child(self.status_bar())
+            .child(self.status_bar(cx))
     }
 
     /// The active stage and bottom-right toast overlay slot; empty toasts do not cover inputs.
@@ -158,7 +162,7 @@ impl Shell {
     }
 
     /// Derives the status bar from active tab title, open-tab count, and working shortcuts.
-    fn status_bar(&self) -> StatusBar {
+    fn status_bar(&self, cx: &App) -> StatusBar {
         let count = self.tabs.len();
         let noun = if count == 1 { "open tab" } else { "open tabs" };
         let title = self
@@ -183,7 +187,12 @@ impl Shell {
                 label: "Sidebar".into(),
             },
         ];
-        StatusBar::new(summary, hints)
+        let notice = updates::notice(cx).map(|v| StatusNotice {
+            text: t!("update-available", version = v.to_string()).into(),
+            on_open: Rc::new(updates_check::open_release_page),
+            on_hide: Rc::new(updates_check::dismiss),
+        });
+        StatusBar::new(summary, hints).notice(notice)
     }
 }
 
