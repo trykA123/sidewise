@@ -9,9 +9,13 @@ use navo_compare_profile::update_state::UpdateState;
 use sidewise_update::check::CheckError;
 use sidewise_update::version::{Version, release_page};
 
+use navo_compare_profile::paths::open_profile;
+use navo_compare_profile::update_state;
+use sidewise_update::check::Outcome;
+
 use super::*;
 use crate::shell_prefs::{prefs, save_prefs};
-use crate::updates::{Fetch, install_for_test, notice};
+use crate::updates::{Fetch, install_for_test, install_updates, notice};
 
 /// A fixed clock.
 fn clock() -> i64 {
@@ -129,4 +133,61 @@ fn dismiss_hides_the_notice_and_the_release_page_opens(cx: &mut TestAppContext) 
         assert_eq!(notice(cx), None);
     });
     assert_eq!(cx.opened_url(), Some(release_page(&newer())));
+}
+
+#[gpui_kit::test]
+fn dismiss_without_a_found_version_does_nothing(cx: &mut TestAppContext) {
+    let (fetch, _) = counting(Ok(feed()));
+    setup(UpdateCheck::On, fetch, cx);
+    cx.update(|cx| {
+        dismiss(cx);
+        assert_eq!(cx.global::<Updates>().state.dismissed, None);
+        assert_eq!(notice(cx), None);
+    });
+}
+
+/// A temporary profile folder, removed on drop.
+struct Temp(std::path::PathBuf);
+
+impl Drop for Temp {
+    /// Removes the folder and everything in it.
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[gpui_kit::test]
+fn finish_and_dismiss_write_update_check_toml_and_a_reload_shows_them(cx: &mut TestAppContext) {
+    let temp = Temp(std::env::temp_dir().join(format!("sidewise-u10a-{}", std::process::id())));
+    std::fs::create_dir_all(&temp.0).expect("create temp folder");
+    cx.update(|cx| {
+        save_prefs(
+            UiPrefs {
+                update_check: UpdateCheck::On,
+                ..UiPrefs::default()
+            },
+            cx,
+        )
+        .expect("save");
+        install_updates(Some(&temp.0), cx);
+        finish(Outcome::Newer(newer()), cx);
+    });
+    let profile = open_profile(Some(&temp.0)).expect("open profile");
+    assert!(
+        profile.update_state_file().exists(),
+        "update-check.toml written"
+    );
+    let saved = update_state::load(&profile);
+    assert_eq!(saved.latest, Some(newer().to_string()));
+    assert_eq!(saved.last_result, Some(format!("newer {}", newer())));
+    assert!(saved.last_check.is_some());
+    assert_eq!(saved.dismissed, None);
+    cx.update(dismiss);
+    let saved = update_state::load(&profile);
+    assert_eq!(saved.dismissed, Some(newer().to_string()));
+    cx.update(|cx| {
+        install_updates(Some(&temp.0), cx);
+        assert_eq!(notice(cx), None, "the reload keeps the notice hidden");
+        assert_eq!(cx.global::<Updates>().found, Some(newer()));
+    });
 }

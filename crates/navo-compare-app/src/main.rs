@@ -69,6 +69,8 @@ mod start_rows_tests;
 mod start_tabs;
 #[cfg(test)]
 mod start_tests;
+#[cfg_attr(not(test), expect(dead_code, reason = "U10b places the line in Start"))]
+mod start_updates;
 mod start_view;
 #[cfg(test)]
 mod test_window;
@@ -85,18 +87,7 @@ mod theme_data;
 mod theme_tests;
 #[cfg(test)]
 mod ui_matrix_tests;
-#[expect(
-    dead_code,
-    reason = "U10 draws the Start line (view) and U11 the notice"
-)]
 mod updates;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "U10 calls set_choice, dismiss and open_release_page"
-    )
-)]
 mod updates_check;
 mod window;
 mod writes;
