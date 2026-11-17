@@ -28,7 +28,7 @@ const IDS: [(&str, Action); 4] = [
 ];
 
 /// Opens a focused, drawn topbar in a Light-themed window of `width`, recording every action fired.
-fn topbar(
+pub(super) fn topbar(
     cx: &mut TestAppContext,
     width: f32,
 ) -> (AnyWindowHandle, Entity<Topbar>, Rc<RefCell<Vec<Action>>>) {

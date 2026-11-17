@@ -162,7 +162,7 @@ impl Topbar {
         let next = width < px(COMPACT_W);
         if self.compact != next {
             self.compact = next;
-            cx.notify();
+            crate::frame_notify::notify_after_frame(cx);
         }
     }
 

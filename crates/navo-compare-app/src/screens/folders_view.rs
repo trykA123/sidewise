@@ -114,7 +114,7 @@ impl FoldersView {
         let meta = Meta::for_width(f32::from(width));
         if meta != self.meta {
             self.meta = meta;
-            cx.notify();
+            crate::frame_notify::notify_after_frame(cx);
         }
     }
 

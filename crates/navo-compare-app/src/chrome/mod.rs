@@ -7,3 +7,5 @@ mod status_bar_tests;
 #[cfg(test)]
 mod tests;
 pub mod topbar_status;
+#[cfg(test)]
+pub(crate) mod width_redraw_tests;

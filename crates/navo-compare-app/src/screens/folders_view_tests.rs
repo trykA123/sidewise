@@ -279,3 +279,14 @@ fn abs_root(name: &str) -> PathBuf {
         PathBuf::from(format!("/{name}"))
     }
 }
+
+/// B7: the meta mode measured during a frame must notify the view after the frame, or the
+/// window keeps the stale columns until the next input event.
+#[gpui_kit::test]
+fn meta_change_in_a_frame_asks_for_a_redraw(cx: &mut TestAppContext) {
+    use crate::chrome::width_redraw_tests::{count_notifies, one_frame_at};
+    let (window, view, _) = view(cx);
+    let notes = count_notifies(&view, cx);
+    one_frame_at(window, 500., cx);
+    assert!(notes.get() > 0, "the narrow meta mode was never redrawn");
+}

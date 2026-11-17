@@ -22,6 +22,7 @@ mod compare_tab_script;
 mod compare_tab_tests;
 #[cfg(test)]
 mod enter_keys_tests;
+mod frame_notify;
 #[cfg_attr(not(test), expect(dead_code, reason = "U11c and the chrome read it"))]
 mod icons;
 mod launch;
