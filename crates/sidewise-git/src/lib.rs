@@ -6,3 +6,4 @@ pub mod fixture;
 pub mod index;
 pub mod location;
 pub mod repo;
+pub mod side;
