@@ -172,6 +172,7 @@ impl ViewMenu {
             .test_support()
             .key_context("ViewMenu")
             .track_focus(&self.handle)
+            .occlude()
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| this.key(event, cx)))
             .flex()
             .flex_col()

@@ -1,7 +1,7 @@
 //! The shell's overlay layers: the Keys sheet and the View menu, and how the topbar reaches them.
 //! A child module of `shell`. The drawer host stays unmounted (NC119).
 
-use gpui_kit::{AnyView, App, Subscription, WeakEntity};
+use gpui_kit::{AnyView, App, MouseButton, MouseDownEvent, Subscription, WeakEntity, deferred};
 use sidewise_kit::prelude::*;
 
 use super::Shell;
@@ -53,10 +53,7 @@ impl Shell {
                     .keys
                     .update(cx, |keys, cx| keys.toggle(window, cx));
             }
-            Action::View if self.layers.view.is_some() => {
-                self.set_view_menu(None, cx);
-                self.activated(window, cx);
-            }
+            Action::View if self.layers.view.is_some() => self.close_view_menu(window, cx),
             Action::View => self.open_view_menu(window, cx),
             _ => {}
         }
@@ -82,19 +79,41 @@ impl Shell {
                 }
                 this.apply_look(cx);
             }
-            ViewMenuEvent::Dismissed => {
-                this.set_view_menu(None, cx);
-                this.activated(window, cx);
-            }
+            ViewMenuEvent::Dismissed => this.close_view_menu(window, cx),
         });
         let handle = menu.clone();
         handle.update(cx, |menu, cx| menu.focus(window, cx));
         self.set_view_menu(Some((menu, sub)), cx);
     }
 
+    /// Closes the View menu and gives the focus back to the active tab (Escape, the pill, a
+    /// click outside).
+    fn close_view_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_view_menu(None, cx);
+        self.activated(window, cx);
+    }
+
+    /// While the View menu is open: a full-window layer under it that swallows a mouse-down
+    /// outside the card and closes the menu, as a context menu does (VM6).
+    pub(super) fn view_backdrop(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        self.layers.view.as_ref()?;
+        let dismiss =
+            |this: &mut Self, _: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>| {
+                this.close_view_menu(window, cx);
+            };
+        let layer = div()
+            .id("view-backdrop")
+            .absolute()
+            .inset_0()
+            .occlude()
+            .on_mouse_down(MouseButton::Left, cx.listener(dismiss))
+            .on_mouse_down(MouseButton::Right, cx.listener(dismiss));
+        Some(deferred(layer).into_any_element())
+    }
+
     /// Stores the open View menu (or `None`) and hands it to the topbar, which floats it under
     /// the View pill instead of the shell laying it out (B4).
-    fn set_view_menu(
+    pub(super) fn set_view_menu(
         &mut self,
         view: Option<(Entity<ViewMenu>, Subscription)>,
         cx: &mut Context<Self>,

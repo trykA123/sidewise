@@ -242,6 +242,7 @@ impl Render for Shell {
                     .child(self.main_pane(cx)),
             )
             .child(self.layers.keys.clone())
+            .children(self.view_backdrop(cx))
             .children(menu_view(&self.menu))
     }
 }

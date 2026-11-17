@@ -285,3 +285,65 @@ fn the_view_menu_drops_under_the_view_pill_and_leaves_the_layout_alone(cx: &mut 
         "a click reaches it"
     );
 }
+
+/// VM6: a mouse-down outside the open View menu closes it like a context menu: the click does not
+/// reach the Keys pill under it, and focus returns to the tab as Escape does.
+#[gpui_kit::test]
+fn a_click_outside_the_view_menu_closes_it_and_returns_focus(cx: &mut TestAppContext) {
+    let opened = shell(cx);
+    let before = focus_id(cx, opened.0);
+    cx.simulate_keystrokes(opened.0, "alt-v");
+    cx.update_window(opened.0, |_, window, cx| window.render_frame(cx))
+        .expect("window");
+    assert_eq!(open_state(cx, &opened), (false, true), "alt-v opens it");
+    click(cx, opened.0, "top-keys");
+    assert_eq!(
+        open_state(cx, &opened),
+        (false, false),
+        "the outside click closes the menu and stops there"
+    );
+    assert_eq!(focus_id(cx, opened.0), before, "focus returns to the tab");
+    cx.simulate_keystrokes(opened.0, "alt-v");
+    cx.update_window(opened.0, |_, window, cx| window.render_frame(cx))
+        .expect("window");
+    let pane = bounds_of(cx, opened.0, "main-pane");
+    let at = gpui_kit::point(
+        pane.left() + gpui_kit::px(8.),
+        pane.bottom() - gpui_kit::px(8.),
+    );
+    VisualTestContext::from_window(opened.0, cx).simulate_mouse_down(
+        at,
+        gpui_kit::MouseButton::Left,
+        Modifiers::none(),
+    );
+    cx.run_until_parked();
+    assert_eq!(
+        open_state(cx, &opened),
+        (false, false),
+        "a mouse-down closes it"
+    );
+}
+
+/// VM6: switching to a tab without the View pill closes the open menu; it stays closed on return.
+#[gpui_kit::test]
+fn switching_tabs_closes_the_view_menu(cx: &mut TestAppContext) {
+    let (opened, _dirs) = on_compare(cx, "view-tabs", true);
+    cx.simulate_keystrokes(opened.0, "ctrl-t");
+    assert_eq!(opened.1.read_with(cx, |s, _| s.active()), 1, "a start tab");
+    cx.simulate_keystrokes(opened.0, "alt-v");
+    assert_eq!(open_state(cx, &opened), (false, true), "alt-v opens it");
+    cx.simulate_keystrokes(opened.0, "ctrl-tab");
+    assert_eq!(opened.1.read_with(cx, |s, _| s.active()), 0, "the file tab");
+    assert_eq!(
+        open_state(cx, &opened),
+        (false, false),
+        "the switch closes it"
+    );
+    cx.simulate_keystrokes(opened.0, "ctrl-tab");
+    assert_eq!(opened.1.read_with(cx, |s, _| s.active()), 1);
+    assert_eq!(
+        open_state(cx, &opened),
+        (false, false),
+        "it does not come back"
+    );
+}

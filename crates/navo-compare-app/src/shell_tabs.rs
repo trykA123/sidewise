@@ -284,8 +284,12 @@ impl Shell {
         cx.notify();
     }
 
-    /// Pushes open tab titles and active index into the sidebar without touching focus.
-    pub(super) fn sync_chrome(&self, cx: &mut Context<Self>) {
+    /// Pushes open tab titles and active index into the sidebar without touching focus, and
+    /// closes the View menu, which belongs to the tab it opened on (VM6).
+    pub(super) fn sync_chrome(&mut self, cx: &mut Context<Self>) {
+        if self.layers.view.is_some() {
+            self.set_view_menu(None, cx);
+        }
         let titles = tab_titles(&self.tabs);
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.set_tabs(titles, self.active, cx));
