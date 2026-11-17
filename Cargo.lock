@@ -6957,6 +6957,7 @@ dependencies = [
  "sidewise-core",
  "sidewise-engine",
  "sidewise-fs",
+ "sidewise-journal",
  "sidewise-l10n",
  "sidewise-ui",
  "tempfile",

@@ -191,6 +191,7 @@ compare-copied-right = Copied to the right
 compare-copy-undo = Undo
 compare-undone = Undid the copy
 compare-undo-changed = The file changed after the copy. Nothing was undone.
+compare-undo-failed = The copy was not undone: { $reason }
 compare-sheet-title-left = Copy all matches to the left
 compare-sheet-title-right = Copy all matches to the right
 compare-sheet-confirm = Copy all

@@ -9,7 +9,7 @@ use navo_compare::text::Options;
 use navo_core::Location;
 use navo_ui::compare_diff::{
     CompareOptions, CopyChange, CopySink, DiffHooks, DiffSink, PairControl, PairRequest, SheetPlan,
-    SheetPlanSink, SheetSink, StreamControl, StreamSink,
+    SheetPlanSink, SheetSink, StreamControl, StreamSink, UndoSink,
 };
 
 use super::super::settings::CompareSettings;
@@ -164,6 +164,11 @@ impl DiffHooks for DiffBackend {
             (None, Some(first)) => refuse_change(first, &done),
             (_, None) => {}
         }
+    }
+
+    /// Undo the last copy through the host; `false` when there is no host or nothing to undo.
+    fn undo_last(&self, done: UndoSink) -> bool {
+        self.copy.as_ref().is_some_and(|host| host.undo_last(done))
     }
 }
 
