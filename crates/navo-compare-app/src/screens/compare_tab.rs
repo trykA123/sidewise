@@ -7,10 +7,12 @@ use std::time::Duration;
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
-use gpui_kit::{AsyncApp, FocusHandle, Focusable, Global, Subscription, WeakEntity};
+use gpui_kit::base::{TestSupportExt as _, TestTextExt as _};
+use gpui_kit::{AsyncApp, FocusHandle, Focusable, Global, Role, Subscription, WeakEntity};
 use navo_compare_cli::args::SideSpec;
 use sidewise_host::compare::pane::PaneCompare;
 use sidewise_kit::prelude::*;
+use sidewise_kit::tokens;
 use sidewise_ui::browser::Waker;
 use sidewise_ui::window_view::{CompareScreen, LookDefaults};
 
@@ -22,6 +24,7 @@ use super::folders_view::FoldersView;
 use super::git_sides::{shared_sides, target_for};
 use super::host_parts::NoHashes;
 use super::large_view::LargeView;
+use crate::layers::toast;
 use crate::start_tabs::StartChoice;
 
 /// Pause between two wake updates, about one frame.
@@ -67,6 +70,12 @@ pub fn install_compare_hooks(cx: &mut App) {
     ))));
 }
 
+/// The installed compare engine; `None` before `install_compare_hooks`.
+pub(super) fn compare_hooks(cx: &App) -> Option<Arc<dyn sidewise_ui::browser::CompareHooks>> {
+    cx.try_global::<CompareHooks>()
+        .map(|hooks| Arc::clone(&hooks.0))
+}
+
 /// Test hook: replaces the compare engine with a scripted one.
 #[cfg(test)]
 pub(crate) fn install_test_hooks(hooks: Arc<dyn sidewise_ui::browser::CompareHooks>, cx: &mut App) {
@@ -92,6 +101,8 @@ pub struct CompareTab {
     pub(super) focus_pending: bool,
     pub(super) screen: Entity<CompareScreen>,
     pub(super) shown: Option<u64>,
+    /// The text of a compare that did not start; the tab shows it instead of the listing.
+    pub(super) failure: Option<SharedString>,
     title: SharedString,
     focus: FocusHandle,
     pub(super) subscriptions: Vec<Subscription>,
@@ -106,9 +117,7 @@ impl CompareTab {
     /// Starts the run for `request`; a bad side returns `RunError` before any entity exists.
     /// The shell calls this outside `cx.new`, so an error leaves no half-made tab behind.
     pub fn start(request: &CompareRequest, cx: &App) -> Result<Started, RunError> {
-        let hooks = cx
-            .try_global::<CompareHooks>()
-            .map(|hooks| Arc::clone(&hooks.0))
+        let hooks = compare_hooks(cx)
             .ok_or_else(|| RunError::Location("the compare engine is not installed".to_owned()))?;
         let (sender, wakes) = unbounded();
         let wake: Waker = Arc::new(move || {
@@ -148,6 +157,7 @@ impl CompareTab {
             focus_pending: false,
             screen,
             shown: None,
+            failure: None,
             title: title_of(request),
             focus: cx.focus_handle(),
             subscriptions: Vec::new(),
@@ -221,6 +231,10 @@ impl CompareTab {
 
     /// Focuses the shown view's keys.
     pub fn focus_view(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.failure.is_some() {
+            self.focus.focus(window, cx);
+            return;
+        }
         match self.view {
             TabView::Folders => self.folders.read(cx).focus_handle(cx).focus(window, cx),
             TabView::File => {
@@ -245,11 +259,26 @@ impl CompareTab {
             self.folders.update(cx, |view, cx| view.set_rows(rows, cx));
             self.sync_large(cx);
         }
+        if drained {
+            self.note_failure(cx);
+        }
         let polled = self
             .screen
             .update(cx, |screen, cx| screen.poll_compare_screen(false, cx));
         if drained || polled {
             cx.notify();
+        }
+    }
+
+    /// Toasts a compare that did not start, once per run, and shows its text in the tab.
+    fn note_failure(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = self.run.failure().map(SharedString::from) else {
+            return;
+        };
+        if self.failure.is_none() {
+            toast::notify(text.clone(), cx);
+            self.failure = Some(text);
+            self.focus_pending = true;
         }
     }
 }
@@ -309,12 +338,13 @@ impl Render for CompareTab {
         if std::mem::take(&mut self.focus_pending) {
             self.focus_view(window, cx);
         }
-        let shown = match self.view {
-            TabView::Folders => self.folders.clone().into_any_element(),
-            TabView::Large => self.large.clone().into_any_element(),
-            TabView::File | TabView::Stream => self.screen.clone().into_any_element(),
+        let shown = match (&self.failure, self.view) {
+            (Some(text), _) => failure_view(text, cx).into_any_element(),
+            (None, TabView::Folders) => self.folders.clone().into_any_element(),
+            (None, TabView::Large) => self.large.clone().into_any_element(),
+            (None, TabView::File | TabView::Stream) => self.screen.clone().into_any_element(),
         };
-        let own = matches!(self.view, TabView::Folders | TabView::Large);
+        let own = self.failure.is_some() || matches!(self.view, TabView::Folders | TabView::Large);
         let root = div()
             .key_context(if own { OWN_CONTEXTS } else { CONTEXT })
             .track_focus(&self.focus)
@@ -325,4 +355,22 @@ impl Render for CompareTab {
             .child(shown);
         self.with_keys(root, cx)
     }
+}
+
+/// The error state in place of the listing: the reason the compare did not start, in the
+/// warning colour, announced as an alert.
+fn failure_view(text: &SharedString, cx: &App) -> impl IntoElement {
+    let t = tokens::current(cx);
+    div()
+        .id("compare-failed")
+        .role(Role::Alert)
+        .aria_label(text.clone())
+        .test_support()
+        .flex_1()
+        .flex()
+        .items_center()
+        .justify_center()
+        .p(t.spacing.md)
+        .text_color(t.colors.warn)
+        .child(text.clone().test_text(text.clone()))
 }

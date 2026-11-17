@@ -28,7 +28,7 @@ pub mod folders_text;
 mod folders_text_tests;
 pub mod folders_view;
 pub(crate) mod git_sides;
-mod host_parts;
+pub(crate) mod host_parts;
 pub mod large_model;
 #[cfg(test)]
 mod large_model_tests;

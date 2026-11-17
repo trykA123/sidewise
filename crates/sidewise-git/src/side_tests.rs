@@ -270,10 +270,10 @@ fn two_threads_listing_at_once_share_one_index_build() {
 fn a_missing_revision_or_repository_does_not_open() {
     let fixture = two_branches();
     let missing = GitTreeSide::open_isolated(fixture.path(), "nope", Form::Stored);
-    assert_eq!(missing.err(), Some(Reason::NotFound));
+    assert_eq!(missing.err(), Some(GitProblem::NoSuchRevision));
     let empty = tempfile::tempdir().expect("temp");
     let none = GitTreeSide::open_isolated(empty.path(), "main", Form::Stored);
-    assert_eq!(none.err(), Some(Reason::NotFound));
+    assert_eq!(none.err(), Some(GitProblem::NotRepository));
 }
 
 #[test]

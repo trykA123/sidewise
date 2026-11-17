@@ -1,16 +1,17 @@
-//! Keys inside the compare tab (H4): digits switch between its views, Escape steps back.
+//! Keys inside the compare tab (H4): digits switch between its views, Escape steps back, F5
+//! compares again.
 //! A child of `screens`; the shell binds them through `shell_keys::bind_keys`.
 
 use gpui_kit::{App, KeyBinding};
 use sidewise_kit::prelude::*;
 use sidewise_ui::compare_diff::{PairRequest, StreamList};
 
-use super::compare_tab::{CONTEXT, CompareTab, OWN, TabView};
+use super::compare_tab::{CONTEXT, CompareTab, OWN, TabView, compare_hooks};
 use super::pair_requests::stream_request;
 
 gpui_kit::actions!(
     compare_tab,
-    [OpenFolders, OpenFile, OpenStream, OpenLarge, Back]
+    [OpenFolders, OpenFile, OpenStream, OpenLarge, Back, Refresh]
 );
 
 /// Binds the tab keys. The digits bind to `OWN`, set only while Folders or Large show, so File and
@@ -21,6 +22,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("3", OpenFile, Some(OWN)),
         KeyBinding::new("4", OpenStream, Some(OWN)),
         KeyBinding::new("5", OpenLarge, Some(OWN)),
+        KeyBinding::new("f5", Refresh, Some(OWN)),
         KeyBinding::new("escape", Back, Some(CONTEXT)),
     ]);
 }
@@ -33,6 +35,7 @@ impl CompareTab {
             .on_action(cx.listener(|tab, _: &OpenStream, window, cx| tab.open_stream(window, cx)))
             .on_action(cx.listener(|tab, _: &OpenLarge, window, cx| tab.open_large(window, cx)))
             .on_action(cx.listener(|tab, _: &Back, window, cx| tab.back(window, cx)))
+            .on_action(cx.listener(|tab, _: &Refresh, window, cx| tab.refresh(window, cx)))
     }
 
     /// `2`: shows the Folders view.
@@ -83,6 +86,20 @@ impl CompareTab {
         self.auto_large = false;
         self.view = TabView::Large;
         self.focus_view(window, cx);
+        cx.notify();
+    }
+
+    /// F5: compares again, so a Git side shows its branch's newest commit; the rows stay until
+    /// the new walk sends its own. Clears a failure, so a fixed side can be retried.
+    fn refresh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(hooks) = compare_hooks(cx) else {
+            return;
+        };
+        self.run.restart(&*hooks);
+        if self.failure.take().is_some() {
+            self.view = TabView::Folders;
+            self.focus_view(window, cx);
+        }
         cx.notify();
     }
 

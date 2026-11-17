@@ -57,6 +57,8 @@ pub struct CompareRun {
     updates: Receiver<CompareUpdate>,
     roots: [Location; 2],
     meters: PhaseMeters,
+    options: CompareOptions,
+    wake: Waker,
 }
 
 impl CompareRun {
@@ -69,27 +71,44 @@ impl CompareRun {
         wake: Waker,
     ) -> Result<Self, RunError> {
         let (kind, roots) = roots_of(left, right)?;
-        let (sender, updates) = mpsc::channel();
-        let session = match kind {
-            RunKind::Folders => {
-                let mut options = CompareOptions::default();
-                options.compare.respect_gitignore = choice.respect_gitignore;
-                let sink: CompareSink = Arc::new(move |update| {
-                    let _ = sender.send(update);
-                    wake();
-                });
-                let control = hooks.start((&roots[0], &roots[1]), &options, sink);
-                Some(FolderSession::new(1, control, roots.clone()))
-            }
-            RunKind::Files => None,
-        };
-        Ok(Self {
+        let mut options = CompareOptions::default();
+        options.compare.respect_gitignore = choice.respect_gitignore;
+        let mut run = Self {
             kind,
-            session,
-            updates,
+            session: None,
+            updates: mpsc::channel().1,
             roots,
             meters: PhaseMeters::default(),
-        })
+            options,
+            wake,
+        };
+        run.restart(hooks);
+        Ok(run)
+    }
+
+    /// Starts the folder walk anew (F5): each side opens again, so a Git side re-resolves its
+    /// revision while other tabs keep the side they hold. The old walk is cancelled and its
+    /// queued updates are dropped. Does nothing for two files.
+    pub fn restart(&mut self, hooks: &dyn CompareHooks) {
+        if self.kind != RunKind::Folders {
+            return;
+        }
+        let (sender, updates) = mpsc::channel();
+        let wake = Arc::clone(&self.wake);
+        let sink: CompareSink = Arc::new(move |update| {
+            let _ = sender.send(update);
+            wake();
+        });
+        let control = hooks.start((&self.roots[0], &self.roots[1]), &self.options, sink);
+        let number = self.session.as_ref().map_or(1, |session| session.run() + 1);
+        self.session = Some(FolderSession::new(number, control, self.roots.clone()));
+        self.updates = updates;
+        self.meters = PhaseMeters::default();
+    }
+
+    /// The text of a compare that did not start, as the engine reported it.
+    pub fn failure(&self) -> Option<&str> {
+        self.session.as_ref()?.failed.as_deref()
     }
 
     /// Applies every queued update to the folder session; true when one of them changed it.

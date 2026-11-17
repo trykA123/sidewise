@@ -36,16 +36,16 @@ pub struct GitTreeSide {
 }
 
 impl GitTreeSide {
-    /// Opens the repository at `repo` and pins `rev` to its commit. Fails with `NotFound` for
-    /// a missing repository or revision, `Unsupported` for a format or form it cannot read,
-    /// `ReadError` for a damaged repository. Blocking: call off the UI thread.
-    pub fn open(repo: &Path, rev: &str, form: Form) -> Result<GitTreeSide, Reason> {
+    /// Opens the repository at `repo` and pins `rev` to its commit. Fails with the problem
+    /// (`GitProblem::reason` is its compare reason): not a repository, no such revision, a
+    /// format or form it cannot read (`Unsupported`), damaged data. Blocking: call off the UI thread.
+    pub fn open(repo: &Path, rev: &str, form: Form) -> Result<GitTreeSide, GitProblem> {
         Self::with_opener(repo, Repo::open, rev, form)
     }
 
     /// As `open`, with only the repository's own config, for tests.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn open_isolated(repo: &Path, rev: &str, form: Form) -> Result<GitTreeSide, Reason> {
+    pub fn open_isolated(repo: &Path, rev: &str, form: Form) -> Result<GitTreeSide, GitProblem> {
         Self::with_opener(repo, Repo::open_isolated, rev, form)
     }
 
@@ -55,10 +55,10 @@ impl GitTreeSide {
         opener: Opener,
         rev: &str,
         form: Form,
-    ) -> Result<GitTreeSide, Reason> {
-        let provider = form.provider().map_err(|_| Reason::Unsupported)?;
-        let repo = opener(path).map_err(GitProblem::reason)?;
-        let commit = repo.resolve(rev).map_err(GitProblem::reason)?;
+    ) -> Result<GitTreeSide, GitProblem> {
+        let provider = form.provider().map_err(|_| GitProblem::Unsupported)?;
+        let repo = opener(path)?;
+        let commit = repo.resolve(rev)?;
         Ok(GitTreeSide {
             repo,
             rev: rev.to_owned(),

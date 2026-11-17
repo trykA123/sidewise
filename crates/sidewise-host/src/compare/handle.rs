@@ -19,7 +19,25 @@ use super::std_side::StdSide;
 const POLL: Duration = Duration::from_millis(10);
 
 /// Opens one side of a compare. It runs on the session thread, never on the UI thread.
-pub type SideOpener = Box<dyn FnOnce() -> Result<Arc<dyn SideSource>, Reason> + Send>;
+pub type SideOpener = Box<dyn FnOnce() -> Result<Arc<dyn SideSource>, OpenFailure> + Send>;
+
+/// Why a side did not open: the engine reason, and the l10n id of a more precise text when
+/// the opener can name the problem (a Git side's "No such revision").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpenFailure {
+    pub reason: Reason,
+    pub text_id: Option<&'static str>,
+}
+
+impl From<Reason> for OpenFailure {
+    /// A failure known only by its reason.
+    fn from(reason: Reason) -> Self {
+        Self {
+            reason,
+            text_id: None,
+        }
+    }
+}
 
 /// One side of a compare: a local folder (opened as a `StdSide`), or an opener the session
 /// thread runs.
@@ -58,8 +76,8 @@ impl CompareStart {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompareError {
-    Left(Reason),
-    Right(Reason),
+    Left(OpenFailure),
+    Right(OpenFailure),
     Rules(String),
     /// The session thread did not start.
     Spawn(String),
@@ -208,7 +226,7 @@ fn open_session(request: CompareStart) -> Result<Opened, CompareError> {
 pub fn open_side(
     target: CompareTarget,
     refresh: &mut Vec<Arc<dyn SideSource>>,
-) -> Result<Arc<dyn SideSource>, Reason> {
+) -> Result<Arc<dyn SideSource>, OpenFailure> {
     Ok(match target {
         CompareTarget::Local(root) => Arc::new(StdSide::new(root)?),
         CompareTarget::Side(open) => {

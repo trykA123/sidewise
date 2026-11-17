@@ -41,6 +41,7 @@ const GROUPS: [(&str, &[Row]); 4] = [
             ("File", &["3"]),
             ("Stream", &["4"]),
             ("Large", &["5"]),
+            ("Compare again", &["f5"]),
             ("Back to Folders", &["escape"]),
         ],
     ),
