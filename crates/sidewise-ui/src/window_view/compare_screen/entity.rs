@@ -187,10 +187,22 @@ impl CompareScreen {
 impl EventEmitter<ScreenEvent> for CompareScreen {}
 
 impl Render for CompareScreen {
-    /// Draws the file diff or Stream, or an empty element while neither is open.
+    /// Draws the file diff or Stream with its open context menu (a window overlay that takes
+    /// no layout space), or an empty element while neither screen is open.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.compare_screen_view(window, cx)
-            .unwrap_or_else(|| div().into_any_element())
+        let menu = self.compare_menu_view();
+        let Some(view) = self.compare_screen_view(window, cx) else {
+            return div();
+        };
+        // The menu sits outside the screens' key contexts: keys it leaves never reach the diff.
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .min_w_0()
+            .child(view)
+            .children(menu)
     }
 }
 
