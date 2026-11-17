@@ -190,7 +190,7 @@ fn a_wof_compressed_file_is_refused_as_a_placeholder() {
         .map(|mut file| file.read_to_string(&mut seen));
     let note = format!("same bytes: {}; fsutil: {fsutil}", seen == text);
     let errors = [
-        read.err().expect(&note),
+        read.expect_err(&note),
         RealDisk.meta(&packed).unwrap_err(),
         RealDisk
             .set_modified(&packed, 1_600_000_000_000)
