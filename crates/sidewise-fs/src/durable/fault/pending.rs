@@ -120,29 +120,40 @@ impl State {
         for pending in &mut self.pending {
             pending.dirs.retain(|unsynced| unsynced != dir);
         }
-        self.settle_durable();
+        self.settle_durable(false);
     }
 
-    /// Settles, oldest first, every pending change with no unsynced folder left.
-    fn settle_durable(&mut self) {
+    /// Settles, oldest first, every pending change with no unsynced folder left; `kept` says
+    /// they were kept by a crash rather than made durable by a sync.
+    fn settle_durable(&mut self, kept: bool) {
         while let Some(at) = self.pending.iter().position(|p| p.dirs.is_empty()) {
-            self.settle(at);
+            self.settle(at, kept);
         }
     }
 
-    /// Drops the durable change at `at` and makes the older pending ones match it: a rename
-    /// moves their paths; an unlink drops the ones at or under the unlinked path, as their
-    /// object is durably gone (so a later NotFound in undo is a real inconsistency).
-    fn settle(&mut self, at: usize) {
+    /// Drops the settled change at `at` and makes the older pending ones match it: a rename
+    /// moves their paths; a create, unlink or rename onto a path drops the older changes at
+    /// or under it, as the object they name is gone (so a later NotFound in undo is a real
+    /// inconsistency). So a kept change keeps the older changes on its paths. A durable one
+    /// instead turns an older rename out of that path into a create at its far end, which a
+    /// crash still undoes until that folder is synced: the moved object may be lost.
+    fn settle(&mut self, at: usize, kept: bool) {
         let done = self.pending.remove(at);
         let (gone, from, to) = match &done.change {
-            Change::Created(_) => return,
-            Change::Removed { path, .. } => (path, None, None),
+            Change::Created(path) | Change::Removed { path, .. } => (path, None, None),
             Change::Renamed { from, to } => (to, Some(from), Some(to)),
             Change::Replaced { staged, target, .. } => (target, Some(staged), Some(target)),
         };
         let newer = self.pending.split_off(at);
         self.pending.retain_mut(|pending| {
+            if let Change::Renamed { from, to } = &pending.change
+                && !kept
+                && from.starts_with(gone)
+                && !to.starts_with(gone)
+            {
+                pending.change = Change::Created(to.clone());
+                return true;
+            }
             !paths(&mut pending.change)
                 .iter()
                 .any(|p| p.starts_with(gone))
@@ -214,7 +225,7 @@ impl State {
                 pending.dirs.clear();
             }
         }
-        self.settle_durable();
+        self.settle_durable(true);
         while let Some(pending) = self.pending.pop() {
             undo(pending.change)?;
         }

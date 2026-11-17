@@ -196,3 +196,65 @@ fn an_unsynced_copy_mode_is_undone_by_crash() {
     let mode = std::fs::metadata(&to).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
 }
+
+#[test]
+fn a_kept_create_settles_an_older_remove_at_its_path() {
+    let (dir, disk) = pass();
+    let path = dir.path().join("x");
+    put(&path, "old");
+    disk.remove_file(&path).unwrap();
+    drop(disk.create_new(&path).unwrap());
+    disk.crash_with(|i| i == 1, |_| Tail::Kept).unwrap();
+    assert_eq!(
+        text(&path).as_deref(),
+        Some(""),
+        "the new file stays, so the remove before it happened too"
+    );
+}
+
+#[test]
+fn a_kept_rename_keeps_the_older_rename_that_freed_its_target() {
+    let (dir, disk) = pass();
+    let (s, t, old) = (
+        dir.path().join("s"),
+        dir.path().join("t"),
+        dir.path().join("old"),
+    );
+    put(&s, "S");
+    put(&t, "T");
+    disk.rename_new(&t, &old).unwrap();
+    disk.rename_new(&s, &t).unwrap();
+    disk.crash_with(|i| i == 1, |_| Tail::Lost).unwrap();
+    assert_eq!(text(&s), None);
+    assert_eq!(text(&t).as_deref(), Some("S"));
+    assert_eq!(
+        text(&old).as_deref(),
+        Some("T"),
+        "a kept change keeps the older changes on its paths, although keep(0) is false"
+    );
+}
+
+#[test]
+fn a_durable_rename_into_t_leaves_an_older_move_out_of_t_undoable() {
+    let (dir, disk) = pass();
+    let (a, other) = (dir.path().join("a"), dir.path().join("other"));
+    std::fs::create_dir(&a).unwrap();
+    std::fs::create_dir(&other).unwrap();
+    let (s, t, old) = (a.join("s"), a.join("t"), other.join("old"));
+    put(&s, "S");
+    put(&t, "T");
+    disk.rename_new(&t, &old).unwrap();
+    disk.rename_new(&s, &t).unwrap();
+    disk.sync_dir(&a).unwrap();
+    disk.crash().unwrap();
+    assert_eq!(
+        text(&t).as_deref(),
+        Some("S"),
+        "the rename into t was durable"
+    );
+    assert_eq!(
+        text(&old),
+        None,
+        "the entry in the unsynced folder may be lost, and with it the old t"
+    );
+}
