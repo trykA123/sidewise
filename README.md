@@ -103,6 +103,10 @@ The modified time of the restored file is the time of your copy, not the old tim
 
 Do not edit or delete files in the journal folder while Sidewise runs.
 
+## Git compare
+
+On the Start screen, type `<repository folder>@<revision>` in a side field, for example `C:\src\app@main`, `C:\src\app@v1.2`, `C:\src\app@HEAD~3` or `C:\src\app@1a2b3c4`. The other side can be another revision or a plain folder, such as `C:\src\app` itself; on the command line, run `sidewise C:\src\app@main C:\src\app`. A revision is one commit: a branch, a tag, a commit id or an expression such as `HEAD~3`. A range, or a name that is not a commit, shows "No such revision", and the repository folder must be the top folder of the repository. A Git side is read-only: Sidewise copies nothing to it, and it has no file on disk to reveal. Sidewise never starts `git`, never runs hooks, filters or other programs from the repository, and never fetches. A file over 64 MiB shows as unreadable.
+
 ## Uninstall
 
 Open Settings > Apps > Installed apps, find Sidewise and choose Uninstall. Your settings, sessions and backups stay in `%APPDATA%\Sidewise` and `%LOCALAPPDATA%\Sidewise`. Delete those two folders to remove them too. The journal folder with your backups is inside `%LOCALAPPDATA%\Sidewise`. For the zip: delete its folder.
@@ -116,11 +120,11 @@ Open Settings > Apps > Installed apps, find Sidewise and choose Uninstall. Your 
 - Recent sessions on the Start screen.
 - Five colour themes, with System, Light and Dark mode.
 - Copy a change to the other side, with Undo.
+- Git compare: a branch, tag or commit against another one or a folder, read-only.
 - Command line: `sidewise <left> <right>`, `--profile DIR`, `--version` and `--help`.
 
 ## Not in this alpha
 
-- Git branch or ref compare.
 - Accounts.
 - Merging, syncing folders and three-way merge.
 - An Explorer menu, auto-update (the optional update check only names a new version) and a signed build.

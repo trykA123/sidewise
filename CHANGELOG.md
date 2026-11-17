@@ -4,6 +4,17 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Git compare: a branch, tag or commit against another one or a folder, read-only. Type `repo@revision` in a side field on the Start screen, or on the command line. Git compares appear in Recent. Sidewise never starts `git`, never runs programs from the repository, and never fetches.
+
+### Known limits
+
+- A working folder checked out with `core.autocrlf=true` (the default in Git for Windows) shows its text files as different from a revision, because the line endings differ.
+- A file over 64 MiB in a revision shows as unreadable.
+- The repository folder must be the top folder of the repository. A subfolder shows "Not a Git repository".
+- A Git side must be a folder. A Git revision against a single file is refused.
+
 ## [0.1.0-alpha.3] — 2026-11-17
 
 ### Added
