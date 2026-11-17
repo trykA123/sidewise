@@ -1,10 +1,10 @@
-//! `RealDisk`: the `Disk` trait on the OS. Unix is built here; elsewhere every call
-//! returns `Unsupported` until the Windows module lands (D3), so no write runs half-built.
+//! `RealDisk`: the `Disk` trait on the OS. Linux is built here (rustix is a Linux-only
+//! dependency); elsewhere every call returns `Unsupported` until D3, so no write runs half-built.
 
 use std::fs::File;
 use std::io;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::{
     fs::OpenOptions,
     io::Read,
@@ -12,7 +12,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use super::{Disk, DiskFile, Meta, ReplaceError};
 
 /// The OS file system.
@@ -27,7 +27,7 @@ impl super::DiskFile for File {
 }
 
 /// Converts a file time to ms since the Unix epoch; `None` past the `i64` range.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn to_ms(time: SystemTime) -> Option<i64> {
     match time.duration_since(UNIX_EPOCH) {
         Ok(after) => i64::try_from(after.as_millis()).ok(),
@@ -38,7 +38,7 @@ fn to_ms(time: SystemTime) -> Option<i64> {
 }
 
 /// Converts ms since the Unix epoch to a file time; fails with `InvalidInput` out of range.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn from_ms(ms: i64) -> io::Result<SystemTime> {
     let span = Duration::from_millis(ms.unsigned_abs());
     let time = if ms >= 0 {
@@ -50,14 +50,57 @@ fn from_ms(ms: i64) -> io::Result<SystemTime> {
 }
 
 /// The folder that holds `path`; fails with `InvalidInput` for a root or a bare name.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn parent(path: &Path) -> io::Result<&Path> {
     path.parent()
         .filter(|dir| !dir.as_os_str().is_empty())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent folder"))
 }
 
-#[cfg(unix)]
+/// Maps a rename result and the folder sync after it to a replace result.
+#[cfg(target_os = "linux")]
+pub(super) fn swap(
+    renamed: io::Result<()>,
+    sync: impl FnOnce() -> io::Result<()>,
+) -> Result<(), ReplaceError> {
+    renamed.map_err(ReplaceError::Unchanged)?;
+    sync().map_err(ReplaceError::NotDurable)
+}
+
+/// An `InvalidInput` error that names why a path was refused.
+#[cfg(target_os = "linux")]
+fn refused(why: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, why)
+}
+
+/// Opens a regular file to read without following a symlink or blocking on a FIFO.
+/// Fails with `InvalidInput` on a symlink or anything that is not a regular file.
+#[cfg(target_os = "linux")]
+fn open_regular(path: &Path) -> io::Result<File> {
+    use rustix::fs::{Mode, OFlags};
+    let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+    let file = match rustix::fs::open(path, flags, Mode::empty()) {
+        Err(rustix::io::Errno::LOOP) => return Err(refused("path is a symlink")),
+        opened => File::from(opened?),
+    };
+    if !file.metadata()?.is_file() {
+        return Err(refused("not a regular file"));
+    }
+    Ok(file)
+}
+
+/// True when this process may not write `path`: no access for our user, or a read-only mount.
+#[cfg(target_os = "linux")]
+fn write_denied(path: &Path) -> io::Result<bool> {
+    use rustix::{fs::Access, io::Errno};
+    match rustix::fs::access(path, Access::WRITE_OK) {
+        Ok(()) => Ok(false),
+        Err(Errno::ACCESS | Errno::PERM | Errno::ROFS) => Ok(true),
+        Err(errno) => Err(errno.into()),
+    }
+}
+
+#[cfg(target_os = "linux")]
 impl Disk for RealDisk {
     fn create_new(&self, path: &Path) -> io::Result<Box<dyn DiskFile>> {
         Ok(Box::new(
@@ -70,7 +113,7 @@ impl Disk for RealDisk {
     }
 
     fn open_read(&self, path: &Path) -> io::Result<Box<dyn Read + Send>> {
-        Ok(Box::new(File::open(path)?))
+        Ok(Box::new(open_regular(path)?))
     }
 
     fn meta(&self, path: &Path) -> io::Result<Option<Meta>> {
@@ -87,28 +130,35 @@ impl Disk for RealDisk {
         Ok(Some(Meta {
             size: found.len(),
             modified_ms: found.modified().ok().and_then(to_ms),
-            read_only: found.permissions().readonly(),
+            read_only: write_denied(path)?,
             identity: Some(crate::native::identity::from_metadata(&found)),
         }))
     }
 
     fn set_modified(&self, path: &Path, ms: i64) -> io::Result<()> {
-        File::open(path)?.set_modified(from_ms(ms)?)
+        open_regular(path)?.set_modified(from_ms(ms)?)
     }
 
     fn copy_mode(&self, from: &Path, to: &Path) -> io::Result<()> {
-        std::fs::set_permissions(to, std::fs::symlink_metadata(from)?.permissions())
+        let source = std::fs::symlink_metadata(from)?;
+        if !source.is_file() {
+            return Err(refused("mode source is not a regular file"));
+        }
+        open_regular(to)?.set_permissions(source.permissions())
     }
 
-    /// `rename`, then sync the folder. A failed sync after the rename is `Unchanged`:
-    /// the swap is not durable, so the caller rolls back by hash.
+    /// `rename`, then sync the folder; see `swap` for how failures map. Both files must
+    /// share a folder, so the rename stays on one volume and one folder sync covers it.
     fn replace(&self, staged: &Path, target: &Path, _old: &Path) -> Result<(), ReplaceError> {
         let dir = parent(target).map_err(ReplaceError::Unchanged)?;
-        std::fs::rename(staged, target).map_err(ReplaceError::Unchanged)?;
-        self.sync_dir(dir).map_err(ReplaceError::Unchanged)
+        if parent(staged).ok() != Some(dir) {
+            return Err(ReplaceError::Unchanged(refused(
+                "staged file is in another folder",
+            )));
+        }
+        swap(std::fs::rename(staged, target), || self.sync_dir(dir))
     }
 
-    #[cfg(target_os = "linux")]
     fn rename_new(&self, from: &Path, to: &Path) -> io::Result<()> {
         use rustix::fs::{CWD, RenameFlags, renameat_with};
         renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE).map_err(|errno| {
@@ -118,12 +168,6 @@ impl Disk for RealDisk {
                 io::Error::from(errno)
             }
         })
-    }
-
-    /// No atomic no-replace rename is wired outside Linux: refuse rather than race.
-    #[cfg(not(target_os = "linux"))]
-    fn rename_new(&self, _from: &Path, _to: &Path) -> io::Result<()> {
-        Err(io::ErrorKind::Unsupported.into())
     }
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
@@ -155,8 +199,8 @@ impl Disk for RealDisk {
     }
 }
 
-/// Until D3, every Windows call fails closed with `Unsupported`.
-#[cfg(not(unix))]
+/// Until D3, every call off Linux fails closed with `Unsupported`.
+#[cfg(not(target_os = "linux"))]
 impl super::Disk for RealDisk {
     fn create_new(&self, _: &std::path::Path) -> io::Result<Box<dyn super::DiskFile>> {
         Err(io::ErrorKind::Unsupported.into())

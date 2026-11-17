@@ -29,8 +29,10 @@ pub struct Meta {
 /// Why a `Disk::replace` failed, and where the old target is now.
 #[derive(Debug)]
 pub enum ReplaceError {
-    /// The target was not swapped, or the swap is not known to be durable. Roll back by hash.
+    /// The target was not swapped: it still holds its old bytes.
     Unchanged(io::Error),
+    /// The target was swapped, but the swap is not durable; roll back by hash (NC145).
+    NotDurable(io::Error),
     /// The target name is gone and the old file is at `old` (Windows 1176/1177).
     TargetMoved(io::Error),
 }
@@ -40,6 +42,7 @@ impl fmt::Display for ReplaceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unchanged(error) => write!(f, "replace failed, target unchanged: {error}"),
+            Self::NotDurable(error) => write!(f, "replace done but not durable: {error}"),
             Self::TargetMoved(error) => write!(f, "replace failed, target moved aside: {error}"),
         }
     }
@@ -49,7 +52,9 @@ impl std::error::Error for ReplaceError {
     /// The OS error behind the failure.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Unchanged(error) | Self::TargetMoved(error) => Some(error),
+            Self::Unchanged(error) | Self::NotDurable(error) | Self::TargetMoved(error) => {
+                Some(error)
+            }
         }
     }
 }

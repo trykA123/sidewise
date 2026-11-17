@@ -1,10 +1,12 @@
-//! Temp-folder tests of the Unix `RealDisk` contract.
+//! Temp-folder tests of the Linux `RealDisk` contract.
+// Linux only: the tests use std::os::unix and rustix; clippy sees `cfg(test)` on the module.
+#![cfg(target_os = "linux")]
 
 use std::io::{ErrorKind, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-use super::{Disk, RealDisk, ReplaceError};
+use super::{Disk, RealDisk, ReplaceError, real::swap};
 
 fn put(path: &Path, text: &str) {
     std::fs::write(path, text).unwrap();
@@ -143,4 +145,86 @@ fn folders_are_made_listed_sorted_synced_and_removed() {
     assert_eq!(RealDisk.list(&job).unwrap(), ["a", "b", "c"]);
     RealDisk.remove_dir_all(&job).unwrap();
     assert_eq!(RealDisk.meta(&job).unwrap(), None);
+}
+
+#[test]
+fn a_failed_folder_sync_after_the_rename_is_not_durable_not_unchanged() {
+    let failed = || Err(std::io::Error::from(ErrorKind::Other));
+    assert!(matches!(
+        swap(Ok(()), failed),
+        Err(ReplaceError::NotDurable(_))
+    ));
+    let renamed = Err(std::io::Error::from(ErrorKind::NotFound));
+    let synced = swap(renamed, || panic!("no sync after a failed rename"));
+    assert!(matches!(synced, Err(ReplaceError::Unchanged(_))));
+}
+
+#[test]
+fn replace_refuses_a_staged_file_in_another_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let sub = dir.path().join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    let (staged, target) = (sub.join("s"), dir.path().join("t"));
+    put(&staged, "new");
+    put(&target, "old");
+    let result = RealDisk.replace(&staged, &target, &dir.path().join("o"));
+    assert!(
+        matches!(result, Err(ReplaceError::Unchanged(e)) if e.kind() == ErrorKind::InvalidInput)
+    );
+    assert_eq!((read(&staged), read(&target)), ("new".into(), "old".into()));
+}
+
+#[test]
+fn a_file_with_a_write_bit_but_no_write_access_for_us_reads_read_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("f");
+    put(&path, "x");
+    // Owner r--, group rw-: we own it, so the owner bits decide and we cannot write.
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o464)).unwrap();
+    assert!(RealDisk.meta(&path).unwrap().unwrap().read_only);
+}
+
+/// Runs `step` on a thread and fails the test if it blocks for 10 s (a FIFO open).
+fn within_deadline<T: Send + 'static>(step: impl FnOnce() -> T + Send + 'static) -> T {
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || send.send(step()));
+    receive
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the open blocked")
+}
+
+#[test]
+fn reads_and_time_sets_refuse_a_symlink_and_a_fifo_without_blocking() {
+    let dir = tempfile::tempdir().unwrap();
+    let (file, link, fifo) = (
+        dir.path().join("f"),
+        dir.path().join("l"),
+        dir.path().join("p"),
+    );
+    put(&file, "x");
+    std::os::unix::fs::symlink(&file, &link).unwrap();
+    rustix::fs::mkfifoat(rustix::fs::CWD, &fifo, rustix::fs::Mode::from(0o600)).unwrap();
+    for path in [link, fifo] {
+        let probe = path.clone();
+        let read = within_deadline(move || RealDisk.open_read(&probe).err().map(|e| e.kind()));
+        assert_eq!(read, Some(ErrorKind::InvalidInput), "{path:?}");
+        let probe = path.clone();
+        let set = within_deadline(move || RealDisk.set_modified(&probe, 0).err().map(|e| e.kind()));
+        assert_eq!(set, Some(ErrorKind::InvalidInput), "{path:?}");
+    }
+}
+
+#[test]
+fn copy_mode_refuses_a_symlink_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let (file, link, to) = (
+        dir.path().join("f"),
+        dir.path().join("l"),
+        dir.path().join("t"),
+    );
+    put(&file, "x");
+    put(&to, "y");
+    std::os::unix::fs::symlink(&file, &link).unwrap();
+    let error = RealDisk.copy_mode(&link, &to).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidInput);
 }
