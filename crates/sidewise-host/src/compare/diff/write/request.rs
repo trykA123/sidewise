@@ -105,7 +105,7 @@ pub fn load_input(request: &CopyRequest) -> Result<LoadInput, CopyRefusal> {
     })
 }
 
-/// Find the shown change in the fresh diff: equal ranges, a digest, and the same digest value.
+/// Find the shown change in the fresh diff: equal byte ranges and an equal digest.
 /// Fails with `NotCopyable` for a non-text pair, `Changed` when the change moved or differs.
 pub fn matched<'a>(request: &CopyRequest, loaded: &'a Loaded) -> Result<Shown<'a>, CopyRefusal> {
     if loaded.kind != PairKind::Text {
