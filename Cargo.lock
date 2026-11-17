@@ -6962,6 +6962,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sidewise-journal"
+version = "0.1.0-alpha.2"
+dependencies = [
+ "blake3",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sidewise-core",
+ "tempfile",
+]
+
+[[package]]
 name = "sidewise-kit"
 version = "0.1.0-alpha.2"
 dependencies = [
