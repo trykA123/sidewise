@@ -33,7 +33,7 @@ pub struct Recovered {
 }
 
 /// A job folder as recovery reads it, before any write.
-enum Found {
+pub(crate) enum Found {
     /// No good record: the job never wrote (a crash in `begin`), and its owner is unknown.
     Empty,
     /// A bad line, a `Begin` that does not match the folder, or an unsafe target.
@@ -43,16 +43,16 @@ enum Found {
 }
 
 /// One readable job log of a known owner.
-struct Job {
+pub(crate) struct Job {
     id: JobId,
     dir: PathBuf,
-    records: Vec<Record>,
+    pub(crate) records: Vec<Record>,
     /// The log bytes up to the end of the last good line (`Log::good_len`).
     good: Vec<u8>,
     /// The log name is gone and the log sits at `log.sw-old` (Windows 1176/1177).
     moved: bool,
     /// A rewrite leftover (`log.sw-new` or `log.sw-old`) is in the folder.
-    leftover: bool,
+    pub(crate) leftover: bool,
 }
 
 /// A job folder as the listing saw it: only where it is. Its log is read again after the
@@ -66,7 +66,7 @@ struct Listed {
 
 impl Job {
     /// True when the log holds `Commit` or `Aborted`: the job is never written again.
-    fn complete(&self) -> bool {
+    pub(crate) fn complete(&self) -> bool {
         self.records
             .iter()
             .any(|record| matches!(record, Record::Commit | Record::Aborted { .. }))
@@ -124,7 +124,7 @@ pub(crate) fn recover_with(
 
 /// Reads one job folder without writing: its log, or the log a failed replace moved to
 /// `log.sw-old`. Fails when the folder or log cannot be read.
-fn read_job(disk: &dyn Disk, dir: PathBuf, id: JobId) -> io::Result<Found> {
+pub(crate) fn read_job(disk: &dyn Disk, dir: PathBuf, id: JobId) -> io::Result<Found> {
     let names = disk.list(&dir)?;
     let has = |name: &str| names.iter().any(|found| found == name);
     let moved = !has(LOG) && has(OLD_LOG);

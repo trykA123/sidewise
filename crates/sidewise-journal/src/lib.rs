@@ -9,6 +9,7 @@ mod journal;
 pub mod record;
 mod recover;
 mod rollback;
+mod sweep;
 
 #[cfg(test)]
 mod codec_strict_tests;
@@ -36,3 +37,4 @@ pub use journal::Journal;
 pub use record::{ItemMode, JobId, JobKind, Log, Record, decode, encode};
 pub use recover::Recovered;
 pub use rollback::Rolled;
+pub use sweep::{CAP_BYTES, KEEP_MS, Swept};

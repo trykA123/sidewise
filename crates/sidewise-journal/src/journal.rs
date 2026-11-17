@@ -35,7 +35,7 @@ pub(crate) struct Inner {
 
 /// The open journal of this process.
 pub struct Journal {
-    inner: Arc<Inner>,
+    pub(crate) inner: Arc<Inner>,
 }
 
 impl Journal {
@@ -63,11 +63,13 @@ impl Journal {
     }
 
     /// Opens the journal in `dir` (see `open_raw`), then rolls back every incomplete job of a
-    /// dead owner (NC145) and removes the lock files of dead owners whose jobs are all complete.
-    /// Fails when the journal cannot open or its folders cannot be listed (writes stay off).
+    /// dead owner (NC145), removes the lock files of dead owners whose jobs are all complete,
+    /// and runs the retention sweep (NC141). Fails when the journal cannot open or its folders
+    /// cannot be listed (writes stay off); sweep counts are dropped, the next start retries.
     pub fn open(dir: &Path, disk: Arc<dyn Disk>) -> Result<(Self, Recovered), JournalError> {
         let journal = Self::open_raw(dir, disk)?;
         let recovered = recover_with(&journal.inner, || {})?;
+        journal.sweep(now_ms().cast_unsigned())?;
         Ok((journal, recovered))
     }
 
