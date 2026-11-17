@@ -6,6 +6,7 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- An opt-in update check. It is off until you press Turn on at the foot of the Start screen. On the third start, a card asks once. When on, Sidewise asks GitHub for the release list once a day. If a newer version exists, the status bar names it, with a link to the release page and a small x to hide it. GitHub sees your IP address and the client name `Sidewise`; Sidewise sends no other data. Failures are silent. Sidewise never downloads or installs anything. Turn off any time on the Start screen.
 - Copy a change to the other side. `Ctrl+Alt+Right` copies the change at the cursor to the right, and `Ctrl+Alt+Left` copies it to the left. The right-click menu has the same commands, and also copies the lines you picked.
 - Copy all matches in Stream: `Ctrl+Shift+Right` and `Ctrl+Shift+Left`. A sheet lists the files and what it skips, and you confirm with Copy all.
 - Every copy is safe against a crash or a power cut. Sidewise saves the old file in a journal first, then replaces the file in one step. You see either the old file or the new one, never half of each.

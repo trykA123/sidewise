@@ -39,6 +39,21 @@ Start `sidewise.exe` and pick two folders or two files on the Start screen.
 
 Or run `sidewise <left> <right>` in a terminal. Run `sidewise --help` for the other flags.
 
+## Update check
+
+Sidewise can tell you when a new version is out. This is off until you turn it on. Until then, Sidewise makes no network call.
+
+- The foot of the Start screen has a line: "Sidewise does not check for new versions." Press **Turn on** to enable the check.
+- On the third start, if you have not chosen, the line becomes a small card: "Get a note when a new Sidewise is out?" Press **Turn on** or **Not now**. Not now means off, and the card does not come back.
+- When the check is on, Sidewise asks GitHub for the public release list of `trykA123/sidewise`. It asks at most once a day, a few seconds after start. Turning it on runs the first check at once.
+- GitHub sees your IP address, the client name `Sidewise` and the request for the release list. Sidewise sends no version, system, account or file data. The request uses your Windows proxy settings.
+- If a newer version exists, the status bar shows a dot and "Sidewise 0.1.0-alpha.3 is available." (the number is the new version). Click the text to open the release page in your browser. Click the small x to hide the note until a still newer version appears.
+- The Start line says the same and has **Release page** and **Turn off**. Tab reaches them; Enter or Space presses them.
+- If you are offline or GitHub does not answer, Sidewise shows nothing and tries again the next day.
+- Sidewise never downloads or installs anything. You get the new version from the release page.
+
+To turn it off, press **Turn off** on the Start screen. The next start makes no network call. Sidewise keeps the time of the last check and the newest version it found in `update-check.toml` in `%LOCALAPPDATA%\Sidewise`. Your choice is the `update_check` value in `settings.toml` in `%APPDATA%\Sidewise`.
+
 ## Copy and Undo
 
 Builds after alpha.2 copy changes between the two sides. Alpha.2 does not.
@@ -107,7 +122,7 @@ Open Settings > Apps > Installed apps, find Sidewise and choose Uninstall. Your 
 - Git branch or ref compare.
 - Accounts and theme switching.
 - Merging, syncing folders and three-way merge. Copying a change to the other side is in builds after alpha.2.
-- An Explorer menu, auto-update and a signed build.
+- An Explorer menu, auto-update (the optional update check only names a new version) and a signed build.
 
 ## Layout
 
@@ -115,6 +130,7 @@ Open Settings > Apps > Installed apps, find Sidewise and choose Uninstall. Your 
 - `crates/navo-compare-app`: the app (the `sidewise` binary).
 - `crates/navo-compare-cli`: the command-line parser.
 - `crates/navo-compare-profile`: the profile, recent and named sessions.
+- `crates/sidewise-update`: the update check: version rules, the GitHub release list and the request.
 - `assets/brand`: the app icon.
 - `installer/`: the Inno Setup script of the installer.
 - `scripts/`: the local gate, the Windows build and the release.
