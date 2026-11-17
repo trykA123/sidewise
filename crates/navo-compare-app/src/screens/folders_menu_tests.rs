@@ -14,7 +14,7 @@ use crate::menu_host::{bind_menu_keys, menu_view};
 
 /// A focused view over the fixture with roots `/left` and `/right`, menu keys bound.
 fn setup(cx: &mut TestAppContext) -> (AnyWindowHandle, gpui_kit::Entity<FoldersView>) {
-    let roots = [PathBuf::from("/left"), PathBuf::from("/right")];
+    let roots = [abs_root("left"), abs_root("right")];
     let (window, view, _) = view_with(cx, move |cx| FoldersView::new(cx).with_roots(roots));
     cx.update(|cx| {
         bind_keys(cx);
@@ -120,7 +120,7 @@ fn copy_left_path_writes_the_absolute_path(cx: &mut TestAppContext) {
     cx.update(|cx| view.update(cx, |this, cx| this.select_path("a/x.txt", cx)));
     cx.simulate_keystrokes(window, "ctrl-shift-c");
     let text = cx.read_from_clipboard().and_then(|item| item.text());
-    let want = PathBuf::from("/left").join("a").join("x.txt");
+    let want = abs_root("left").join("a").join("x.txt");
     assert_eq!(text.as_deref(), want.to_str());
 }
 
@@ -142,4 +142,14 @@ fn shift_f10_opens_the_menu_on_the_cursor_line(cx: &mut TestAppContext) {
     let lines = menu_lines(cx, &view);
     assert_eq!(lines[0].0, "Expand");
     assert_eq!(lines[1].0, "Expand all");
+}
+
+/// An absolute test root: `/name` on Unix, `C:\name` on Windows, where a path without a drive
+/// is not absolute and the app shows it drive-qualified.
+fn abs_root(name: &str) -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from(format!("C:\\{name}"))
+    } else {
+        PathBuf::from(format!("/{name}"))
+    }
 }

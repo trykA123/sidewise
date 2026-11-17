@@ -232,17 +232,20 @@ fn the_headers_name_both_roots(cx: &mut TestAppContext) {
         gpui_kit::init(cx);
         apply_sidewise(PaletteId::Violet, Mode::Light, cx);
     });
-    let roots = [PathBuf::from("/work/left"), PathBuf::from("/work/right")];
+    let roots = [
+        abs_root("work").join("left"),
+        abs_root("work").join("right"),
+    ];
     let (window, _) = open(cx, |_, cx| FoldersView::new(cx).with_roots(roots));
     cx.update_window(window, |_, window, cx| window.render_frame(cx))
         .expect("window");
     assert_eq!(
         label_of(window, ("head", 0), cx).as_deref(),
-        Some("/work/left")
+        abs_root("work").join("left").to_str()
     );
     assert_eq!(
         label_of(window, ("head", 1), cx).as_deref(),
-        Some("/work/right")
+        abs_root("work").join("right").to_str()
     );
 }
 
@@ -264,5 +267,15 @@ fn meta_follows_the_view_width(cx: &mut TestAppContext) {
             .expect("window");
         assert_eq!(label_of(window, ("cell-l", 2), cx).as_deref(), Some(text));
         assert_eq!(gut_w(cx), gut);
+    }
+}
+
+/// An absolute test root: `/name` on Unix, `C:\name` on Windows, where a path without a drive
+/// is not absolute and the app shows it drive-qualified.
+fn abs_root(name: &str) -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from(format!("C:\\{name}"))
+    } else {
+        PathBuf::from(format!("/{name}"))
     }
 }
