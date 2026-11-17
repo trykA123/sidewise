@@ -23,6 +23,9 @@ Sidewise now builds its compare engine, file layer and compare screen from its o
 ### Fixed
 
 - In a narrow window, the hex view of one file no longer draws its text column over the right side. Each half stays inside its own column.
+- The hex view fits its rows to the window: 16, 8 or 4 bytes per row, so no byte or text column is cut off below 1280 px.
+- The View menu opens under the View button instead of at the bottom left of the window.
+- After a compare opens or the window is resized, Folders shows size and date columns, and the top bar switches between its wide and compact forms, without waiting for a click or key press.
 
 ### Changed
 
