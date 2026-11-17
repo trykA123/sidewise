@@ -48,6 +48,33 @@ fn a_compare_message_comes_from_the_embedded_file() {
 }
 
 #[test]
+fn the_update_strings_are_embedded() {
+    let ids = [
+        "update-line-off",
+        "update-line-on",
+        "update-turn-on",
+        "update-turn-off",
+        "update-prompt-title",
+        "update-prompt-body",
+        "update-not-now",
+        "update-available",
+        "update-release-page",
+        "update-hide",
+    ];
+    for id in ids {
+        assert!(catalog().has(id), "{id} is missing");
+    }
+}
+
+#[test]
+fn the_update_notice_names_the_version() {
+    assert_eq!(
+        t!("update-available", version = "0.1.0-alpha.3"),
+        "Sidewise 0.1.0-alpha.3 is available."
+    );
+}
+
+#[test]
 fn the_macro_passes_named_arguments() {
     assert_eq!(t!("fixture-greeting", name = "Ana"), "Hello, Ana!");
 }
