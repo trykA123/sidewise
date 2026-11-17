@@ -1,8 +1,8 @@
 # Sidewise
 
-Sidewise compares two folders or two files. It is built from the compare engine of [Navo](https://github.com/trykA123/navo).
+Sidewise compares two folders or two files. It is built from its own crates in this repository. They began as the compare engine of [Navo](https://github.com/trykA123/navo) and were imported with their history.
 
-Status: alpha pre-release 0.1.0-alpha.1. Windows only. Read-only: it never changes your files.
+Status: alpha pre-release 0.1.0-alpha.2. Windows only. Read-only: it never changes your files.
 
 See the [CHANGELOG](CHANGELOG.md) for the full list of what this release has and lacks.
 
@@ -10,13 +10,13 @@ See the [CHANGELOG](CHANGELOG.md) for the full list of what this release has and
 
 Get the files from the [Releases page](https://github.com/trykA123/sidewise/releases):
 
-- `sidewise-0.1.0-alpha.1-windows-x64.zip`
+- `sidewise-0.1.0-alpha.2-windows-x64.zip`
 - `SHA256SUMS`
 
 Check the zip before you run it:
 
 1. Open PowerShell in the download folder.
-2. Run `Get-FileHash -Algorithm SHA256 .\sidewise-0.1.0-alpha.1-windows-x64.zip`.
+2. Run `Get-FileHash -Algorithm SHA256 .\sidewise-0.1.0-alpha.2-windows-x64.zip`.
 3. Check that the `Hash` value matches the line for the zip in `SHA256SUMS`.
 
 Unzip the file into any folder. Then start `sidewise.exe`.
@@ -51,6 +51,7 @@ Or run `sidewise <left> <right>` in a terminal. Run `sidewise --help` for the ot
 
 ## Layout
 
+- `crates/sidewise-*`: the compare engine, file layer, host glue and compare screen.
 - `crates/navo-compare-app`: the app (the `sidewise` binary).
 - `crates/navo-compare-cli`: the command-line parser.
 - `crates/navo-compare-profile`: the profile, recent and named sessions.

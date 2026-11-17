@@ -2,7 +2,9 @@
 
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.1.0-alpha.2] — 2026-11-17
+
+Sidewise now builds its compare engine, file layer and compare screen from its own crates (`crates/sidewise-*`, imported with their history from Navo). It no longer fetches Navo at build time.
 
 ### Added
 
@@ -14,10 +16,22 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tab menu: Close tab and Close other tabs.
 - The View menu (`Alt+V`) on Start and Folders: Simple, Rich or Custom, side by side or unified, changed words and wrap. Your choice is saved in the profile.
 - Pasted paths in double quotes (Explorer's "Copy as path") work on the Start screen.
+- New compare tabs open with your saved look from the View menu (Simple, Rich or Custom).
+- The Keys sheet lists the compare keys.
+- The release zip carries the licences of the embedded fonts.
+
+### Fixed
+
+- In a narrow window, the hex view of one file no longer draws its text column over the right side. Each half stays inside its own column.
 
 ### Changed
 
 - A click now selects a folder; double click or the arrow opens it.
+
+### Known limits
+
+- Some viewer keys (line/page scrolling, find results, undo) are not listed in the Keys sheet yet.
+- The other limits of alpha.1 still apply, except the View menu and the narrow hex view, which are now fixed.
 
 ## [0.1.0-alpha.1] - 2026-11-16
 
@@ -48,7 +62,5 @@ It is read-only. It never changes your files.
 - Some flags, such as `--wait`, are accepted and ignored.
 - Each start opens its own window.
 - No accounts and no theme switching. The colour scheme follows Windows Light or Dark mode only.
-- No View menu of its own. Inside a file diff, `Alt+V` opens the diff's menu.
 - No Sync plan, no copying of changes and no three-way merge.
 - No Explorer menu and no auto-update.
-- In a narrow window the hex view of one file can draw its text column over the right side. The same bytes show correctly in Stream.
