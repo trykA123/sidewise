@@ -36,7 +36,8 @@ pub fn from_file(file: &std::fs::File) -> io::Result<Option<FileIdentity>> {
 }
 
 #[cfg(unix)]
-fn from_metadata(metadata: &std::fs::Metadata) -> FileIdentity {
+/// Turns Unix metadata into an identity: the device and the inode number.
+pub(crate) fn from_metadata(metadata: &std::fs::Metadata) -> FileIdentity {
     use std::os::unix::fs::MetadataExt;
     FileIdentity {
         volume: metadata.dev(),
