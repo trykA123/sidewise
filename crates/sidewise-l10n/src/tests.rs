@@ -75,6 +75,30 @@ fn the_update_notice_names_the_version() {
 }
 
 #[test]
+fn the_git_strings_are_embedded() {
+    let ids = [
+        "git-chip-revision",
+        "git-chip-not-repository",
+        "git-chip-no-revision",
+        "git-chip-unsupported",
+        "git-chip-broken",
+        "git-start-tip",
+        "git-side-no-file",
+    ];
+    for id in ids {
+        assert!(catalog().has(id), "{id} is missing");
+    }
+}
+
+#[test]
+fn the_git_side_without_a_file_names_the_revision() {
+    assert_eq!(
+        t!("git-side-no-file", rev = "main"),
+        "This side is Git revision main; it has no file on disk."
+    );
+}
+
+#[test]
 fn the_macro_passes_named_arguments() {
     assert_eq!(t!("fixture-greeting", name = "Ana"), "Hello, Ana!");
 }
