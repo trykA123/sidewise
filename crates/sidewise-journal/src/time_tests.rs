@@ -173,6 +173,56 @@ fn rollback_keeps_the_old_time(disk: &dyn Disk) {
     assert_eq!(mtime_ms(&target), RESTORE_MS, "the restored target");
 }
 
+/// Rolls back an item whose read-only (0444) target holds the new bytes: the restore copy gets
+/// the target's mode between its append open and its sync, and keeps the old time.
+#[cfg(unix)]
+fn rollback_over_a_read_only_target_keeps_mode_and_time(disk: &dyn Disk) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let (files, job_dir) = (dir.path().join("files"), dir.path().join("job"));
+    fs::create_dir(&files).unwrap();
+    fs::create_dir(&job_dir).unwrap();
+    let target = files.join("t.txt");
+    fs::write(&target, b"new").unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o444)).unwrap();
+    fs::write(backup_path(&job_dir, 0), b"old").unwrap();
+    let stamp = |bytes: &[u8], ms| FileStamp {
+        size: 3,
+        modified_ms: ms,
+        hash: *blake3::hash(bytes).as_bytes(),
+    };
+    let records = [
+        Record::Intent {
+            item: 0,
+            target: target.to_str().unwrap().to_owned(),
+            mode: ItemMode::Overwrite,
+            expect_size: Some(3),
+            expect_mtime_ms: None,
+            restore_mtime_ms: None,
+        },
+        Record::Staged {
+            item: 0,
+            new: stamp(b"new", None),
+        },
+        Record::Backed {
+            item: 0,
+            old: stamp(b"old", Some(RESTORE_MS)),
+        },
+    ];
+    let rolled = roll_back(disk, &job_dir, &JobId::new(1, 2, 3), &records);
+    assert_eq!((rolled.restored, rolled.failed), (1, 0));
+    assert_eq!(fs::read(&target).unwrap(), b"old");
+    assert_eq!(mtime_ms(&target), RESTORE_MS, "the restored target");
+    let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o444, "the target's mode");
+}
+
+#[cfg(unix)]
+#[test]
+fn rollback_over_a_read_only_target_keeps_mode_and_time_when_close_stamps() {
+    rollback_over_a_read_only_target_keeps_mode_and_time(&ExfatLike);
+}
+
 #[test]
 fn stage_keeps_the_restore_time_on_real_disk() {
     stage_keeps_the_restore_time(&RealDisk);

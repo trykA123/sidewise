@@ -158,6 +158,7 @@ impl Disk for RealDisk {
             modified_ms: found.modified().ok().and_then(to_ms),
             read_only: write_denied(path)?,
             identity: Some(crate::native::identity::from_metadata(&found)),
+            no_stable_ids: false,
         }))
     }
 

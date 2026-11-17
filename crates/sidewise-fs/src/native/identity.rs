@@ -66,6 +66,24 @@ pub fn from_file(file: &std::fs::File) -> io::Result<Option<FileIdentity>> {
     proved(filesystem_name(file), || file_id(file))
 }
 
+/// The identity `meta` reports, and true when the volume says it keeps no stable file ids.
+/// Fails when the file id query fails on a volume with stable ids.
+#[cfg(windows)]
+pub(crate) fn for_meta(file: &std::fs::File) -> io::Result<(Option<FileIdentity>, bool)> {
+    let filesystem = filesystem_name(file);
+    let no_ids = no_stable_ids(&filesystem);
+    Ok((proved(filesystem, || file_id(file))?, no_ids))
+}
+
+/// True only for a readable FAT-family name: an unreadable or empty name proves nothing, so
+/// the journal keeps refusing that target (fail closed).
+#[cfg(any(windows, test))]
+fn no_stable_ids(filesystem: &io::Result<String>) -> bool {
+    filesystem
+        .as_ref()
+        .is_ok_and(|name| !name.is_empty() && !stable_ids(name))
+}
+
 #[cfg(any(windows, test))]
 fn proved(
     filesystem: io::Result<String>,
@@ -225,6 +243,17 @@ mod tests {
             });
             assert_eq!(identity.unwrap(), None, "{name}");
         }
+    }
+
+    #[test]
+    fn only_a_readable_fat_family_name_says_no_stable_ids() {
+        for name in ["FAT", "FAT12", "fat16", "FAT32", "exFAT", "EXFAT"] {
+            assert!(no_stable_ids(&Ok(name.to_owned())), "{name}");
+        }
+        for name in ["", "NTFS", "ReFS", "ext4"] {
+            assert!(!no_stable_ids(&Ok(name.to_owned())), "{name:?}");
+        }
+        assert!(!no_stable_ids(&Err(io::ErrorKind::PermissionDenied.into())));
     }
 
     #[test]

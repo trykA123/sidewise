@@ -9,7 +9,7 @@ use sidewise_fs::durable::{Disk, Meta, ReplaceError};
 use sidewise_fs::{DriveClass, drive_class};
 
 use crate::error::{WriteError, classify};
-use crate::files::{Hashing, copy_hashed, set_time_closed};
+use crate::files::{Hashing, copy_hashed, hash_file, set_time_closed};
 
 /// What the caller last saw of a target; `None` fields are not checked.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -41,7 +41,8 @@ pub(crate) fn replace_error(error: ReplaceError) -> WriteError {
 }
 
 /// NC144 step 1 with the NC147 refusals: an absolute UTF-8 path, not on a network drive, a
-/// regular file that we may write, with a known identity and the expected size and time.
+/// regular file that we may write, with a known identity (unless the volume keeps no stable
+/// ids, NC202) and the expected size and time.
 /// Returns what it saw; fails before anything is written.
 pub(crate) fn precheck(disk: &dyn Disk, request: &Request<'_>) -> Result<Meta, WriteError> {
     let (target, expect) = (request.target, request.expect);
@@ -63,7 +64,7 @@ pub(crate) fn precheck(disk: &dyn Disk, request: &Request<'_>) -> Result<Meta, W
     if meta.read_only {
         return Err(WriteError::ReadOnly);
     }
-    if meta.identity.is_none() {
+    if meta.identity.is_none() && !meta.no_stable_ids {
         return Err(WriteError::Failed("the file identity is unknown".into()));
     }
     let size_moved = expect.size.is_some_and(|size| size != meta.size);
@@ -77,7 +78,8 @@ pub(crate) fn precheck(disk: &dyn Disk, request: &Request<'_>) -> Result<Meta, W
 }
 
 /// NC144 step 3: fills the staged file, applies the target's mode, syncs and closes it, then
-/// sets the restore time (and syncs again), and returns its stamp. A fill error maps back to the OS error it hit, if any.
+/// sets the restore time (and syncs again), and returns its stamp. A fill error maps back to
+/// the OS error it hit, if any.
 pub(crate) fn stage(
     disk: &dyn Disk,
     staged: &Path,
@@ -154,4 +156,24 @@ pub(crate) fn check_same(before: &Meta, now: Option<Meta>) -> Result<(), WriteEr
     } else {
         Err(WriteError::Changed)
     }
+}
+
+/// The last check before a replace: true when `target` is still `before` by size, time and
+/// identity (NC160). With no identity (a volume without stable ids, NC202) it must also still
+/// hash to `hash`, and its size and time are read again after the hash. Fails when it cannot
+/// be read, so the caller stops (fail closed).
+pub(crate) fn still_same(
+    disk: &dyn Disk,
+    target: &Path,
+    before: &Meta,
+    hash: &[u8; 32],
+) -> io::Result<bool> {
+    if check_same(before, disk.meta(target)?).is_err() {
+        return Ok(false);
+    }
+    if before.identity.is_some() {
+        return Ok(true);
+    }
+    let same_hash = hash_file(disk, target)? == Some(*hash);
+    Ok(same_hash && check_same(before, disk.meta(target)?).is_ok())
 }

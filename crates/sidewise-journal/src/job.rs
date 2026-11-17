@@ -10,7 +10,7 @@ use sidewise_fs::durable::DiskFile;
 
 use crate::error::{JournalError, WriteError, classify, journal_io};
 use crate::files::{Temp, backup_path, temp_path};
-use crate::item::{Expect, Fill, Request, back_up, check_same, precheck, replace_error, stage};
+use crate::item::{Expect, Fill, Request, back_up, precheck, replace_error, stage, still_same};
 use crate::journal::Inner;
 use crate::record::{ItemMode, JobId, Record, encode};
 use crate::rollback::{Rolled, roll_back};
@@ -155,10 +155,11 @@ impl Job {
         disk.sync_dir(&self.dir)
             .map_err(|error| classify("sync job folder", &error))?;
         self.append(Record::Backed { item, old })?;
-        let now = disk
-            .meta(target)
+        let same = still_same(disk.as_ref(), target, &before, &old.hash)
             .map_err(|e| classify("re-check target", &e))?;
-        check_same(&before, now)?;
+        if !same {
+            return Err(WriteError::Changed);
+        }
         disk.replace(&staged, target, &old_temp)
             .map_err(replace_error)?;
         self.append(Record::Done { item })?;

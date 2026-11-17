@@ -38,6 +38,9 @@ pub struct Meta {
     pub read_only: bool,
     /// Volume and file id, used to notice a target that was swapped between check and use.
     pub identity: Option<FileIdentity>,
+    /// True only when the volume says it keeps no stable file ids (FAT, exFAT): `identity` is
+    /// then `None`, and the journal checks the target by hash instead (NC202).
+    pub no_stable_ids: bool,
 }
 
 /// Why a `Disk::replace` failed, and where the old target is now.

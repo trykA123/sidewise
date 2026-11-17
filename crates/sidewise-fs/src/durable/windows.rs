@@ -126,7 +126,8 @@ impl Disk for RealDisk {
     }
 
     /// Reads one `BACKUP_SEMANTICS | OPEN_REPARSE_POINT` handle, never a link's target. A link,
-    /// placeholder or offline file is refused. `identity` is `None` on FAT and exFAT.
+    /// placeholder or offline file is refused. On FAT and exFAT `identity` is `None` and
+    /// `no_stable_ids` is true.
     fn meta(&self, path: &Path) -> io::Result<Option<Meta>> {
         let opened = OpenOptions::new()
             .access_mode(FILE_READ_ATTRIBUTES)
@@ -142,11 +143,13 @@ impl Disk for RealDisk {
         } else if !found.is_dir() {
             return Err(refused("not a file or folder"));
         }
+        let (identity, no_stable_ids) = crate::native::identity::for_meta(&file)?;
         Ok(Some(Meta {
             size: found.len(),
             modified_ms: found.modified().ok().and_then(to_ms),
             read_only: found.file_attributes() & FILE_ATTRIBUTE_READONLY != 0,
-            identity: crate::native::identity::from_file(&file)?,
+            identity,
+            no_stable_ids,
         }))
     }
 

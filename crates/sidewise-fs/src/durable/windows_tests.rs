@@ -144,8 +144,9 @@ fn rename_new_refuses_an_existing_name_and_keeps_both_files() {
     assert_eq!((read(&from), read(&to)), ("a".into(), "b".into()));
 }
 
-/// True when `dir` is on NTFS; otherwise prints that the test of `feature` is skipped and why.
-/// Junctions, WOF and custom reparse tags need NTFS; TEMP may sit on exFAT or FAT.
+/// True when `dir` is on NTFS; otherwise prints that the test of `feature` is skipped and why,
+/// or panics when `SIDEWISE_REQUIRE_NTFS=1` (the VM gate). Junctions, WOF and custom reparse
+/// tags need NTFS; TEMP may sit on exFAT or FAT.
 #[expect(clippy::print_stderr, reason = "a skipped test prints why")]
 fn on_ntfs(dir: &Path, feature: &str) -> bool {
     use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
@@ -156,6 +157,11 @@ fn on_ntfs(dir: &Path, feature: &str) -> bool {
         .unwrap();
     let name = crate::native::identity::filesystem_name(&handle).unwrap();
     let ntfs = name.eq_ignore_ascii_case("NTFS");
+    let required = std::env::var_os("SIDEWISE_REQUIRE_NTFS").is_some_and(|value| value == "1");
+    assert!(
+        ntfs || !required,
+        "{feature} needs NTFS, the temp volume is {name}"
+    );
     if !ntfs {
         eprintln!("SKIPPED {feature}: needs NTFS, the temp volume is {name}");
     }

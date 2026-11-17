@@ -23,6 +23,8 @@ mod job_outcome_tests;
 #[cfg(test)]
 mod job_tests;
 #[cfg(test)]
+mod noids_tests;
+#[cfg(test)]
 mod recover_crash_tests;
 #[cfg(test)]
 mod recover_race_tests;

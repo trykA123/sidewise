@@ -49,6 +49,8 @@ if ($want -contains 'clippy') {
   Step clippy { cmd /c "cargo clippy --workspace --all-targets --locked -- -D warnings 2>&1" }
 }
 if ($want -contains 'test') {
+  # C: is NTFS: the NTFS-only fixture tests must run here, never skip.
+  $env:SIDEWISE_REQUIRE_NTFS = '1'
   Step test { cmd /c "cargo test --workspace --locked 2>&1" }
 }
 if ($want -contains 'build') {
