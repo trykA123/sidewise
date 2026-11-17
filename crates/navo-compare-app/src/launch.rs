@@ -134,7 +134,8 @@ mod tests {
     #[test]
     fn one_path_is_refused() {
         let refusal = Launch::Refuse(
-            "sidewise: give two sides (two folders, two files or Git revisions), or none.".to_owned(),
+            "sidewise: give two sides (two folders, two files or Git revisions), or none."
+                .to_owned(),
         );
         assert_eq!(run(&["a"], &["a"]), refusal);
     }
