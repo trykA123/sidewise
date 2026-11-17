@@ -4,6 +4,8 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] — 2026-11-17
+
 ### Added
 
 - An opt-in update check. It is off until you press Turn on at the foot of the Start screen. On the third start, a card asks once. When on, Sidewise asks GitHub for the release list once a day. If a newer version exists, the status bar names it, with a link to the release page and a small x to hide it. GitHub sees your IP address and the client name `Sidewise`; Sidewise sends no other data. Failures are silent. Sidewise never downloads or installs anything. Turn off any time on the Start screen.
@@ -30,6 +32,7 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The View menu closes on a click outside it and when you switch tabs.
 - Closing a menu with Esc returns focus to where it was.
 - The Keys sheet names the find-result keys' section "Find results" instead of an internal name.
+- Copying and Undo work on exFAT and FAT drives such as USB sticks. These drives have no stable file ids, so Sidewise re-reads and checks the file just before it replaces it, and refuses if it changed. A restored file keeps its old modified time on exFAT too.
 
 ### Removed
 
@@ -43,6 +46,8 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - If Sidewise cannot confirm that a copy was written, it says so and offers no Undo. It checks the file at the next start.
 - If the journal cannot open, copying is off and Sidewise says why. Compare still works.
 - Copying works on files only. Folder sync, merge and three-way merge are not built yet.
+- FAT32 drives are not tested yet.
+- Git compare is still not in this release.
 
 ## [0.1.0-alpha.2] — 2026-11-17
 

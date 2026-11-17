@@ -2,7 +2,7 @@
 
 Sidewise compares two folders or two files. It is built from its own crates in this repository. They began as the compare engine of [Navo](https://github.com/trykA123/navo) and were imported with their history.
 
-Status: alpha pre-release 0.1.0-alpha.2. Windows only. Alpha.2 is read-only. Later builds can copy changes between the two sides; see [Copy and Undo](#copy-and-undo).
+Status: alpha pre-release 0.1.0-alpha.3. Windows only. It can copy changes between the two sides, with Undo, and it never leaves a half-written file. See [Copy and Undo](#copy-and-undo).
 
 See the [CHANGELOG](CHANGELOG.md) for the full list of what this release has and lacks.
 
@@ -10,14 +10,14 @@ See the [CHANGELOG](CHANGELOG.md) for the full list of what this release has and
 
 Get the files from the [Releases page](https://github.com/trykA123/sidewise/releases):
 
-- `sidewise-0.1.0-alpha.2-windows-x64-setup.exe`
-- `sidewise-0.1.0-alpha.2-windows-x64.zip`
+- `sidewise-0.1.0-alpha.3-windows-x64-setup.exe`
+- `sidewise-0.1.0-alpha.3-windows-x64.zip`
 - `SHA256SUMS`
 
-Check the file before you run it:
+Check each file before you run it:
 
 1. Open PowerShell in the download folder.
-2. Run `Get-FileHash -Algorithm SHA256 .\<file>`.
+2. Run `Get-FileHash -Algorithm SHA256 .\sidewise-0.1.0-alpha.3-windows-x64-setup.exe`. Do the same for `sidewise-0.1.0-alpha.3-windows-x64.zip`.
 3. Check that the `Hash` value matches the line for that file in `SHA256SUMS`.
 
 ### Install
@@ -28,7 +28,7 @@ Run the setup. It installs Sidewise for your Windows user only, in `%LOCALAPPDAT
 
 Unzip the file into any folder. Then start `sidewise.exe`.
 
-The files are not signed. Windows SmartScreen warns on the first start of the setup or of `sidewise.exe`. To run it anyway:
+The setup and `sidewise.exe` are not signed. Windows SmartScreen may warn on the first start. To run it anyway:
 
 1. Click **More info**.
 2. Click **Run anyway**.
@@ -56,7 +56,7 @@ To turn it off, press **Turn off** on the Start screen. The next start makes no 
 
 ## Copy and Undo
 
-Builds after alpha.2 copy changes between the two sides. Alpha.2 does not.
+Sidewise copies changes between the two sides. Releases up to alpha.2 do not.
 
 - Copy the change at the cursor: `Ctrl+Alt+Right` to the right, `Ctrl+Alt+Left` to the left.
 - Copy picked lines or one change: use the right-click menu.
@@ -114,14 +114,15 @@ Open Settings > Apps > Installed apps, find Sidewise and choose Uninstall. Your 
 - File diff for text, hex and images.
 - Stream view with an Outline.
 - Recent sessions on the Start screen.
-- Light and Dark mode, with the Violet colour scheme.
+- Five colour themes, with System, Light and Dark mode.
+- Copy a change to the other side, with Undo.
 - Command line: `sidewise <left> <right>`, `--profile DIR`, `--version` and `--help`.
 
 ## Not in this alpha
 
 - Git branch or ref compare.
-- Accounts and theme switching.
-- Merging, syncing folders and three-way merge. Copying a change to the other side is in builds after alpha.2.
+- Accounts.
+- Merging, syncing folders and three-way merge.
 - An Explorer menu, auto-update (the optional update check only names a new version) and a signed build.
 
 ## Layout
