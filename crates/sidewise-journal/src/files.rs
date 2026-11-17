@@ -69,7 +69,11 @@ impl Write for Hashing {
                 Ok(written)
             }
             Err(error) => {
-                self.error = Some(io::Error::new(error.kind(), error.to_string()));
+                // A copy that keeps the OS code, so `classify` still sees 32, 33 or 112.
+                self.error = Some(match error.raw_os_error() {
+                    Some(code) => io::Error::from_raw_os_error(code),
+                    None => io::Error::new(error.kind(), error.to_string()),
+                });
                 Err(error)
             }
         }
@@ -121,5 +125,58 @@ pub(crate) fn remove_if_present(disk: &dyn Disk, path: &Path) -> io::Result<bool
         Ok(()) => Ok(true),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, Write};
+
+    use sidewise_fs::durable::DiskFile;
+
+    use super::Hashing;
+    use crate::WriteError;
+    use crate::error::classify;
+
+    /// A file whose every write fails with one raw OS error code.
+    struct FailingFile(i32);
+
+    impl Write for FailingFile {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::from_raw_os_error(self.0))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl DiskFile for FailingFile {
+        fn sync(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// The kept error of a hashing writer whose write failed with `code`.
+    fn kept_error(code: i32) -> io::Error {
+        let mut out = Hashing::new(Box::new(FailingFile(code)));
+        assert!(out.write_all(b"bytes").is_err());
+        out.error.take().expect("the error is kept")
+    }
+
+    #[test]
+    fn hashing_keeps_the_raw_os_error_for_classify() {
+        // ENOSPC on Unix; ERROR_DISK_FULL (112) on Windows.
+        let code = if cfg!(windows) { 112 } else { 28 };
+        let error = kept_error(code);
+        assert_eq!(error.raw_os_error(), Some(code));
+        assert_eq!(classify("fill", &error), WriteError::Full);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn hashing_keeps_sharing_and_lock_violations_as_in_use() {
+        for code in [32, 33] {
+            assert_eq!(classify("fill", &kept_error(code)), WriteError::InUse);
+        }
     }
 }

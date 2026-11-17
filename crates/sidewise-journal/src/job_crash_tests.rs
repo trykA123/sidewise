@@ -15,9 +15,9 @@ use crate::job_tests::{Fixture, NEW, OLD, OLD_MS, mtime_ms, run, set_mtime, writ
 use crate::{Expect, JobKind, Journal, Record, WriteError, decode};
 
 /// Which unsynced changes survive: (name, keep change i, tail of file i).
-type Pattern = (&'static str, fn(usize) -> bool, fn(usize) -> Tail);
+pub(crate) type Pattern = (&'static str, fn(usize) -> bool, fn(usize) -> Tail);
 
-const PATTERNS: [Pattern; 5] = [
+pub(crate) const PATTERNS: [Pattern; 5] = [
     ("all lost", |_| false, |_| Tail::Lost),
     ("all kept", |_| true, |_| Tail::Kept),
     ("even kept, torn", |i| i % 2 == 0, |_| Tail::Torn),
@@ -33,7 +33,7 @@ const PATTERNS: [Pattern; 5] = [
 /// the log is not damaged, a `Commit` means every target is new, an `Aborted` means every
 /// target is old with its old time, a closed job left no temp, and a new target has a
 /// `Backed` record whose backup holds the old bytes.
-fn assert_recoverable(fixture: &Fixture, case: &str) {
+pub(crate) fn assert_recoverable(fixture: &Fixture, case: &str) {
     let log = match fixture.jobs().first() {
         Some(job) => decode(&fs::read(job.join("log")).unwrap_or_default()),
         None => crate::Log::default(),

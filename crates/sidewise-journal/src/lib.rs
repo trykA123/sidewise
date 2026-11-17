@@ -16,7 +16,11 @@ mod codec_tests;
 #[cfg(test)]
 mod job_crash_tests;
 #[cfg(test)]
+mod job_outcome_tests;
+#[cfg(test)]
 mod job_tests;
+#[cfg(test)]
+mod rollback_crash_tests;
 
 pub use error::{JournalError, WriteError};
 pub use item::{Expect, Fill};

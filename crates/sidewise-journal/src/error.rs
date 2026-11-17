@@ -21,6 +21,9 @@ pub enum WriteError {
     Full,
     /// Any other failure, with its reason.
     Failed(String),
+    /// The write failed for `cause`, and `failed` items of the job could not be rolled back
+    /// now: those targets may hold the new bytes until recovery at the next start (NC145).
+    NotRolledBack { cause: Box<WriteError>, failed: u32 },
 }
 
 impl fmt::Display for WriteError {
@@ -33,6 +36,10 @@ impl fmt::Display for WriteError {
             Self::InUse => f.write_str("the file is in use"),
             Self::Full => f.write_str("the disk is full"),
             Self::Failed(reason) => f.write_str(reason),
+            Self::NotRolledBack { cause, failed } => write!(
+                f,
+                "{cause}; {failed} file(s) not rolled back yet, the next start rolls them back"
+            ),
         }
     }
 }
@@ -44,6 +51,9 @@ impl std::error::Error for WriteError {}
 pub enum JournalError {
     /// A file step failed; the text names the step and the OS error.
     Io(String),
+    /// The `Commit` line was written but its sync failed (NC162): the targets keep the new
+    /// bytes and recovery at the next start settles the job from the log. Never undoable now.
+    InDoubt(String),
 }
 
 impl fmt::Display for JournalError {
@@ -51,6 +61,10 @@ impl fmt::Display for JournalError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(reason) => write!(f, "journal: {reason}"),
+            Self::InDoubt(reason) => write!(
+                f,
+                "journal: commit in doubt, the next start settles it: {reason}"
+            ),
         }
     }
 }

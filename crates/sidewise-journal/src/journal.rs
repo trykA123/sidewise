@@ -1,7 +1,7 @@
 //! `Journal`: the open journal folder (`<dir>/v1/`, NC143) and this process's owner lock.
 //! `begin` starts a job; recovery at open (J3) and the sweep (J4) build on `open_raw`.
 
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, TryLockError};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sidewise_fs::durable::Disk;
+use sidewise_fs::native::identity;
 
 use crate::error::{JournalError, journal_io};
 use crate::job::Job;
@@ -116,7 +117,16 @@ fn ensure_dir(disk: &dyn Disk, folder: &Path) -> Result<(), JournalError> {
 /// Creates `owners/<pid>-<start_ms>.lock` with a name no one holds and takes its lock.
 /// A taken name (a second journal in this process within one ms) moves `start_ms` on by one.
 fn lock_owner(owners: &Path) -> Result<(String, File), JournalError> {
-    let start_ms = now_ms();
+    lock_owner_with(owners, now_ms(), |_| {})
+}
+
+/// `lock_owner` from `start_ms`; `between` runs after the create and before the lock, so a
+/// test can act as another process's recovery there.
+pub(crate) fn lock_owner_with(
+    owners: &Path,
+    start_ms: i64,
+    mut between: impl FnMut(&Path),
+) -> Result<(String, File), JournalError> {
     for step in 0..OWNER_TRIES {
         let owner = format!("{}-{}", std::process::id(), start_ms + step);
         let path = owners.join(format!("{owner}.lock"));
@@ -124,11 +134,34 @@ fn lock_owner(owners: &Path) -> Result<(String, File), JournalError> {
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
             opened => opened.map_err(|error| journal_io("make owner lock", &error))?,
         };
-        file.try_lock()
-            .map_err(|error| JournalError::Io(format!("lock owner file: {error}")))?;
-        return Ok((owner, file));
+        between(&path);
+        match file.try_lock() {
+            Ok(()) => {}
+            // Another process's recovery holds it and may delete it: take the next name.
+            Err(TryLockError::WouldBlock) => continue,
+            Err(TryLockError::Error(error)) => return Err(journal_io("lock owner file", &error)),
+        }
+        // A recovery may have deleted the file before our lock: then the lock guards nothing.
+        if still_named(&file, &path)? {
+            return Ok((owner, file));
+        }
     }
     Err(JournalError::Io("no free owner lock name".into()))
+}
+
+/// True when `path` still names the open `file` (same volume and file id); false when the
+/// name is gone or names another file. Fails closed when an identity is unreadable or unknown.
+fn still_named(file: &File, path: &Path) -> Result<bool, JournalError> {
+    let held = identity::from_file(file)
+        .map_err(|error| journal_io("read owner lock identity", &error))?;
+    let named = match identity::read(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        read => read.map_err(|error| journal_io("read owner lock name", &error))?,
+    };
+    match (held, named) {
+        (Some(held), Some(named)) => Ok(held == named),
+        _ => Err(JournalError::Io("owner lock identity unknown".into())),
+    }
 }
 
 /// The wall clock in ms since the Unix epoch; 0 for a clock set before 1970.

@@ -82,7 +82,8 @@ impl Job {
     /// Writes `fill`'s bytes over the existing file `target` (absolute) in the NC144 order,
     /// with a durable backup of the old bytes first. `restore_mtime_ms` sets the new file's
     /// modified time; `None` keeps the write time. Returns the item number. On any error the
-    /// whole job is rolled back and closed, and the error says why (NC147).
+    /// whole job is rolled back and closed, and the error says why (NC147); `NotRolledBack`
+    /// when some items could not be rolled back now, so those targets may hold new bytes.
     #[expect(
         clippy::too_many_arguments,
         reason = "the J2 signature of the P1 plan: target, expect, restore time and fill"
@@ -102,11 +103,16 @@ impl Job {
             expect,
             restore_mtime_ms,
         };
-        let written = self.write_item(&request, fill);
-        if let Err(error) = &written {
-            self.close(&error.to_string());
-        }
-        written
+        self.write_item(&request, fill).map_err(|cause| {
+            let rolled = self.close(&cause.to_string());
+            if rolled.failed == 0 {
+                return cause;
+            }
+            WriteError::NotRolledBack {
+                cause: Box::new(cause),
+                failed: rolled.failed,
+            }
+        })
     }
 
     /// The NC144 steps 1 to 9 for one item; see `overwrite`.
@@ -145,8 +151,8 @@ impl Job {
     }
 
     /// Appends the commit point. When the line is not written, the job is rolled back. When
-    /// it is written but its sync fails, the commit is in doubt: the job is left as it is, with
-    /// the new bytes, for recovery at the next start to settle by the log; both return an error.
+    /// it is written but its sync fails, the commit is in doubt (NC162): the job is left as it
+    /// is, with the new bytes, for recovery at the next start, and the error is `InDoubt`.
     pub fn commit(mut self) -> Result<JobId, JournalError> {
         if !self.open {
             return Err(JournalError::Io("the job was rolled back".into()));
@@ -158,9 +164,7 @@ impl Job {
             }
             Err(error) if self.in_doubt => {
                 self.open = false;
-                Err(JournalError::Io(format!(
-                    "commit in doubt, recovery settles it at the next start: {error}"
-                )))
+                Err(JournalError::InDoubt(error.to_string()))
             }
             Err(error) => {
                 self.close("commit failed");
