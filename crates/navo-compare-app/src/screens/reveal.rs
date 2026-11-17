@@ -5,6 +5,7 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 /// The toast text off Windows, where there is no Explorer to open.
+#[cfg(not(windows))]
 pub const OFF_WINDOWS: &str = "Reveal in Explorer works on Windows only.";
 
 /// The `/select,"<path>"` argument for `explorer.exe`. Fails with a reason when the path is not
