@@ -1,0 +1,22 @@
+# The sidewise-git crate: in-process, read-only local Git reads for Sidewise.
+[package]
+name = "sidewise-git"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[features]
+test-support = []
+
+[dependencies]
+sidewise-core = { path = "../sidewise-core" }
+sidewise-engine = { path = "../sidewise-engine" }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

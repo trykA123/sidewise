@@ -6949,6 +6949,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sidewise-git"
+version = "0.1.0-alpha.2"
+dependencies = [
+ "sidewise-core",
+ "sidewise-engine",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "sidewise-host"
 version = "0.1.0-alpha.2"
 dependencies = [
