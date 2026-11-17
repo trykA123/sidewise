@@ -44,3 +44,4 @@ navo-compare-profile = { path = "../navo-compare-profile" }
 
 [dev-dependencies]
 gpui-kit = { version = "=0.9.1", features = ["test-support"] }
+sidewise-git = { path = "../sidewise-git", features = ["test-support"] }
