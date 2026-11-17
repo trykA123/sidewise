@@ -12,7 +12,7 @@ Sidewise now builds its compare engine, file layer and compare screen from its o
 - Mouse: double click opens a file's diff or a folder; the arrow opens a folder; middle click closes a tab.
 - Right-click menus on Folders rows, Recent rows and tabs. `Shift+F10` opens the same menu from the keyboard.
 - Folders menu: Open diff, Open in Stream, Copy left or right path, Copy name, Expand all, and Reveal in Explorer.
-- Recent menu: Open, Copy paths, and Remove from Recent with Undo.
+- Recent menu: Open, Copy paths, and Remove from Recent with Undo. It opens from the Start screen and from the Recent list in the sidebar.
 - Tab menu: Close tab and Close other tabs.
 - The View menu (`Alt+V`) on Start and Folders: Simple, Rich or Custom, side by side or unified, changed words and wrap. Your choice is saved in the profile.
 - Pasted paths in double quotes (Explorer's "Copy as path") work on the Start screen.
@@ -26,6 +26,7 @@ Sidewise now builds its compare engine, file layer and compare screen from its o
 - The hex view fits its rows to the window: 16, 8 or 4 bytes per row, so no byte or text column is cut off below 1280 px.
 - The View menu opens under the View button instead of at the bottom left of the window.
 - After a compare opens or the window is resized, Folders shows size and date columns, and the top bar switches between its wide and compact forms, without waiting for a click or key press.
+- The top bar names the open comparison (for example "left ↔ right") instead of always reading "New compare".
 
 ### Changed
 
