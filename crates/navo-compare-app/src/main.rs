@@ -100,6 +100,8 @@ mod writes_hooks_tests;
 #[cfg(test)]
 mod writes_tests;
 #[cfg(test)]
+mod writes_recovery_tests;
+#[cfg(test)]
 mod writes_undo_tests;
 
 use std::process::ExitCode;
