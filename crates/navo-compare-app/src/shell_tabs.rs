@@ -8,7 +8,6 @@ use crate::chrome::topbar_status::{Crumbs, TopbarMode};
 use crate::screens::compare_run::RunError;
 use crate::screens::compare_tab::{CompareRequest, CompareTab, Rewrote, TabView};
 use crate::start::{StartEvent, StartScreen};
-use navo_compare_cli::args::SideSpec;
 
 /// The start screen's crumb detail: the two kinds of compare its tabs offer.
 pub(super) const START_HINT: &str = "Folder · File";
@@ -142,20 +141,18 @@ impl Shell {
         else {
             return;
         };
-        let (left, right, choice) = match event {
+        let request = match event {
             StartEvent::Open { id } => return self.reopen((index, id), window, cx),
-            StartEvent::Compare {
-                left: SideSpec::Path(left),
-                right: SideSpec::Path(right),
-                choice,
-            } => (left, right, choice),
             StartEvent::Forget { id } => return self.forget_row(id, cx),
-            StartEvent::Compare { .. } => return,
-        };
-        let request = CompareRequest {
-            left: SideSpec::Path(left.clone()),
-            right: SideSpec::Path(right.clone()),
-            choice: *choice,
+            StartEvent::Compare {
+                left,
+                right,
+                choice,
+            } => CompareRequest {
+                left: left.clone(),
+                right: right.clone(),
+                choice: *choice,
+            },
         };
         self.open_recorded((index, request), window, cx);
     }

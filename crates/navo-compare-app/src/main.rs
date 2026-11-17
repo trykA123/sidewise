@@ -48,6 +48,8 @@ mod motion_tests;
 mod screens;
 mod shell;
 #[cfg(test)]
+mod shell_git_tests;
+#[cfg(test)]
 mod shell_last_tab_tests;
 #[cfg(test)]
 mod shell_layers_tests;
