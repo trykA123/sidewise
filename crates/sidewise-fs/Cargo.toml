@@ -23,6 +23,8 @@ windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Secur
 
 [dev-dependencies]
 encoding_rs = "0.8.44"
+# Itself with `test-support`, so a plain `cargo test` (and the gate) runs the fault tests.
+sidewise-fs = { path = ".", features = ["test-support"] }
 tempfile = "3.27.0"
 
 [lints]

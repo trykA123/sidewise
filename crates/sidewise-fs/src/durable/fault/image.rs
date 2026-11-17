@@ -76,20 +76,18 @@ pub(super) fn cut(path: &Path, len: u64) -> io::Result<()> {
     file.set_modified(modified)
 }
 
-/// Undoes one folder-entry change on the disk.
+/// Undoes one folder-entry change on the disk. A missing path fails with NotFound: settling
+/// a durable unlink drops the changes it explains, so a gap here means the image is wrong.
 pub(super) fn undo(change: Change) -> io::Result<()> {
     match change {
-        Change::Created(path) => match fs::symlink_metadata(&path) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Ok(meta) if meta.is_dir() => fs::remove_dir_all(&path),
-            Ok(_) => fs::remove_file(&path),
-            Err(error) => Err(error),
-        },
-        // A `to` already gone was unlinked durably later: nothing is left to move back.
-        Change::Renamed { from, to } => match fs::symlink_metadata(&to) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            _ => RealDisk.rename_new(&to, &from),
-        },
+        Change::Created(path) => {
+            if fs::symlink_metadata(&path)?.is_dir() {
+                fs::remove_dir_all(&path)
+            } else {
+                fs::remove_file(&path)
+            }
+        }
+        Change::Renamed { from, to } => RealDisk.rename_new(&to, &from),
         Change::Replaced {
             staged,
             target,

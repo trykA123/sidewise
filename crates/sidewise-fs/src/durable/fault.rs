@@ -9,8 +9,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use super::{Disk, DiskFile, Meta, RealDisk, ReplaceError};
 
 mod image;
+mod pending;
 
-use image::{Change, cut, snap, undo};
+use image::{Change, snap};
+pub use pending::Tail;
+use pending::{Attr, Pending, parent};
 
 /// Which op breaks. Ops are numbered from 1 in call order: every `Disk` call and every
 /// `DiskFile::write` or `sync` is one op; `flush` and reads from `open_read` are not.
@@ -22,12 +25,8 @@ pub enum Plan {
     FailAt(u64, io::ErrorKind),
     /// Op `n` and every later op fail and do nothing, as after a power loss.
     CrashAt(u64),
-}
-
-/// One change and the folders still unsynced since it.
-struct Pending {
-    change: Change,
-    dirs: Vec<PathBuf>,
+    /// Op `n` and every later op fail with this kind and do nothing: a fault that persists.
+    FailFrom(u64, io::ErrorKind),
 }
 
 /// A file written through the layer: where it is now (`None` once unlinked), its length,
@@ -45,6 +44,7 @@ struct State {
     crashed: bool,
     files: Vec<Written>,
     pending: Vec<Pending>,
+    attrs: Vec<Attr>,
 }
 
 /// The plan and state shared by the layer and its open files.
@@ -65,6 +65,9 @@ impl Shared {
         }
         match self.plan {
             Plan::FailAt(at, kind) if at == n => {
+                Err(io::Error::new(kind, format!("injected fault at op {n}")))
+            }
+            Plan::FailFrom(at, kind) if at <= n => {
                 Err(io::Error::new(kind, format!("injected fault at op {n}")))
             }
             Plan::CrashAt(at) if at <= n => {
@@ -117,63 +120,12 @@ impl DiskFile for FaultFile {
     fn sync(&mut self) -> io::Result<()> {
         let mut state = self.shared.tick()?;
         self.inner.sync()?;
-        if let Some(file) = state.files.get_mut(self.id) {
-            file.synced = file.len;
-        }
+        state.synced_file(self.id);
         Ok(())
     }
 }
 
-/// The folder that holds `path` (empty for a bare name).
-fn parent(path: &Path) -> PathBuf {
-    path.parent().map(Path::to_path_buf).unwrap_or_default()
-}
-
-/// `path` with its prefix `from` swapped for `to`; `None` when `path` is not at or under `from`.
-fn rebase(path: &Path, from: &Path, to: &Path) -> Option<PathBuf> {
-    let rest = path.strip_prefix(from).ok()?;
-    // `join("")` would add a trailing slash, which a file path must not have.
-    Some(if rest.as_os_str().is_empty() {
-        to.to_path_buf()
-    } else {
-        to.join(rest)
-    })
-}
-
 impl State {
-    /// Records a change that stays undoable until the folders of `paths` are synced.
-    fn push(&mut self, change: Change, paths: &[&Path]) {
-        let mut dirs: Vec<PathBuf> = paths.iter().map(|path| parent(path)).collect();
-        dirs.dedup();
-        self.pending.push(Pending { change, dirs });
-    }
-
-    /// Marks `dir` synced: changes with no unsynced folder left are durable and dropped.
-    fn synced_dir(&mut self, dir: &Path) {
-        for pending in &mut self.pending {
-            pending.dirs.retain(|unsynced| unsynced != dir);
-        }
-        self.pending.retain(|pending| !pending.dirs.is_empty());
-    }
-
-    /// Moves tracked files at or under `from` to the same place under `to`.
-    fn moved(&mut self, from: &Path, to: &Path) {
-        for file in &mut self.files {
-            if let Some(moved) = file.path.as_deref().and_then(|p| rebase(p, from, to)) {
-                file.path = Some(moved);
-            }
-        }
-    }
-
-    /// Forgets the place of tracked files at or under `path`: they were unlinked.
-    fn unlinked(&mut self, path: &Path) {
-        for file in &mut self.files {
-            if file.path.as_deref().is_some_and(|p| p.starts_with(path)) {
-                file.path = None;
-            }
-        }
-    }
-
     /// The last synced length of the file the layer tracks at `path`, if any.
     fn synced_len(&self, path: &Path) -> Option<u64> {
         let file = self
@@ -218,22 +170,29 @@ impl FaultDisk {
         self.shared.lock().map_or(0, |state| state.count)
     }
 
-    /// Simulates power loss: every later op fails; each file written through the layer is cut
-    /// to its last synced length; every create, rename or remove whose folder was not synced
-    /// since is undone, newest first. Fails when the disk refuses a restore step.
+    /// Simulates power loss with the worst image: every unsynced byte, time, mode and folder
+    /// change is lost (`crash_with` all reverted). Fails when the disk refuses a restore step.
     pub fn crash(&self) -> io::Result<()> {
+        self.crash_with(|_| false, |_| Tail::Lost)
+    }
+
+    /// Simulates power loss: every later op fails; pending change `i` (oldest is 0, see
+    /// `unsynced_changes`) is kept when `keep(i)`, else undone; each written file keeps the
+    /// part of its unsynced tail that `tail(file)` says (files numbered in first-open order).
+    /// Unsynced times and modes are always put back. Fails when a restore step fails.
+    pub fn crash_with(
+        &self,
+        keep: impl Fn(usize) -> bool,
+        tail: impl Fn(usize) -> Tail,
+    ) -> io::Result<()> {
         let mut state = self.shared.lock()?;
         state.crashed = true;
-        for file in &state.files {
-            if let Some(path) = file.path.as_deref().filter(|_| file.len > file.synced) {
-                cut(path, file.synced)?;
-            }
-        }
-        while let Some(pending) = state.pending.pop() {
-            undo(pending.change)?;
-        }
-        state.files.clear();
-        Ok(())
+        state.revert(&keep, &tail)
+    }
+
+    /// The number of folder-entry changes a crash could still undo (the `keep` indexes).
+    pub fn unsynced_changes(&self) -> usize {
+        self.shared.lock().map_or(0, |state| state.pending.len())
     }
 
     /// Wraps a file the inner disk opened, tracked as `id` in the state.
@@ -290,14 +249,22 @@ impl Disk for FaultDisk {
         self.inner.meta(path)
     }
 
+    /// Undone by a crash until the file at `path` is synced through the layer.
     fn set_modified(&self, path: &Path, ms: i64) -> io::Result<()> {
-        let _state = self.shared.tick()?;
-        self.inner.set_modified(path, ms)
+        let mut state = self.shared.tick()?;
+        let old = Attr::modified(path)?;
+        self.inner.set_modified(path, ms)?;
+        state.attrs.push(old);
+        Ok(())
     }
 
+    /// Undone by a crash until the file at `to` is synced through the layer.
     fn copy_mode(&self, from: &Path, to: &Path) -> io::Result<()> {
-        let _state = self.shared.tick()?;
-        self.inner.copy_mode(from, to)
+        let mut state = self.shared.tick()?;
+        let old = Attr::mode(to)?;
+        self.inner.copy_mode(from, to)?;
+        state.attrs.push(old);
+        Ok(())
     }
 
     /// The inner replace syncs the folder on success, so that sync covers every change

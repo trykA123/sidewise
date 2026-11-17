@@ -6940,6 +6940,7 @@ dependencies = [
  "rustix",
  "same-file",
  "sidewise-core",
+ "sidewise-fs",
  "tempfile",
  "windows-sys 0.61.2",
 ]

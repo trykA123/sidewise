@@ -10,13 +10,15 @@ use crate::FileIdentity;
 #[cfg(feature = "test-support")]
 mod fault;
 #[cfg(test)]
+mod fault_crash_tests;
+#[cfg(test)]
 mod fault_tests;
 mod real;
 #[cfg(test)]
 mod tests;
 
 #[cfg(feature = "test-support")]
-pub use fault::{FaultDisk, Plan};
+pub use fault::{FaultDisk, Plan, Tail};
 pub use real::RealDisk;
 
 /// What the journal needs to know about one path, read without following a symlink.
