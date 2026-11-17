@@ -29,7 +29,7 @@ pub struct CopyRequest {
     pub lines: Option<BTreeSet<usize>>,
 }
 
-/// Why nothing was copied. The target is untouched in every case.
+/// Why nothing was copied. The target is untouched in every case but `Unconfirmed`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CopyRefusal {
     ReadOnly,
@@ -38,6 +38,9 @@ pub enum CopyRefusal {
     Network,
     InUse,
     Failed(String),
+    /// The write may have landed but could not be confirmed (a commit in doubt, or a rollback
+    /// left to the next start; NC168). Never undoable now.
+    Unconfirmed,
 }
 
 impl CopyRefusal {
@@ -58,6 +61,7 @@ impl CopyRefusal {
             Self::Network => "compare-copy-network",
             Self::InUse => "compare-copy-in-use",
             Self::Failed(_) => "compare-copy-failed",
+            Self::Unconfirmed => "compare-copy-unconfirmed",
         }
     }
 }

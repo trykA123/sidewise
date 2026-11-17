@@ -8,7 +8,7 @@ use std::path::Path;
 use navo_compare::model::CancelToken;
 use navo_core::Location;
 use navo_fs::walk::stat;
-use sidewise_journal::{Expect, JobId, JobKind, Journal, WriteError};
+use sidewise_journal::{Expect, JobId, JobKind, Journal, JournalError, WriteError};
 
 use super::compose::{CopyInput, apply_many, open_both};
 use super::request::{CopyRefusal, CopyRequest, ends_of, load_input, matched, target_whole};
@@ -23,9 +23,19 @@ pub struct Committed {
 
 /// Copy `requests`, shown changes of one pair in one direction, as one journal job. Blocks on
 /// reads and writes, so it runs on a copy thread. Fails with a refusal and the target as it
-/// was, except after a commit in doubt (NC162) or a rollback left to the next start; a
-/// result equal to the target writes nothing and is `NotCopyable` (NC167).
+/// was, except `Unconfirmed` after a commit in doubt (NC162) or a rollback left to the next
+/// start (NC168); a result equal to the target writes nothing and is `NotCopyable` (NC167).
 pub fn copy_now(journal: &Journal, requests: &[CopyRequest]) -> Result<Committed, CopyRefusal> {
+    copy_between(journal, requests, &mut || {})
+}
+
+/// `copy_now` that runs `between` after the target's stat and before the files open; tests
+/// swap the target there, as an editor's save by rename would.
+pub(crate) fn copy_between(
+    journal: &Journal,
+    requests: &[CopyRequest],
+    between: &mut dyn FnMut(),
+) -> Result<Committed, CopyRefusal> {
     let first = requests.first().ok_or(CopyRefusal::NotCopyable)?;
     let one_pair = requests
         .iter()
@@ -40,8 +50,10 @@ pub fn copy_now(journal: &Journal, requests: &[CopyRequest]) -> Result<Committed
     if target_path.to_str().is_none() {
         return Err(CopyRefusal::NotCopyable);
     }
-    let files = open_both(&target_path, &source_path)?;
+    // Stat before open: a rename-over after the stat then fails the journal's check as Changed.
     let seen = stat(&target_path).map_err(|error| CopyRefusal::Failed(error.to_string()))?;
+    between();
+    let files = open_both(&target_path, &source_path)?;
     let modified_ms = seen
         .modified_ms
         .ok_or_else(|| CopyRefusal::Failed("the file has no modified time".to_owned()))?;
@@ -85,7 +97,10 @@ fn write_job(
     let mut fill = |out: &mut dyn Write| out.write_all(bytes).map_err(|error| error.to_string());
     job.overwrite(target, expect, None, &mut fill)
         .map_err(refusal_of)?;
-    job.commit().map_err(|error| failed(&error))
+    job.commit().map_err(|error| match error {
+        JournalError::InDoubt(_) => CopyRefusal::Unconfirmed,
+        other => failed(&other),
+    })
 }
 
 /// The distinct hunks of every request in the fresh diff, in target order.
@@ -115,13 +130,15 @@ fn picked_lines(requests: &[CopyRequest]) -> Result<BTreeSet<usize>, CopyRefusal
     }
 }
 
-/// The refusal for a failed item write (NC147); the disk-full and other reasons are named.
+/// The refusal for a failed item write (NC147); the disk-full and other reasons are named,
+/// and a rollback left to the next start is `Unconfirmed` (NC168).
 fn refusal_of(error: WriteError) -> CopyRefusal {
     match error {
         WriteError::ReadOnly => CopyRefusal::ReadOnly,
         WriteError::Network => CopyRefusal::Network,
         WriteError::Changed => CopyRefusal::Changed,
         WriteError::InUse => CopyRefusal::InUse,
+        WriteError::NotRolledBack { .. } => CopyRefusal::Unconfirmed,
         other => CopyRefusal::Failed(other.to_string()),
     }
 }

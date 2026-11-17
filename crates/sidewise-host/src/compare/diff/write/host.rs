@@ -11,7 +11,7 @@ use navo_ui::compare_diff::{
     CopyChange, CopyDirection, CopyDone, CopyResult, CopySink, SheetPlan, SheetPlanSink, SheetSink,
     UndoDone, UndoSink,
 };
-use sidewise_journal::{Journal, UndoError, WriteError};
+use sidewise_journal::{Journal, JournalError, UndoError, WriteError};
 
 use super::job::{Committed, copy_now};
 use super::request::{CopyRefusal, CopyRequest};
@@ -103,9 +103,15 @@ impl LocalCopyHost {
     }
 
     /// Copy `changes` of one pair as one job on a `compare-copy` thread and report once
-    /// through `done`; a refusal when another write runs or the thread cannot start.
+    /// through `done`; a refusal when there are no changes, another write runs or the thread
+    /// cannot start.
     fn start_copy(&self, changes: Vec<CopyChange>, done: CopySink) {
         let Some(first) = changes.first() else {
+            done(CopyDone {
+                request: 0,
+                direction: CopyDirection::ToRight,
+                result: CopyResult::Refused(CopyRefusal::NotCopyable.text()),
+            });
             return;
         };
         let (request, direction) = (first.pair.id, first.direction);
@@ -126,10 +132,8 @@ impl LocalCopyHost {
                 guarded(
                     done,
                     move || answer(stopped()),
-                    move || {
-                        let _busy = busy;
-                        answer(copy_with(&state, &changes))
-                    },
+                    busy,
+                    move || answer(copy_with(&state, &changes)),
                 );
             });
         if let Err(error) = spawned {
@@ -162,7 +166,8 @@ impl CopyHost for LocalCopyHost {
     }
 
     /// Pop the newest copy and undo it on a `compare-undo` thread. While a write runs it
-    /// reports "running" instead. A failed undo goes back on the stack unless it can never work.
+    /// reports "running" instead. A failed undo goes back on the stack unless it can never work
+    /// (NC169: a changed target, or an undo in doubt).
     fn undo_last(&self, done: UndoSink) -> bool {
         let Some(busy) = Busy::take(&self.state) else {
             done(UndoDone {
@@ -183,10 +188,7 @@ impl CopyHost for LocalCopyHost {
                     on_panic.0.push(on_panic.1.clone());
                     undo_done(&on_panic.1, undo_refused("the undo stopped unexpectedly"))
                 };
-                guarded(done, refused, move || {
-                    let _busy = busy;
-                    undo_now(&state, entry)
-                });
+                guarded(done, refused, busy, move || undo_now(&state, entry));
             });
         if let Err(error) = spawned {
             self.state.push(kept.clone());
@@ -210,31 +212,37 @@ fn copy_with(state: &State, changes: &[CopyChange]) -> CopyResult {
 }
 
 /// Undo `entry` now and tell how it went; puts it back on the stack when a retry can work.
+/// A changed target or an undo in doubt drops the entry (NC169); older entries re-check theirs.
 fn undo_now(state: &State, entry: Committed) -> UndoDone {
-    match state.journal.undo(&entry.job) {
-        Ok(_) => undo_done(&entry, CopyResult::Copied),
-        Err(error) => {
-            let result = match &error {
-                UndoError::Changed(_) | UndoError::Write(WriteError::Changed) => {
-                    CopyResult::Refused(navo_l10n::tr("compare-undo-changed"))
-                }
-                other => undo_refused(&other.to_string()),
-            };
-            let lasting = matches!(
-                error,
-                UndoError::NotFound
-                    | UndoError::NotUndoable(_)
-                    | UndoError::Damaged(_)
-                    | UndoError::Unsupported
-            );
-            tracing::warn!(job = entry.job.as_str(), lasting, "undo refused");
-            let done = undo_done(&entry, result);
-            if !lasting {
-                state.push(entry);
-            }
-            done
+    let Err(error) = state.journal.undo(&entry.job) else {
+        return undo_done(&entry, CopyResult::Copied);
+    };
+    let result = match &error {
+        UndoError::Changed(_) | UndoError::Write(WriteError::Changed) => {
+            CopyResult::Refused(navo_l10n::tr("compare-undo-changed"))
         }
+        UndoError::Journal(JournalError::InDoubt(_))
+        | UndoError::Write(WriteError::NotRolledBack { .. }) => {
+            CopyResult::Refused(CopyRefusal::Unconfirmed.text())
+        }
+        other => undo_refused(&other.to_string()),
+    };
+    let lasting = matches!(
+        error,
+        UndoError::NotFound
+            | UndoError::NotUndoable(_)
+            | UndoError::Damaged(_)
+            | UndoError::Unsupported
+            | UndoError::Changed(_)
+            | UndoError::Write(WriteError::Changed | WriteError::NotRolledBack { .. })
+            | UndoError::Journal(JournalError::InDoubt(_))
+    );
+    tracing::warn!(job = entry.job.as_str(), lasting, "undo refused");
+    let done = undo_done(&entry, result);
+    if !lasting {
+        state.push(entry);
     }
+    done
 }
 
 /// The end of the undo of `entry`.
@@ -282,33 +290,41 @@ fn request_of(change: &CopyChange) -> CopyRequest {
 }
 
 /// Sends a refusal when dropped before the work answered, so a thread that panics still ends
-/// the UI's wait (NV `EndGuard`).
+/// the UI's wait (NV `EndGuard`). It holds the write slot until the refusal is built.
 struct EndGuard<T, R: FnOnce() -> T> {
     sink: Option<Arc<dyn Fn(T) + Send + Sync>>,
     refused: Option<R>,
+    busy: Option<Busy>,
 }
 
 impl<T, R: FnOnce() -> T> Drop for EndGuard<T, R> {
-    /// Reports the refusal when the work ended without a result (a panic).
+    /// Reports the refusal when the work ended without a result (a panic); the slot is freed
+    /// after `refused` ran (it may push an entry back) and before the report.
     fn drop(&mut self) {
         if let (Some(sink), Some(refused)) = (self.sink.take(), self.refused.take()) {
-            sink(refused());
+            let result = refused();
+            drop(self.busy.take());
+            sink(result);
         }
     }
 }
 
-/// Runs `work` and reports its result through `sink`; if `work` panics, reports `refused()`
-/// while the panic unwinds. Exactly one report is sent either way.
+/// Runs `work` holding the write slot `busy` and reports its result through `sink`; if `work`
+/// panics, reports `refused()` while the panic unwinds. Exactly one report is sent either way,
+/// and the slot is free before it.
 fn guarded<T, R: FnOnce() -> T>(
     sink: Arc<dyn Fn(T) + Send + Sync>,
     refused: R,
+    busy: Busy,
     work: impl FnOnce() -> T,
 ) {
     let mut guard = EndGuard {
         sink: Some(sink),
         refused: Some(refused),
+        busy: Some(busy),
     };
     let result = work();
+    drop(guard.busy.take());
     if let Some(sink) = guard.sink.take() {
         sink(result);
     }

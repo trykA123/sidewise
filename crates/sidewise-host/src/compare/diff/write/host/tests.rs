@@ -18,8 +18,9 @@ use navo_ui::compare_diff::{
 use sidewise_journal::{Expect, JobKind, Journal};
 
 use super::LocalCopyHost;
+use crate::compare::diff::copy_port::CopyHost;
 use crate::compare::diff::hooks::DiffBackend;
-use crate::compare::diff::write::job::Committed;
+use crate::compare::diff::write::job::{Committed, copy_between};
 use crate::compare::diff::write::request::{CopyRefusal, CopyRequest, ends_of};
 
 const WAIT: Duration = Duration::from_secs(20);
@@ -167,6 +168,10 @@ fn refused(refusal: &CopyRefusal) -> CopyResult {
     CopyResult::Refused(refusal.text())
 }
 
+fn undo_changed() -> CopyResult {
+    CopyResult::Refused(navo_l10n::tr("compare-undo-changed"))
+}
+
 #[test]
 fn a_copy_writes_the_target_and_undo_puts_back_its_bytes_and_time() {
     let f = Fixture::new(NEW, OLD, Plan::Pass);
@@ -208,16 +213,46 @@ fn undo_goes_back_one_copy_at_a_time_newest_first() {
 }
 
 #[test]
-fn an_edit_after_the_copy_refuses_the_undo_and_keeps_it_on_the_stack() {
+fn an_edit_after_the_copy_refuses_the_undo_and_drops_it() {
+    // NC169: the entry can never match again, so it leaves the stack.
     let f = Fixture::new(NEW, OLD, Plan::Pass);
     assert_eq!(f.copy(f.changes()), CopyResult::Copied);
     fs::write(f.right_path(), b"edited\n").unwrap();
-    let changed = CopyResult::Refused(navo_l10n::tr("compare-undo-changed"));
     let first = f.undo().expect("the copy is on the stack");
-    assert_eq!(first.result, changed);
+    assert_eq!(first.result, undo_changed());
     assert_eq!(first.targets, vec![location(&f.right_path())]);
     assert_eq!(f.right(), b"edited\n");
-    assert_eq!(f.undo().expect("still on the stack").result, changed);
+    assert!(f.undo().is_none(), "the changed entry is dropped");
+}
+
+#[test]
+fn a_dropped_changed_undo_leaves_the_older_copy_undoable() {
+    let f = Fixture::new(
+        b"a\nB\nc\nd\ne\nf\ng\nH\n",
+        b"a\nb\nc\nd\ne\nf\ng\nh\n",
+        Plan::Pass,
+    );
+    let mut changes = f.changes();
+    let _second = changes.pop().unwrap();
+    assert_eq!(f.copy(changes), CopyResult::Copied);
+    let (after_first, first_time) = (f.right(), fs::metadata(f.right_path()).unwrap());
+    assert_eq!(f.copy(f.changes()), CopyResult::Copied);
+    // An edit that puts back exactly what the first copy wrote, time included.
+    fs::write(f.right_path(), &after_first).unwrap();
+    let file = fs::File::options()
+        .write(true)
+        .open(f.right_path())
+        .unwrap();
+    file.set_modified(first_time.modified().unwrap()).unwrap();
+    drop(file);
+    assert_eq!(f.undo().unwrap().result, undo_changed());
+    assert_eq!(
+        f.undo().unwrap().result,
+        CopyResult::Copied,
+        "the older entry re-checks"
+    );
+    assert_eq!(f.right(), b"a\nb\nc\nd\ne\nf\ng\nh\n");
+    assert!(f.undo().is_none());
 }
 
 #[test]
@@ -345,12 +380,19 @@ fn clean_ops() -> (u64, u64, u64) {
 fn one_fault_at_any_op_keeps_the_file_whole_and_the_copy_undoable() {
     let (opened, copied, undone) = clean_ops();
     assert!(copied > opened && undone > copied);
+    let unconfirmed = refused(&CopyRefusal::Unconfirmed);
+    let (mut copies_in_doubt, mut undos_in_doubt) = (0, 0);
     for n in opened + 1..=undone {
         let f = Fixture::new(NEW, OLD, Plan::FailAt(n, io::ErrorKind::Other));
         let changes = f.changes();
         let result = f.copy(changes);
         let now = f.right();
         assert!(now == OLD || now == NEW, "op {n}: the file is old or new");
+        if result == unconfirmed {
+            // NC168: a commit in doubt keeps the new bytes and is never undoable now.
+            copies_in_doubt += 1;
+            assert_eq!(now, NEW, "op {n}");
+        }
         if result != CopyResult::Copied {
             assert!(
                 f.undo().is_none(),
@@ -360,7 +402,11 @@ fn one_fault_at_any_op_keeps_the_file_whole_and_the_copy_undoable() {
         }
         assert_eq!(now, NEW, "op {n}");
         let first = f.undo().expect("op {n}: a copied job is undoable");
-        if first.result != CopyResult::Copied {
+        if first.result == unconfirmed {
+            // NC169: an undo in doubt is dropped; its bytes are back already.
+            undos_in_doubt += 1;
+            assert!(f.undo().is_none(), "op {n}: an undo in doubt is dropped");
+        } else if first.result != CopyResult::Copied {
             let now = f.right();
             assert!(now == OLD || now == NEW, "op {n}: the undo left old or new");
             // One fault is spent: a retry either undoes, or finds the old bytes back already.
@@ -372,22 +418,39 @@ fn one_fault_at_any_op_keeps_the_file_whole_and_the_copy_undoable() {
         }
         assert_eq!(f.right(), OLD, "op {n}: the copy is undone");
     }
+    assert!(
+        copies_in_doubt > 0,
+        "a fault at the commit sync is in doubt"
+    );
+    assert!(
+        undos_in_doubt > 0,
+        "a fault at the undo's commit sync is in doubt"
+    );
 }
 
 #[test]
 fn a_lasting_fault_never_leaves_a_refused_copy_undoable() {
     let (opened, copied, _) = clean_ops();
+    let mut left_new = 0;
     for n in opened + 1..=copied {
         let f = Fixture::new(NEW, OLD, Plan::FailFrom(n, io::ErrorKind::Other));
         let result = f.copy(f.changes());
         let now = f.right();
         assert!(now == OLD || now == NEW, "op {n}: the file is old or new");
         assert_ne!(result, CopyResult::Copied, "op {n}: the copy cannot finish");
+        // NC168: new bytes left by a commit in doubt or a rollback left to the next start
+        // are never answered as "not copied".
+        // Open journal gap: a failed Commit-line write whose rollback fails is still `Io`.
+        if now == NEW && n != copied - 1 {
+            left_new += 1;
+            assert_eq!(result, refused(&CopyRefusal::Unconfirmed), "op {n}");
+        }
         assert!(
             f.undo().is_none(),
             "op {n}: a refused copy is never undoable"
         );
     }
+    assert!(left_new > 0, "a lasting fault can leave the new bytes");
 }
 
 #[test]
@@ -403,4 +466,64 @@ fn a_write_in_flight_refuses_a_second_one_as_running() {
     drop(busy);
     assert_eq!(f.copy(f.changes()), CopyResult::Copied);
     assert_eq!(f.right(), NEW);
+}
+
+/// A copy that swaps the target between its two read steps, as an editor's save by rename.
+fn swapping_copy(journal: &Journal, requests: &[CopyRequest]) -> Result<Committed, CopyRefusal> {
+    let (_, target) = ends_of(&requests[0])?;
+    let path = navo_fs::os_path(&target).unwrap();
+    let mut swap = || {
+        let staged = path.with_extension("saving");
+        fs::write(&staged, SAVED).unwrap();
+        fs::rename(&staged, &path).unwrap();
+    };
+    copy_between(journal, requests, &mut swap)
+}
+
+/// What the editor saves: the shown target with a same-size fix outside the change.
+const SAVED: &[u8] = b"a\nb\nc\nd\ne\nf\ng\nX\n";
+
+#[test]
+fn a_rename_over_the_target_during_the_copy_is_refused_as_changed() {
+    let f = Fixture::build(
+        b"a\nB\nc\nd\ne\nf\ng\nh\n",
+        b"a\nb\nc\nd\ne\nf\ng\nh\n",
+        Plan::Pass,
+        Some(swapping_copy),
+    );
+    assert_eq!(f.copy(f.changes()), refused(&CopyRefusal::Changed));
+    assert_eq!(f.right(), SAVED, "the editor's save is kept");
+    assert!(f.undo().is_none());
+}
+
+#[test]
+fn an_empty_change_list_answers_not_copyable() {
+    let (sink, receiver) = copy_sink();
+    let f = Fixture::new(NEW, OLD, Plan::Pass);
+    f.host.copy_changes(Vec::new(), sink);
+    let end = receiver.recv_timeout(WAIT).expect("an answer");
+    assert_eq!(end.result, refused(&CopyRefusal::NotCopyable));
+    assert_eq!(f.jobs(), 0);
+}
+
+#[test]
+fn a_panic_keeps_the_write_slot_until_the_refusal_is_built() {
+    let f = Fixture::new(NEW, OLD, Plan::Pass);
+    let host = f.host.clone();
+    let busy = host.try_busy().expect("the write slot is free");
+    let (sender, receiver) = mpsc::channel();
+    let sink: Arc<dyn Fn(bool) + Send + Sync> = Arc::new(move |held| {
+        let _ = sender.send(held);
+    });
+    let probe = host.clone();
+    let worker = std::thread::spawn(move || {
+        let refused = move || probe.try_busy().is_none();
+        super::guarded(sink, refused, busy, || -> bool { panic!("undo died") });
+    });
+    assert!(worker.join().is_err(), "the work panicked");
+    assert!(
+        receiver.recv_timeout(WAIT).unwrap(),
+        "held while the refusal ran"
+    );
+    assert!(host.try_busy().is_some(), "freed after the panic");
 }
