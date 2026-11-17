@@ -8,7 +8,7 @@ use navo_compare_cli::args::{Action, SideSpec, parse};
 use navo_compare_profile::brand;
 
 /// The `--help` text.
-pub const USAGE: &str = "Usage: sidewise [LEFT RIGHT] [--profile DIR]\n       sidewise --version | --help\n\nCompares two folders, two files or two Git revisions (repo@rev) side by side.\nWith no sides it opens the start screen.";
+pub const USAGE: &str = "Usage: sidewise [LEFT RIGHT] [--profile DIR]\n       sidewise --version | --help\n\nCompares two folders or two files side by side.\nWith no sides it opens the start screen.";
 
 /// What `main` does with the command line.
 #[derive(Debug, PartialEq, Eq)]
@@ -45,6 +45,14 @@ pub fn decide(args: &[OsString], cwd: &Path, exists: &dyn Fn(&Path) -> bool) -> 
         }),
         Action::Start { left: Some(_) } => {
             refuse("give two sides (two folders, two files or Git revisions), or none.")
+        }
+        // The Git side opens empty until the Git compare lands (P2): refuse it here.
+        Action::Compare { left, right }
+            if [&left, &right]
+                .iter()
+                .any(|side| matches!(side, SideSpec::GitRev { .. })) =>
+        {
+            refuse("Git compare is not in this alpha.")
         }
         Action::Compare { left, right } => Launch::Open(Opening {
             pair: Some((left, right)),
@@ -103,21 +111,12 @@ mod tests {
         assert_eq!(run(&[], &[]), Launch::Open(Opening::default()));
     }
 
-    /// Two Git sides, or a Git side and a path, open a first compare tab.
+    /// A Git side is refused in this alpha: the compare would open empty.
     #[test]
-    fn a_git_pair_opens() {
-        let git = SideSpec::GitRev {
-            repo: cwd().join("repo"),
-            rev: "main".to_owned(),
-        };
-        let expected = Opening {
-            pair: Some((git, SideSpec::Path(cwd().join("b")))),
-            profile: None,
-        };
-        assert_eq!(
-            run(&["repo@main", "b"], &["repo", "b"]),
-            Launch::Open(expected)
-        );
+    fn a_git_pair_is_refused() {
+        let refusal = Launch::Refuse("sidewise: Git compare is not in this alpha.".to_owned());
+        assert_eq!(run(&["repo@main", "b"], &["repo", "b"]), refusal);
+        assert_eq!(run(&["b", "repo@main"], &["repo", "b"]), refusal);
     }
 
     /// One Git side alone is refused and asks for two sides or none.

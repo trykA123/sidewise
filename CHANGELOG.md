@@ -47,7 +47,7 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - If the journal cannot open, copying is off and Sidewise says why. Compare still works.
 - Copying works on files only. Folder sync, merge and three-way merge are not built yet.
 - FAT32 drives are not tested yet.
-- Git compare is still not in this release.
+- Git compare is still not in this release. A Git side on the command line (`repo@rev`) exits with code 2.
 
 ## [0.1.0-alpha.2] — 2026-11-17
 
