@@ -47,8 +47,9 @@ pub struct Shell {
     toasts: Entity<ToastHost>,
     layers: Layers,
     menu: MenuSlot,
-    /// The sidebar Recent row whose menu is open; its chosen action runs on this row.
-    menu_row: Option<StartRow>,
+    /// The sidebar Recent row whose menu is open, and the watch that clears it when that menu
+    /// closes; its chosen action runs on this row.
+    menu_row: Option<(StartRow, Subscription)>,
     handle: FocusHandle,
     _appearance: Subscription,
 }

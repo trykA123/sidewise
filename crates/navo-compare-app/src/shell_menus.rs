@@ -3,6 +3,8 @@
 //! A child module of `shell`, so it reads the shell's private fields.
 
 use gpui_kit::{Context, Div, InteractiveElement as _, Pixels, Point, Window};
+use navo_compare_profile::recent::StartRow;
+use sidewise_kit::context_menu::ContextMenuEvent;
 
 use super::Shell;
 use super::shell_keys::CloseTab;
@@ -77,13 +79,31 @@ impl Shell {
             focus: self.handle.clone(),
             title: "Recent row",
         };
-        self.menu_row = Some(row);
         show_menu(self, (&lines, at, |shell| &mut shell.menu), window, cx);
+        let Some((menu, _)) = &self.menu else {
+            return;
+        };
+        let closed = cx.subscribe_in(&menu.clone(), window, |_, _, event, window, cx| {
+            if matches!(event, ContextMenuEvent::OpenSubmenu(_)) {
+                return;
+            }
+            // Deferred after the host's deferred dispatch, so a chosen line still sees the row.
+            let shell = cx.weak_entity();
+            window.defer(cx, move |_, cx| {
+                let _ = shell.update(cx, |shell, _| shell.menu_row = None);
+            });
+        });
+        self.menu_row = Some((row, closed));
+    }
+
+    /// Takes the row of the open Recent menu; `None` when no such menu is open.
+    fn take_menu_row(&mut self) -> Option<StartRow> {
+        self.menu_row.take().map(|(row, _)| row)
     }
 
     /// Opens the menu row's session in the active start tab, else in a new tab.
     fn open_menu_row(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(row) = self.menu_row.take() else {
+        let Some(row) = self.take_menu_row() else {
             return;
         };
         if self.active_screen().is_none() {
@@ -94,18 +114,18 @@ impl Shell {
 }
 
 /// Binds the start row actions on the shell root for the sidebar Recent menu; each takes the
-/// menu row, so without an open menu row they do nothing.
+/// menu row, so after that menu closes (chosen or dismissed) they do nothing.
 pub(super) fn recent_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     root.on_action(cx.listener(|this, _: &OpenSelected, window, cx| {
         this.open_menu_row(window, cx);
     }))
     .on_action(cx.listener(|this, _: &CopyPaths, _, cx| {
-        if let Some(row) = this.menu_row.take() {
+        if let Some(row) = this.take_menu_row() {
             copy_row_paths(&row, cx);
         }
     }))
     .on_action(cx.listener(|this, _: &ForgetSelected, _, cx| {
-        if let Some(row) = this.menu_row.take().filter(|row| row.name.is_none()) {
+        if let Some(row) = this.take_menu_row().filter(|row| row.name.is_none()) {
             this.forget_row(&row.id, cx);
         }
     }))
