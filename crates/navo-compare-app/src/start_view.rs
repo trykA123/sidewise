@@ -2,7 +2,7 @@
 //! The rows below them come from `start_rows`.
 
 use gpui_kit::assets::IconName;
-use gpui_kit::base::TestTextExt as _;
+use gpui_kit::base::{TestSupportExt as _, TestTextExt as _};
 use sidewise_kit::prelude::*;
 use sidewise_kit::primitives::{Button, ButtonVariant, IconButton, Kbd, TextField};
 use sidewise_kit::tokens;
@@ -17,15 +17,12 @@ use crate::start_rows::{row_count, rows_view};
 use crate::start_tabs::{StartMode, StartTabs, hero, mode_tabs, rule_chip};
 use crate::theme_data::palettes::DIMS;
 
-/// The chip beside a field: "Path", "Not found" or the git notice (the last two in the warning colour).
+/// The chip beside a field: "Path", "Git revision", or a problem such as "Not found" (problems in the warning colour).
 fn chip(hint: &SideHint, cx: &App) -> Option<Div> {
     let t = tokens::current(cx);
     let (label, color) = match hint {
         SideHint::Path(_) => ("Path".to_string(), t.colors.muted),
-        SideHint::GitRef(_) => (
-            "Git compare is not in this alpha".to_string(),
-            t.colors.warn,
-        ),
+        SideHint::GitRef(_) => (t!("git-chip-revision"), t.colors.muted),
         SideHint::GitProblem(p) => (t!(p.l10n_id()), t.colors.warn),
         SideHint::NotFound => ("Not found".to_string(), t.colors.warn),
         SideHint::Empty | SideHint::Checking => return None,
@@ -103,6 +100,18 @@ impl StartScreen {
             .child(compare)
     }
 
+    /// The one-line tip about `repo@rev` sides; the Folder mode shows it.
+    fn git_tip(&self, cx: &App) -> impl IntoElement {
+        let t = tokens::current(cx);
+        div()
+            .id("start-git-tip")
+            .test_support()
+            .px(t.spacing.xs)
+            .text_size(t.typography.tiny)
+            .text_color(t.colors.muted)
+            .child(t!("git-start-tip"))
+    }
+
     /// The muted line under the fields, with the `Tab` and `Enter` hints.
     fn hint_line(&self, cx: &App) -> impl IntoElement {
         let t = tokens::current(cx);
@@ -164,6 +173,9 @@ impl Render for StartScreen {
             .pt(t.spacing.xxl * 4.)
             .child(mode_tabs(&tabs, choice.mode, cx))
             .child(self.fields_row(choice.mode, &tabs, cx))
+            .when(choice.mode == StartMode::Folder, |col| {
+                col.child(self.git_tip(cx))
+            })
             .child(rule_chip(&tabs, choice.respect_gitignore, cx))
             .child(self.hint_line(cx))
             .when(row_count(&self.rows) == 0, |col| col.child(hero(cx)))

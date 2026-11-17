@@ -279,6 +279,7 @@ fn narrow_500px_handles_path_gitref_and_empty_hints_without_overflow(cx: &mut Te
             )
         );
         assert_narrow_wrapped(window, 500., &["Path", "Not a Git repository"]);
+        assert_in_span(window, "start-git-tip", px(64.), px(500. - 64.));
     })
     .expect("window");
 
@@ -349,4 +350,31 @@ fn wide_920px_parent_stays_one_row_and_keeps_focus_and_compare(cx: &mut TestAppC
     })
     .expect("window");
     assert!(events.borrow().is_empty(), "NotFound Compare stays silent");
+}
+
+/// A resolved `repo@rev` side shows the "Git revision" chip; the tip is Folder mode only.
+#[gpui_kit::test]
+fn git_revision_chip_shows_and_tip_follows_the_mode(cx: &mut TestAppContext) {
+    let fixture = sidewise_git::fixture::Fixture::new();
+    let _ = fixture.commit("main", &[("a.txt", b"one\n")]);
+    let hw = open_bounded(cx, 780., 500., Mode::Dark);
+    let git_str = format!("{}@main", fixture.dir.path().to_string_lossy());
+    settle_sides(cx, &hw, &git_str, "");
+    cx.update_window(hw.0, |_, window, _| {
+        assert_narrow_wrapped(window, 500., &["Git revision"]);
+        assert_in_span(window, "start-git-tip", px(64.), px(500. - 64.));
+    })
+    .expect("window");
+    let file_tab = cx
+        .update_window(hw.0, |_, window, _| {
+            window.find("start-tab-file").bounds().center()
+        })
+        .expect("window");
+    VisualTestContext::from_window(hw.0, cx).simulate_click(file_tab, Default::default());
+    cx.update_window(hw.0, |_, window, cx| {
+        window.render_frame(cx);
+        let id = ElementId::Name("start-git-tip".into());
+        assert!(find(window, &[], &id).is_none(), "no tip in File mode");
+    })
+    .expect("window");
 }
