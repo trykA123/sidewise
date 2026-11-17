@@ -72,8 +72,8 @@ impl Journal {
     }
 
     /// `open` with `between` run after recovery lists the jobs and before it claims any owner,
-    /// so a test can let another process commit there.
-    #[cfg(test)]
+    /// so a test can let another process commit there. Linux only, like its race tests.
+    #[cfg(all(test, target_os = "linux"))]
     pub(crate) fn open_with(
         dir: &Path,
         disk: Arc<dyn Disk>,
