@@ -112,13 +112,15 @@ impl Shell {
     }
 
     /// Stores the open View menu (or `None`) and hands it to the topbar, which floats it under
-    /// the View pill instead of the shell laying it out (B4).
+    /// the pill that owns it instead of the shell laying it out (B4).
     pub(super) fn set_view_menu(
         &mut self,
         view: Option<(Entity<ViewMenu>, Subscription)>,
         cx: &mut Context<Self>,
     ) {
-        let menu = view.as_ref().map(|(menu, _)| AnyView::from(menu.clone()));
+        let menu = view
+            .as_ref()
+            .map(|(menu, _)| (Action::View, AnyView::from(menu.clone())));
         self.topbar.update(cx, |bar, cx| bar.set_menu(menu, cx));
         self.layers.view = view;
         cx.notify();

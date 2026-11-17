@@ -78,7 +78,7 @@ pub struct Topbar {
     on_action: OnAction,
     on_filter_change: Option<OnFilterChange>,
     handle: FocusHandle,
-    menu: Option<gpui_kit::AnyView>,
+    menu: Option<(Action, gpui_kit::AnyView)>,
 }
 
 impl Topbar {
