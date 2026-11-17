@@ -35,9 +35,9 @@ impl TopbarMode {
                     Self::Folders | Self::File | Self::Stream | Self::Large
                 )
             }
-            Action::Keys => true,
-            // Alpha ships no themes and no accounts, so their pills stay unmounted.
-            Action::Theme | Action::Accounts => false,
+            Action::Theme | Action::Keys => true,
+            // Alpha ships no accounts, so its pill stays unmounted.
+            Action::Accounts => false,
         }
     }
 }
@@ -53,7 +53,7 @@ pub(super) struct Pill {
 /// The action pills, in prototype order after the search filter.
 #[rustfmt::skip]
 pub(super) const PILLS: [Pill; 5] = [
-    Pill { id: "top-theme", label: "Theme", hint: Some("T"), action: Action::Theme },
+    Pill { id: "top-theme", label: "Theme", hint: Some("Alt+T"), action: Action::Theme },
     Pill { id: "top-accounts", label: "Accounts", hint: None, action: Action::Accounts },
     Pill { id: "top-view", label: "View", hint: Some("Alt+V"), action: Action::View },
     Pill { id: "top-keys", label: "Keys", hint: Some("?"), action: Action::Keys },
@@ -77,6 +77,22 @@ mod tests {
         ] {
             let expected = matches!(mode, TopbarMode::Start | TopbarMode::Folders);
             assert_eq!(mode.shows(Action::View), expected, "View pill on {mode:?}");
+        }
+    }
+
+    /// The Theme pill shows in every mode; Accounts stays hidden.
+    #[test]
+    fn the_theme_pill_shows_in_every_mode() {
+        for mode in [
+            TopbarMode::Start,
+            TopbarMode::Folders,
+            TopbarMode::File,
+            TopbarMode::Git,
+            TopbarMode::Stream,
+            TopbarMode::Large,
+        ] {
+            assert!(mode.shows(Action::Theme), "Theme pill on {mode:?}");
+            assert!(!mode.shows(Action::Accounts), "no Accounts on {mode:?}");
         }
     }
 }

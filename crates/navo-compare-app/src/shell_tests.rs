@@ -361,7 +361,7 @@ fn click_id(cx: &mut TestAppContext, window: AnyWindowHandle, id: &'static str) 
         .expect("window");
 }
 
-/// Start-mode Topbar shows the disabled View pill and the enabled Keys pill, hides Search/Sync, and renders cleanly
+/// Start-mode Topbar shows the Theme, View and Keys pills, hides Search/Sync, and renders cleanly
 /// at 780 and 1200 px in Light and Dark without fake placeholder dialogs.
 #[gpui_kit::test]
 fn topbar_in_start_mode_mounts_view_and_keys_without_search_or_sync(cx: &mut TestAppContext) {
@@ -377,14 +377,10 @@ fn topbar_in_start_mode_mounts_view_and_keys_without_search_or_sync(cx: &mut Tes
                     "alpha crumb has no Git"
                 );
                 assert!(
-                    window.try_find("top-theme").is_none(),
-                    "alpha has no themes"
-                );
-                assert!(
                     window.try_find("top-accounts").is_none(),
                     "alpha has no accounts"
                 );
-                for id in ["top-view", "top-keys"] {
+                for id in ["top-theme", "top-view", "top-keys"] {
                     let pill = window.find(id);
                     assert!(pill.visible(), "{id} visible at {width}px {mode:?}");
                     assert_eq!(
