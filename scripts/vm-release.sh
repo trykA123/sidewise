@@ -5,12 +5,14 @@ set -euo pipefail
 
 readonly LOCK_WAIT_S=3600
 readonly REMOTE_EXE='C:/src/navo-compare/target/release/sidewise.exe'
+readonly REMOTE_SETUP_DIR='C:/src/navo-compare/target/installer'
 readonly TEXT_FILES=(README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE)
-# Licences of the fonts sidewise-kit embeds; the zip holds them flat, next to the exe.
-readonly FONT_LICENSES=(
+# Licences of the fonts and icons the app embeds; the zip holds them flat, next to the exe.
+readonly EMBED_LICENSES=(
   crates/sidewise-kit/fonts/Inter-OFL.txt
   crates/sidewise-kit/fonts/JetBrainsMono-OFL.txt
   crates/sidewise-kit/fonts/SpaceGrotesk-OFL.txt
+  assets/icons/material-LICENSE.txt
 )
 
 usage() {
@@ -40,31 +42,36 @@ build_and_pack() {
   local repo="$1" sha="$2" winvm="$3" version="$4" stage="$5"
   local name="sidewise-$version-windows-x64" script_dir="$repo/scripts" f
   local dist="$repo/dist"
-  VM_LOCK_HELD=1 "$script_dir/vm-build.sh" "$sha" release || die "VM build failed"
+  VM_LOCK_HELD=1 "$script_dir/vm-build.sh" "$sha" release,installer || die "VM build failed"
   "$winvm" scp "admin@127.0.0.1:$REMOTE_EXE" "$stage/sidewise.exe" || die "copying the exe failed"
   [[ -s "$stage/sidewise.exe" ]] || die "sidewise.exe is missing or empty"
+  local setup="$name-setup.exe"
+  "$winvm" scp "admin@127.0.0.1:$REMOTE_SETUP_DIR/$setup" "$stage/$setup" \
+    || die "the installer is missing (its version must equal $version)"
+  [[ -s "$stage/$setup" ]] || die "the installer is missing (its version must equal $version)"
   local flat=("${TEXT_FILES[@]}")
   for f in "${TEXT_FILES[@]}"; do
     git -C "$repo" show "$sha:$f" > "$stage/$f" || die "cannot read $f at $sha"
   done
-  for f in "${FONT_LICENSES[@]}"; do
+  for f in "${EMBED_LICENSES[@]}"; do
     git -C "$repo" show "$sha:$f" > "$stage/${f##*/}" || die "cannot read $f at $sha"
     flat+=("${f##*/}")
   done
   mkdir -p "$dist"
-  rm -f -- "${dist:?}/$name.zip" "$dist/SHA256SUMS"
+  rm -f -- "${dist:?}/$name.zip" "$dist/$setup" "$dist/SHA256SUMS"
   (cd "$stage" && bsdtar -a -cf "$dist/$name.zip" sidewise.exe "${flat[@]}") \
     || die "zip failed"
-  (cd "$dist" && sha256sum -- "$name.zip" > SHA256SUMS) || die "checksum failed"
+  cp -- "$stage/$setup" "$dist/$setup" || die "copying the setup failed"
+  (cd "$dist" && sha256sum -- "$name.zip" "$setup" > SHA256SUMS) || die "checksum failed"
 }
 
-# Builds <rev> in the VM and writes the zip and SHA256SUMS to dist/.
+# Builds <rev> in the VM and writes the zip, the setup and SHA256SUMS to dist/.
 main() {
   if [[ "${1:-}" == "-h" ]]; then usage; exit 0; fi
   if [[ $# -ne 1 || "$1" == -* ]]; then usage; exit 2; fi
   local winvm="${WINVM:?set WINVM to the path of winvm.sh}"
   local logs="${WINVM_LOGS:-$HOME/.cache/winvm-ci}"
-  local script_dir repo sha version
+  local script_dir repo sha version note=''
   command -v bsdtar >/dev/null || die "bsdtar missing"
   script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
   repo="$(git -C "$script_dir" rev-parse --show-toplevel)"
@@ -78,7 +85,8 @@ main() {
   tmp="$(mktemp -d)"
   trap 'rm -rf -- "$tmp"' EXIT
   build_and_pack "$repo" "$sha" "$winvm" "$version" "$tmp"
-  printf '%s\n' "vm-release: wrote $repo/dist/sidewise-$version-windows-x64.zip"
+  grep -q '^=== signing skipped' "$logs/sidewise-${sha:0:8}.log" && note=' (UNSIGNED)'
+  printf '%s\n' "vm-release: wrote $repo/dist/sidewise-$version-windows-x64.zip and sidewise-$version-windows-x64-setup.exe$note"
 }
 
 main "$@"
