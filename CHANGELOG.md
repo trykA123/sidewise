@@ -4,6 +4,11 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- An installer, `sidewise-<version>-windows-x64-setup.exe`: it installs Sidewise for your Windows user only, with a Start menu entry and an uninstaller. It needs no administrator and keeps your settings when you uninstall. The portable zip stays.
+- The release zip carries the licence of the embedded Material icons.
+
 ### Changed
 
 - Closing the last tab leaves a New compare tab open instead of quitting.
