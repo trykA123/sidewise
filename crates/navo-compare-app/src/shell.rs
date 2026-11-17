@@ -186,7 +186,7 @@ impl Shell {
 fn start_topbar(window: &mut Window, cx: &mut Context<Shell>) -> Entity<Topbar> {
     let crumbs = Crumbs {
         title: "New compare".into(),
-        detail: "Folder · File".into(),
+        detail: shell_tabs::START_HINT.into(),
     };
     let router = topbar_router(cx.weak_entity(), window);
     cx.new(|cx| {

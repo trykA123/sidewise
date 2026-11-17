@@ -300,3 +300,38 @@ fn copy_paths_on_a_recent_entry_fills_the_clipboard(cx: &mut TestAppContext) {
     let copied = cx.read_from_clipboard().and_then(|item| item.text());
     assert_eq!(copied, Some(format!("{}\n{}", row.left, row.right)));
 }
+
+/// The topbar crumbs' accessible label: title and detail joined by a space.
+fn crumbs(cx: &mut TestAppContext, window: AnyWindowHandle) -> String {
+    cx.update_window(window, |_, window, cx| {
+        window.render_frame(cx);
+        window
+            .find("top-crumbs")
+            .label()
+            .unwrap_or_default()
+            .to_owned()
+    })
+    .expect("window")
+}
+
+/// B1: the topbar names the active tab, and the start-mode hint shows on start tabs only.
+#[gpui_kit::test]
+fn the_topbar_follows_the_active_tab_name(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let opened = open_shell(cx, None);
+    emit(cx, &opened, compare(&fixture));
+    let (window, shell) = (opened.0, &opened.1);
+    let title = shell.read_with(cx, |shell, _| shell.tab_title(0));
+    assert_ne!(title.as_ref(), "New compare");
+    assert_eq!(crumbs(cx, window), title.as_ref());
+    cx.update_window(window, |_, window, cx| {
+        shell.update(cx, |shell, cx| shell.new_tab(window, cx));
+    })
+    .expect("window");
+    assert_eq!(crumbs(cx, window), "New compare Folder · File");
+    cx.update_window(window, |_, window, cx| {
+        shell.update(cx, |shell, cx| shell.prev_tab(window, cx));
+    })
+    .expect("window");
+    assert_eq!(crumbs(cx, window), title.as_ref());
+}

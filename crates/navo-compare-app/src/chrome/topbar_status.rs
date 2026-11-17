@@ -145,8 +145,11 @@ impl Topbar {
         cx.notify();
     }
 
-    /// Updates the displayed breadcrumb title and detail strings.
+    /// Updates the displayed breadcrumb title and detail strings; redraws only on a change.
     pub fn set_crumbs(&mut self, crumbs: Crumbs, cx: &mut Context<Self>) {
+        if self.title == crumbs.title && self.detail == crumbs.detail {
+            return;
+        }
         self.title = crumbs.title;
         self.detail = crumbs.detail;
         cx.notify();

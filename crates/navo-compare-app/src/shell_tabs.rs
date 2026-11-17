@@ -4,11 +4,14 @@
 use sidewise_kit::prelude::*;
 
 use super::Shell;
-use crate::chrome::topbar_status::TopbarMode;
+use crate::chrome::topbar_status::{Crumbs, TopbarMode};
 use crate::screens::compare_run::RunError;
 use crate::screens::compare_tab::{CompareRequest, CompareTab, TabView};
 use crate::start::{StartEvent, StartScreen};
 use navo_compare_cli::args::SideSpec;
+
+/// The start screen's crumb detail: the two kinds of compare its tabs offer.
+pub(super) const START_HINT: &str = "Folder · File";
 
 /// What a tab shows: the start screen or a compare; each tab owns its screen.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -290,9 +293,18 @@ impl Shell {
         self.topbar.read(cx).mode()
     }
 
-    /// Sets the topbar mode from the active tab: Start for a start tab, else the compare tab's view.
+    /// Sets the topbar mode from the active tab (Start, else the compare tab's view) and its
+    /// crumbs: the tab's title, plus the "Folder · File" mode hint on a start tab only.
     pub(super) fn sync_mode(&self, cx: &mut Context<Self>) {
-        let mode = match self.tabs.get(self.active).map(|tab| &tab.kind) {
+        let active = self.tabs.get(self.active);
+        let crumbs = Crumbs {
+            title: active.map(|tab| tab.title.clone()).unwrap_or_default(),
+            detail: match active.map(|tab| &tab.kind) {
+                Some(TabKind::Compare(_)) => SharedString::default(),
+                _ => START_HINT.into(),
+            },
+        };
+        let mode = match active.map(|tab| &tab.kind) {
             Some(TabKind::Compare(tab)) => match tab.read(cx).view() {
                 TabView::Folders => TopbarMode::Folders,
                 TabView::File => TopbarMode::File,
@@ -301,7 +313,10 @@ impl Shell {
             },
             _ => TopbarMode::Start,
         };
-        self.topbar.update(cx, |bar, cx| bar.set_mode(mode, cx));
+        self.topbar.update(cx, |bar, cx| {
+            bar.set_mode(mode, cx);
+            bar.set_crumbs(crumbs, cx);
+        });
     }
 }
 
