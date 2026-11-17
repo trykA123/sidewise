@@ -99,7 +99,7 @@ impl CompareTab {
                     self.show_pair(pair, window, cx);
                 }
             }
-            ScreenEvent::OpenSettings(_) | ScreenEvent::Resync => {}
+            ScreenEvent::OpenSettings(_) | ScreenEvent::Resync | ScreenEvent::Wrote { .. } => {}
         }
     }
 

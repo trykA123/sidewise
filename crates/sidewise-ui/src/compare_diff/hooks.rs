@@ -9,6 +9,7 @@ use navo_core::Location;
 
 use super::CompareOptions;
 use super::sheet::{SheetPlan, SheetPlanSink, SheetResult, SheetSink};
+use super::undo::UndoSink;
 
 mod detail;
 mod image_types;
@@ -338,6 +339,12 @@ pub trait DiffHooks: Send + Sync {
             direction: change.direction,
             result: CopyResult::Refused(navo_l10n::tr("compare-copy-not-copyable")),
         });
+    }
+
+    /// Undoes the last copy and reports once through `done`, never blocking the caller. Returns
+    /// `false`, and never calls `done`, when there is nothing to undo. The default has none.
+    fn undo_last(&self, _done: UndoSink) -> bool {
+        false
     }
 
     /// Plans a copy of many changes without writing and reports once through `planned`. The

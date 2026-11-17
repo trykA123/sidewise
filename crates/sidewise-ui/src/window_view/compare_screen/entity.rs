@@ -213,4 +213,6 @@ pub enum ScreenEvent {
     WalkFile { from: u64, step: i32 },
     /// The resync wait ended: rebuild the Stream from the folder compare.
     Resync,
+    /// A copy or an undo finished: show `text` in a toast, with Undo when `undoable`.
+    Wrote { text: String, undoable: bool },
 }

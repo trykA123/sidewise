@@ -1,6 +1,9 @@
 //! Copy one change from the file diff or the Stream (V27, D29): Ctrl+Alt+←/→ or the hover bar
 //! send the change to the app, the pair reloads, and the status line says what happened.
 
+mod undo;
+#[cfg(test)]
+mod undo_tests;
 mod view;
 
 use std::sync::{Arc, Mutex, PoisonError};
@@ -12,9 +15,10 @@ use super::{DiffSlot, FileScreen};
 use crate::commands::compare::{CopyLeft, CopyRight};
 use crate::compare_diff::{
     CopyChange, CopyDirection, CopyDone, CopyResult, CopySink, HunkView, PairKind, PairRequest,
+    UndoDone,
 };
 use crate::prelude::*;
-use crate::window_view::ScreenOwner;
+use crate::window_view::{ScreenEvent, ScreenOwner};
 
 pub(super) use view::{FileBars, Note, note_view};
 
@@ -33,6 +37,8 @@ pub enum Hover {
 pub(super) struct CopyState {
     /// Ends of copies, queued by the app's threads.
     inbox: Arc<Mutex<Vec<CopyDone>>>,
+    /// Ends of undos, queued the same way.
+    undo_inbox: Arc<Mutex<Vec<UndoDone>>>,
     hover: Option<Hover>,
     pub(super) inflight: bool,
     /// The change to make current once the file diff reloads.
@@ -77,7 +83,7 @@ fn note_of(done: &CopyDone, removing: bool) -> Note {
                 (CopyDirection::ToRight, true) => "compare-removed-right",
             })
             .into(),
-            undo: true,
+            undo: false,
             error: false,
         },
         CopyResult::Refused(text) => Note {
@@ -120,12 +126,14 @@ impl FileScreen {
 impl ScreenOwner {
     /// Binds Ctrl+Alt+← and Ctrl+Alt+→ (copy the current change) on a screen's `root`.
     pub(super) fn copy_keys(root: Stateful<Div>, cx: &mut Context<Self>) -> Stateful<Div> {
-        root.on_action(cx.listener(|view, _: &CopyLeft, _, cx| {
-            view.copy_change_to(CopyDirection::ToLeft, None, cx);
-        }))
-        .on_action(cx.listener(|view, _: &CopyRight, _, cx| {
-            view.copy_change_to(CopyDirection::ToRight, None, cx);
-        }))
+        let root = root
+            .on_action(cx.listener(|view, _: &CopyLeft, _, cx| {
+                view.copy_change_to(CopyDirection::ToLeft, None, cx);
+            }))
+            .on_action(cx.listener(|view, _: &CopyRight, _, cx| {
+                view.copy_change_to(CopyDirection::ToRight, None, cx);
+            }));
+        Self::undo_keys(root, cx)
     }
 
     /// Copies `target` (else the current change) of the screen on top in `direction`. A change
@@ -238,7 +246,7 @@ impl ScreenOwner {
     /// files as they are now; a refusal reloads nothing. A copied pair opens on the change that
     /// took the copied one's place.
     /// Returns whether anything arrived.
-    pub(super) fn poll_copies(&mut self) -> bool {
+    pub(super) fn poll_copies(&mut self, cx: &mut Context<Self>) -> bool {
         let done = std::mem::take(
             &mut *self
                 .compare
@@ -249,16 +257,23 @@ impl ScreenOwner {
                 .unwrap_or_else(PoisonError::into_inner),
         );
         for done in &done {
-            self.finish_copy(done);
+            self.finish_copy(done, cx);
         }
-        !done.is_empty()
+        !done.is_empty() | self.poll_undos(cx)
     }
 
     /// Shows the note for `done` and, when it copied, reloads the one pair it touched.
-    fn finish_copy(&mut self, done: &CopyDone) {
+    fn finish_copy(&mut self, done: &CopyDone, cx: &mut Context<Self>) {
         let copy = &mut self.compare.diff.copy;
         (copy.inflight, copy.hover) = (false, None);
-        copy.note = Some(note_of(done, std::mem::take(&mut copy.removing)));
+        let note = note_of(done, std::mem::take(&mut copy.removing));
+        if done.result == CopyResult::Copied {
+            cx.emit(ScreenEvent::Wrote {
+                text: note.text.to_string(),
+                undoable: true,
+            });
+        }
+        copy.note = Some(note);
         let at = copy.reopen_at.take();
         let Some(screen) = self.compare.screen.as_mut() else {
             return;

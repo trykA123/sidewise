@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use super::{
     CompareOptions, CopyChange, CopySink, DiffHooks, DiffSink, PairControl, PairRequest,
-    SheetPlanSink, SheetSink, StreamControl, StreamSink, ViewedKey,
+    SheetPlanSink, SheetSink, StreamControl, StreamSink, UndoSink, ViewedKey,
 };
 
 /// What the fake recorded.
@@ -35,6 +35,9 @@ pub struct Calls {
     pub(crate) sheet_plan_sink: Mutex<Option<SheetPlanSink>>,
     pub(crate) sheet_runs: Mutex<u32>,
     pub(crate) sheet_sink: Mutex<Option<SheetSink>>,
+    pub(crate) undoable: AtomicBool,
+    pub(crate) undo_sink: Mutex<Option<UndoSink>>,
+    pub(crate) undo_calls: Mutex<u32>,
 }
 
 /// A fake that records calls and lets a test push updates.
@@ -113,6 +116,30 @@ impl FakeDiffHooks {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
             .expect("a copy was asked")
+    }
+
+    /// Sets whether `undo_last` has something to undo (it starts with nothing).
+    pub fn set_undoable(&self, undoable: bool) {
+        self.calls.undoable.store(undoable, Ordering::SeqCst);
+    }
+
+    /// How many times `undo_last` was called.
+    pub fn undo_calls(&self) -> u32 {
+        *self
+            .calls
+            .undo_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The sink of the last undo; panics when none was started.
+    pub fn undo_sink(&self) -> UndoSink {
+        self.calls
+            .undo_sink
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .expect("an undo was started")
     }
 
     /// Every `plan_sheet` call so far: the changes each asked for.
@@ -355,6 +382,23 @@ impl DiffHooks for FakeDiffHooks {
             .copy_sink
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(done);
+    }
+
+    fn undo_last(&self, done: UndoSink) -> bool {
+        *self
+            .calls
+            .undo_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) += 1;
+        if !self.calls.undoable.load(Ordering::SeqCst) {
+            return false;
+        }
+        *self
+            .calls
+            .undo_sink
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(done);
+        true
     }
 
     fn plan_sheet(&self, changes: Vec<CopyChange>, planned: SheetPlanSink) {
