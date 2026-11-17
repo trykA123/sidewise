@@ -5,9 +5,34 @@ use navo_core::FileStamp;
 use serde::{Deserialize, Serialize};
 
 /// The id of one job, `{created_ms:013}-{pid}-{seq}`; it is also the job's folder name.
+/// A decoded id must have that shape, so it can never name a path outside the journal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "String", into = "String")]
 pub struct JobId(String);
+
+impl TryFrom<String> for JobId {
+    type Error = String;
+
+    /// Accepts `<13 to 20 digits>-<digits>-<digits>`; 20 digits is the widest `u64` time.
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        let parts: Vec<&str> = text.split('-').collect();
+        let digits = |part: &str, min: usize| {
+            (min..=20).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit())
+        };
+        match parts.as_slice() {
+            [time, pid, seq] if digits(time, 13) && digits(pid, 1) && digits(seq, 1) => {
+                Ok(Self(text))
+            }
+            _ => Err(format!("not a job id: {text:?}")),
+        }
+    }
+}
+
+impl From<JobId> for String {
+    fn from(id: JobId) -> Self {
+        id.0
+    }
+}
 
 impl JobId {
     /// Builds the id from the creation time (ms since the Unix epoch), the process id and the
@@ -41,7 +66,7 @@ pub enum ItemMode {
 
 /// One line of a job log. The variants and their order in a log follow NC143 and NC144.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "t")]
+#[serde(tag = "t", deny_unknown_fields)]
 pub enum Record {
     /// The first line of every job. `owner` is the stem of the owner lock, `<pid>-<start_ms>`.
     Begin {
@@ -82,6 +107,11 @@ pub struct Log {
     pub torn_tail: bool,
     /// A line that ends in `\n` failed its check; nothing after it was read.
     pub damaged: bool,
+    /// The byte end of the last good, newline-terminated line (0 when there is none).
+    /// Before a writer appends to a log with a torn tail, it cuts the file to this length
+    /// (`set_len(good_len)`, then `sync_data`); else the new line joins the torn fragment
+    /// and the job reads as damaged.
+    pub good_len: usize,
 }
 
 /// Hex digits of the checksum: 8 bytes of blake3, lowercase.
@@ -95,30 +125,32 @@ pub fn encode(record: &Record) -> String {
     format!("{json}\t{check}\n")
 }
 
-/// Decodes a whole log; it never fails, a bad log is reported in the flags of `Log`.
-/// A last line with no `\n` is a torn tail and is ignored, even when its checksum holds:
-/// a line counts only once its newline is written. Reading stops at the first bad line.
-pub fn decode(text: &str) -> Log {
+/// Decodes the raw bytes of a whole log; it never fails, a bad log is reported in the flags
+/// of `Log`. A last line with no `\n` is a torn tail and is ignored, whatever its bytes, even
+/// when its checksum holds: a line counts only once its newline is written. A complete line
+/// that is not UTF-8 or fails its check is damage, and reading stops there.
+pub fn decode(bytes: &[u8]) -> Log {
     let mut log = Log::default();
-    let mut rest = text;
+    let mut rest = bytes;
     while !rest.is_empty() {
-        let Some((line, after)) = rest.split_once('\n') else {
+        let Some(end) = rest.iter().position(|&byte| byte == b'\n') else {
             log.torn_tail = true;
             break;
         };
-        match decode_line(line) {
-            Some(record) => log.records.push(record),
-            None => {
-                log.damaged = true;
-                break;
-            }
-        }
-        rest = after;
+        let Some(record) = std::str::from_utf8(&rest[..end]).ok().and_then(decode_line) else {
+            log.damaged = true;
+            break;
+        };
+        log.records.push(record);
+        log.good_len += end + 1;
+        rest = &rest[end + 1..];
     }
     log
 }
 
 /// Decodes one line without its `\n`; `None` when its shape, checksum or json is wrong.
+/// The json must be exactly what `encode` writes for the record it decodes to, so no
+/// unknown field, nested ones in `FileStamp` included, is ever dropped in silence.
 fn decode_line(line: &str) -> Option<Record> {
     let (json, check) = line.rsplit_once('\t')?;
     let well_formed = check.len() == CHECK_LEN
@@ -128,7 +160,8 @@ fn decode_line(line: &str) -> Option<Record> {
     if !well_formed || checksum(json) != check {
         return None;
     }
-    serde_json::from_str(json).ok()
+    let record: Record = serde_json::from_str(json).ok()?;
+    (ascii_json(&record) == json).then_some(record)
 }
 
 /// The first 8 bytes of the blake3 hash of `json`, as 16 lowercase hex digits.

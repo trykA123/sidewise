@@ -13,7 +13,7 @@ fn stamp(seed: u8) -> FileStamp {
 }
 
 /// One record of every variant, in the order a job writes them.
-fn every_variant() -> Vec<Record> {
+pub(super) fn every_variant() -> Vec<Record> {
     let mut records = vec![
         Record::Begin {
             job: JobId::new(1_763_000_000_000, 4242, 7),
@@ -81,12 +81,14 @@ fn intents() -> [Record; 3] {
     ]
 }
 
-fn log_of(records: &[Record]) -> String {
+pub(super) fn log_of(records: &[Record]) -> String {
     records.iter().map(encode).collect()
 }
 
-fn clean(records: Vec<Record>) -> Log {
+/// The log `decode` must return for these records written whole, with no bad line.
+pub(super) fn clean(records: Vec<Record>) -> Log {
     Log {
+        good_len: log_of(&records).len(),
         records,
         torn_tail: false,
         damaged: false,
@@ -106,9 +108,12 @@ fn codec_round_trips_every_variant() {
             1,
             "one record is one line: {line:?}"
         );
-        assert_eq!(decode(&line), clean(vec![record]));
+        assert_eq!(decode(line.as_bytes()), clean(vec![record]));
     }
-    assert_eq!(decode(&log_of(&every_variant())), clean(every_variant()));
+    assert_eq!(
+        decode(log_of(&every_variant()).as_bytes()),
+        clean(every_variant())
+    );
 }
 
 #[test]
@@ -123,7 +128,7 @@ fn codec_line_is_json_tab_and_blake3_prefix() {
 }
 
 /// The checksum the format asks for, computed apart from the codec.
-fn hex_of(json: &str) -> String {
+pub(super) fn hex_of(json: &str) -> String {
     let hash = blake3::hash(json.as_bytes());
     hash.as_bytes()[..8]
         .iter()
@@ -147,12 +152,12 @@ fn codec_writes_ascii_only_and_keeps_unicode() {
         "a torn tail must never split a UTF-8 char: {line:?}"
     );
     assert_eq!(line.matches('\t').count(), 1, "a tab in a name is escaped");
-    assert_eq!(decode(&line), clean(vec![record]));
+    assert_eq!(decode(line.as_bytes()), clean(vec![record]));
 }
 
 #[test]
 fn codec_empty_file_has_no_records() {
-    assert_eq!(decode(""), clean(Vec::new()));
+    assert_eq!(decode(b""), clean(Vec::new()));
 }
 
 #[test]
@@ -165,10 +170,7 @@ fn codec_flipped_byte_in_middle_line_is_damaged() {
     for at in first..first + second - 1 {
         let mut bytes = text.clone().into_bytes();
         bytes[at] ^= 0x01;
-        let Ok(flipped) = String::from_utf8(bytes) else {
-            continue;
-        };
-        let log = decode(&flipped);
+        let log = decode(&bytes);
         assert!(log.damaged, "a flip at byte {at} must mark the log damaged");
         assert!(
             !log.torn_tail,
@@ -203,7 +205,7 @@ fn codec_bad_line_shapes_are_damaged() {
         format!("{{\"t\":\"Nope\"}}\t{}\n", hex_of("{\"t\":\"Nope\"}")),
     ];
     for bad in bad_lines {
-        let log = decode(&format!("{good}{bad}{good}"));
+        let log = decode(format!("{good}{bad}{good}").as_bytes());
         assert!(log.damaged, "line {bad:?} must be damage");
         assert_eq!(log.records, vec![Record::Commit]);
     }
@@ -215,7 +217,7 @@ fn codec_cut_last_line_is_torn_tail() {
     let text = log_of(&records[..3]);
     let last = encode(&records[2]).len();
     for cut in [1, last / 2, last - 1] {
-        let log = decode(&text[..text.len() - cut]);
+        let log = decode(&text.as_bytes()[..text.len() - cut]);
         assert!(
             log.torn_tail,
             "a last line cut by {cut} bytes is a torn tail"
@@ -236,9 +238,26 @@ fn codec_complete_record_without_newline_is_not_trusted() {
         encode(&Record::Done { item: 0 }),
         encode(&Record::Commit)
     );
-    let log = decode(text.trim_end_matches('\n'));
+    let log = decode(text.trim_end_matches('\n').as_bytes());
     assert!(log.torn_tail, "a line is durable only with its newline");
     assert_eq!(log.records, vec![Record::Done { item: 0 }]);
+}
+
+/// Any text: every char, plus NUL, newlines, tab, U+2028 and a BOM often. `any::<String>()`
+/// is the regex `\PC*`, which never yields a control or format char.
+fn any_text() -> impl Strategy<Value = String> {
+    let hostile = prop_oneof![
+        Just('\0'),
+        Just('\n'),
+        Just('\r'),
+        Just('\t'),
+        Just('\u{2028}'),
+        Just('\u{feff}'),
+        Just('"'),
+        Just('\\'),
+    ];
+    let one = prop_oneof![any::<char>(), hostile];
+    proptest::collection::vec(one, 0..24).prop_map(|chars| chars.into_iter().collect())
 }
 
 fn any_stamp() -> impl Strategy<Value = FileStamp> {
@@ -253,7 +272,7 @@ fn any_stamp() -> impl Strategy<Value = FileStamp> {
 
 fn any_record() -> impl Strategy<Value = Record> {
     prop_oneof![
-        ("\\PC*", any::<u64>(), any::<Option<u64>>(), "\\PC*").prop_map(
+        (any_text(), any::<u64>(), any::<Option<u64>>(), any_text()).prop_map(
             |(label, created_ms, reverts, owner)| Record::Begin {
                 job: JobId::new(created_ms, 1, 2),
                 kind: JobKind::CopyMany,
@@ -265,7 +284,7 @@ fn any_record() -> impl Strategy<Value = Record> {
         ),
         (
             any::<u32>(),
-            "\\PC*",
+            any_text(),
             any::<Option<u64>>(),
             any::<Option<i64>>()
         )
@@ -281,7 +300,7 @@ fn any_record() -> impl Strategy<Value = Record> {
         (any::<u32>(), any_stamp()).prop_map(|(item, old)| Record::Backed { item, old }),
         any::<u32>().prop_map(|item| Record::Done { item }),
         Just(Record::Commit),
-        "\\PC*".prop_map(|reason| Record::Aborted { reason }),
+        any_text().prop_map(|reason| Record::Aborted { reason }),
     ]
 }
 
@@ -293,13 +312,23 @@ proptest! {
         cut_seed in any::<usize>(),
     ) {
         let text = log_of(&records);
+        prop_assert!(text.is_ascii(), "the log is ASCII, so a cut never splits a char");
         let cut = cut_seed % (text.len() + 1);
-        prop_assert!(text.is_char_boundary(cut), "the log is ASCII, so every cut is valid text");
-        let kept = &text[..cut];
-        let whole_lines = kept.matches('\n').count();
+        let kept = &text.as_bytes()[..cut];
+        let whole_lines = kept.iter().filter(|&&b| b == b'\n').count();
+        let good_len = kept.iter().rposition(|&b| b == b'\n').map_or(0, |at| at + 1);
         let log = decode(kept);
         prop_assert!(!log.damaged, "a cut is never damage");
-        prop_assert_eq!(log.torn_tail, !kept.is_empty() && !kept.ends_with('\n'));
+        prop_assert_eq!(log.torn_tail, !kept.is_empty() && !kept.ends_with(b"\n"));
         prop_assert_eq!(&log.records[..], &records[..whole_lines]);
+        prop_assert_eq!(log.good_len, good_len);
+    }
+
+    /// Any text in any field, NUL, newlines, U+2028 and a BOM included, round-trips.
+    #[test]
+    fn codec_any_record_round_trips(record in any_record()) {
+        let line = encode(&record);
+        prop_assert_eq!(line.matches('\n').count(), 1, "one record is one line");
+        prop_assert_eq!(decode(line.as_bytes()), clean(vec![record]));
     }
 }

@@ -4,6 +4,8 @@
 pub mod record;
 
 #[cfg(test)]
+mod codec_strict_tests;
+#[cfg(test)]
 mod codec_tests;
 
 pub use record::{ItemMode, JobId, JobKind, Log, Record, decode, encode};
