@@ -11,11 +11,18 @@ pub enum AddressError {
     QueryOrFragment,
     /// The host is missing or malformed, or the port is not 1 to 65535.
     Host,
-    /// The path is missing, or holds an empty, `.` or `..` part, a space, a control character or `\`.
+    /// The path is missing, or holds an empty, `.` or `..` part, a space, a control character or `\`;
+    /// or the whole address is longer than 2048 bytes.
     Path,
     /// The revision is not a valid partial reference name or holds `..`, `@{`, `~`, `^` or `:`.
     Rev,
 }
+
+/// Longest accepted address text, in bytes.
+const MAX_ADDRESS_BYTES: usize = 2048;
+
+/// Longest accepted revision text, in bytes.
+const MAX_REV_BYTES: usize = 256;
 
 /// A validated https repository address in its canonical form.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -27,6 +34,9 @@ impl RemoteUrl {
     /// The canonical form is `https://host[:port]/path`: the scheme and host are lower-case,
     /// a default `:443` and one trailing `/` are dropped. The path keeps its case and any `.git`.
     pub fn parse(text: &str) -> Result<Self, AddressError> {
+        if text.len() > MAX_ADDRESS_BYTES {
+            return Err(AddressError::Path);
+        }
         let (scheme, rest) = text.split_once("://").ok_or(AddressError::Scheme)?;
         if !scheme.eq_ignore_ascii_case("https") {
             return Err(AddressError::Scheme);
@@ -90,8 +100,9 @@ fn canonical_host(authority: &str) -> Result<String, AddressError> {
     }
 }
 
-/// Checks the NC220 rules by hand: no `..`, `@{`, control or space, none of `~^:?*[\\`, no leading
-/// `-` or `/`, no trailing `/` or `.lock`, and no empty component.
+/// Checks the NC220 rules by hand: 1 to 256 bytes, no `..`, `@{`, control or space, none of
+/// `~^:?*[\\`, not `@` alone, no leading `-` or `/`, no trailing `/` or `.`, no empty part, and
+/// no part that starts with `.` or ends with `.lock`.
 fn rev_ok(t: &str) -> bool {
     let bad_char = |c: char| c.is_control() || c.is_whitespace() || "~^:?*[\\".contains(c);
     !(t.contains("..")
@@ -99,8 +110,12 @@ fn rev_ok(t: &str) -> bool {
         || t.contains(bad_char)
         || t.starts_with(['-', '/'])
         || t.ends_with('/')
-        || t.ends_with(".lock")
-        || t.contains("//"))
+        || t.ends_with('.')
+        || t == "@"
+        || t.len() > MAX_REV_BYTES
+        || t.contains("//")
+        || t.split('/')
+            .any(|p| p.starts_with('.') || p.ends_with(".lock")))
 }
 
 /// A validated revision: a branch, tag, full reference name or `HEAD`.

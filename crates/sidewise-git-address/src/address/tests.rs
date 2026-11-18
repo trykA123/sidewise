@@ -105,9 +105,41 @@ fn rev_accepts_and_defaults() {
 #[test]
 fn rev_refuses_unsafe_forms() {
     for bad in [
-        "a..b", "a@{1}", "a~1", "a^", "a:b", "a b", "a//b", "a.lock", "-x", "/a", "a/", "a\x01",
-        "a*", "a\\b",
+        "a..b",
+        "a@{1}",
+        "a~1",
+        "a^",
+        "a:b",
+        "a b",
+        "a//b",
+        "a.lock",
+        "-x",
+        "/a",
+        "a/",
+        "a\x01",
+        "a*",
+        "a\\b",
+        ".a",
+        "a/.b",
+        "a.",
+        "@",
+        "a/b.lock/c",
+        "a.lock/b",
     ] {
         assert_eq!(RemoteRev::parse(bad), Err(AddressError::Rev), "{bad:?}");
     }
+}
+
+#[test]
+fn rev_length_cap_is_256_bytes() {
+    assert!(RemoteRev::parse(&"a".repeat(256)).is_ok());
+    assert_eq!(RemoteRev::parse(&"a".repeat(257)), Err(AddressError::Rev));
+}
+
+#[test]
+fn address_length_cap_is_2048_bytes() {
+    let head = "https://h.example/";
+    let ok = format!("{head}{}", "a".repeat(2048 - head.len()));
+    assert!(RemoteUrl::parse(&ok).is_ok());
+    assert_eq!(RemoteUrl::parse(&format!("{ok}a")), Err(AddressError::Path));
 }
