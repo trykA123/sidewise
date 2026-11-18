@@ -78,29 +78,36 @@ impl Drop for Handle {
     }
 }
 
-/// Fetches `https://{host}:{port}{path}` with `headers` (CRLF-joined lines, may be empty) and returns
-/// the body of a 200 answer, at most `max_bytes` bytes, read within `deadline` of the call.
+/// One GET of `get`: the path, extra header lines and the caps on the answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Request<'a> {
+    /// The path and query, starting with `/`.
+    pub path: &'a str,
+    /// Extra header lines, CRLF-joined; empty for none.
+    pub headers: &'a str,
+    /// The largest body accepted, in bytes.
+    pub max_bytes: usize,
+    /// The time the whole call may take, measured from its start.
+    pub deadline: Duration,
+}
+
+/// Fetches `https://{host}:{port}{path}` with the request's headers and returns the body of a 200
+/// answer, at most `max_bytes` bytes, read within `deadline` of the call.
 /// Fails with `Network(win32 code)`, `Status(http status)` or `TooLarge`.
-pub fn get(
-    target: &Target<'_>,
-    path: &str,
-    headers: &str,
-    max_bytes: usize,
-    deadline: Duration,
-) -> Result<Vec<u8>, WinHttpError> {
+pub fn get(target: &Target<'_>, request: &Request<'_>) -> Result<Vec<u8>, WinHttpError> {
     let start = Instant::now();
     // Declared session, connection, request: they drop, and close, in reverse.
     let session = open_session(target)?;
     let connection = connect(&session, target)?;
-    let request = open_request(&connection, "GET", path)?;
-    send(&request, headers)?;
-    let status = status_code(&request)?;
+    let handle = open_request(&connection, "GET", request.path)?;
+    send(&handle, request.headers)?;
+    let status = status_code(&handle)?;
     if status != 200 {
         return Err(WinHttpError::Status(
             u16::try_from(status).unwrap_or(u16::MAX),
         ));
     }
-    read_body(&request, start, max_bytes, deadline)
+    read_body(&handle, start, request.max_bytes, request.deadline)
 }
 
 /// Reads the calling thread's last Win32 error as a `Network` error.

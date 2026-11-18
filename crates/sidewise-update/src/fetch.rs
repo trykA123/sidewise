@@ -26,15 +26,20 @@ pub const PORT: u16 = 443;
 /// Fetches the release feed body through WinHTTP; fails with `Network`, `Status` or `TooLarge`.
 #[cfg(windows)]
 pub fn fetch_feed() -> Result<Vec<u8>, CheckError> {
-    use sidewise_winhttp::{Target, WinHttpError};
+    use sidewise_winhttp::{Request, Target, WinHttpError};
     let target = Target {
         host: HOST,
         port: PORT,
         user_agent: USER_AGENT,
         timeouts_ms: TIMEOUTS_MS,
     };
-    let max_bytes = crate::feed::MAX_FEED_BYTES;
-    sidewise_winhttp::get(&target, PATH, HEADERS, max_bytes, FETCH_DEADLINE).map_err(|e| match e {
+    let request = Request {
+        path: PATH,
+        headers: HEADERS,
+        max_bytes: crate::feed::MAX_FEED_BYTES,
+        deadline: FETCH_DEADLINE,
+    };
+    sidewise_winhttp::get(&target, &request).map_err(|e| match e {
         WinHttpError::Network(code) => CheckError::Network(code),
         WinHttpError::Status(status) => CheckError::Status(status),
         WinHttpError::TooLarge => CheckError::TooLarge,
