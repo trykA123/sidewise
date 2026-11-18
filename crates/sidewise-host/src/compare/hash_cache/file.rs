@@ -1,16 +1,17 @@
 //! The file-backed hash cache: one process per profile writes, the others only read.
-//! Opens, locks and replays `hashes.v1`; the compare engine reads it through `HashCache`.
+//! Opens, locks, replays and appends to `hashes.v1`; the compare engine uses it through `HashCache`.
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions, TryLockError};
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use navo_compare::model::{ContentKey, HashCache};
 
 use super::compact::rewrite;
-use super::record::{self, Digest};
+use super::record::{self, Digest, MAGIC, RECORD_LEN};
 
 /// How a store keeps its rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,13 +38,23 @@ pub(super) struct Row {
 
 struct State {
     rows: HashMap<Digest, Row>,
+    next_seq: u64,
     writer: Option<Writer>,
+    /// Encoded records not yet appended to the file (writer only).
+    pending: Vec<u8>,
 }
 
-/// Present only in the writer: the held lock on `<path>.lock`.
+/// Present only in the writer: the held lock on `<path>.lock` and the append handle,
+/// opened on the first flush.
 struct Writer {
     _lock: File,
+    log: Option<File>,
 }
+
+/// Buffered records that trigger an append.
+const FLUSH_RECORDS: usize = 1024;
+/// A file modified less than this many ms ago may still be written (git's "racy clean").
+const RACY_MS: i64 = 10_000;
 
 impl FileHashes {
     /// Opens the cache at `path`. Never fails: problems are logged and the store falls back to
@@ -67,8 +78,16 @@ impl FileHashes {
             }
         };
         let mut rows = HashMap::with_capacity(replay.rows.len());
-        for (seq, (key, hash)) in (0u64..).zip(replay.rows) {
-            rows.insert(key, Row { hash, seq });
+        let mut next_seq = 0;
+        for (key, hash) in replay.rows {
+            rows.insert(
+                key,
+                Row {
+                    hash,
+                    seq: next_seq,
+                },
+            );
+            next_seq += 1;
         }
         let damaged = !replay.header_ok || replay.bad > 0 || replay.torn;
         if writer.is_some()
@@ -80,7 +99,12 @@ impl FileHashes {
         }
         Self {
             path: Some(path.to_path_buf()),
-            state: Mutex::new(State { rows, writer }),
+            state: Mutex::new(State {
+                rows,
+                next_seq,
+                writer,
+                pending: Vec::new(),
+            }),
         }
     }
 
@@ -90,7 +114,9 @@ impl FileHashes {
             path: None,
             state: Mutex::new(State {
                 rows: HashMap::new(),
+                next_seq: 0,
                 writer: None,
+                pending: Vec::new(),
             }),
         }
     }
@@ -118,6 +144,49 @@ impl FileHashes {
     fn state(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
+
+    /// Appends the pending records to the file; only a writer with pending bytes acts.
+    /// A failed append is logged and turns this store memory-only for the rest of the run.
+    fn flush_locked(&self, state: &mut State) {
+        let State {
+            writer, pending, ..
+        } = state;
+        let (Some(path), Some(open)) = (&self.path, writer.as_mut()) else {
+            return;
+        };
+        if pending.is_empty() {
+            return;
+        }
+        if let Err(error) = append(path, open, pending) {
+            tracing::warn!(%error, path = %path.display(), "hash cache append failed; memory only");
+            *writer = None;
+        }
+        pending.clear();
+    }
+}
+
+/// Appends `bytes` to the log at `path`, opening it on first use and writing `MAGIC` into
+/// an empty file first. Fails on any I/O error; a partial write leaves a torn tail.
+fn append(path: &Path, writer: &mut Writer, bytes: &[u8]) -> io::Result<()> {
+    let log = match writer.log.take() {
+        Some(log) => log,
+        None => OpenOptions::new().append(true).create(true).open(path)?,
+    };
+    let log = writer.log.insert(log);
+    if log.metadata()?.len() == 0 {
+        log.write_all(&MAGIC)?;
+    }
+    log.write_all(bytes)
+}
+
+/// True when `modified` (ms since the epoch) is at least `RACY_MS` before now and not in
+/// the future. A missing time or an unreadable clock is never settled.
+fn settled(modified: Option<i64>) -> bool {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|since| i64::try_from(since.as_millis()).ok());
+    matches!((modified, now), (Some(modified), Some(now)) if modified <= now - RACY_MS)
 }
 
 /// Takes the profile lock on `<path>.lock`; `None` means another process writes, or the lock
@@ -133,7 +202,10 @@ fn take_lock(path: &Path) -> Option<Writer> {
         .map_err(TryLockError::Error)
         .and_then(|file| file.try_lock().map(|()| file));
     match result {
-        Ok(file) => Some(Writer { _lock: file }),
+        Ok(file) => Some(Writer {
+            _lock: file,
+            log: None,
+        }),
         Err(TryLockError::WouldBlock) => None,
         Err(TryLockError::Error(error)) => {
             tracing::warn!(%error, path = %lock_path.display(), "hash cache lock failed; reading only");
@@ -155,6 +227,41 @@ impl HashCache for FileHashes {
         self.state().rows.get(&digest).map(|row| row.hash)
     }
 
-    // H2a2
-    fn put(&self, _key: &ContentKey, _hash: [u8; 32]) {}
+    /// Stores `hash` for a settled file; a writer buffers the record and appends at
+    /// `FLUSH_RECORDS`. An untrusted key, a racy time or an unchanged row stores nothing.
+    fn put(&self, key: &ContentKey, hash: [u8; 32]) {
+        let Some(digest) = record::key_digest(key) else {
+            return;
+        };
+        if !settled(key.modified) {
+            return;
+        }
+        let mut state = self.state();
+        if state.rows.get(&digest).is_some_and(|row| row.hash == hash) {
+            return;
+        }
+        let seq = state.next_seq;
+        state.next_seq += 1;
+        state.rows.insert(digest, Row { hash, seq });
+        if state.writer.is_some() {
+            state
+                .pending
+                .extend_from_slice(&record::encode(&digest, &hash));
+            if state.pending.len() >= FLUSH_RECORDS * RECORD_LEN {
+                self.flush_locked(&mut state);
+            }
+        }
+    }
+
+    fn flush(&self) {
+        let mut state = self.state();
+        self.flush_locked(&mut state);
+    }
+}
+
+impl Drop for FileHashes {
+    /// Appends any buffered records before the lock is released.
+    fn drop(&mut self) {
+        self.flush();
+    }
 }

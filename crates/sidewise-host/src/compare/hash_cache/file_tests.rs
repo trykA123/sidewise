@@ -1,4 +1,4 @@
-//! Tests for the file-backed hash cache: open, lock, replay and the open-time rewrite.
+//! Tests for the file-backed hash cache: open, lock, replay, the open-time rewrite, put and flush.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,11 @@ use super::record::{MAGIC, encode, key_digest};
 
 /// A local key for `name`, modified an hour ago, with a native identity.
 fn key(name: &str) -> ContentKey {
+    key_aged(name, -3_600_000)
+}
+
+/// A local key for `name`, modified `offset_ms` from now (negative is the past).
+fn key_aged(name: &str, offset_ms: i64) -> ContentKey {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -20,7 +25,7 @@ fn key(name: &str) -> ContentKey {
         provider: ProviderId::local(),
         full_path: ProviderPath::from_text(&format!("/data/{name}")),
         size: 10,
-        modified: Some(i64::try_from(now).unwrap() - 3_600_000),
+        modified: Some(i64::try_from(now).unwrap() + offset_ms),
         file_id: Some(FileIdentity {
             volume: 7,
             file: [name.len() as u8; 16],
@@ -170,4 +175,140 @@ fn memory_mode_keeps_no_file() {
         "no parent folder means memory mode"
     );
     assert!(!path.exists());
+}
+
+#[test]
+fn put_then_reopen_keeps_the_hash() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = cache_path(&dir);
+    let (a, b) = (key("a"), key("bb"));
+    let store = FileHashes::open(&path);
+    store.put(&a, [1; 32]);
+    store.put(&b, [2; 32]);
+    store.put(&a, [3; 32]);
+    assert_eq!(store.get(&a), Some([3; 32]));
+    store.flush();
+    let expected = [
+        MAGIC.to_vec(),
+        row(&a, [1; 32]),
+        row(&b, [2; 32]),
+        row(&a, [3; 32]),
+    ]
+    .concat();
+    assert_eq!(fs::read(&path).unwrap(), expected);
+    drop(store);
+    let store = FileHashes::open(&path);
+    assert_eq!(store.get(&a), Some([3; 32]));
+    assert_eq!(store.get(&b), Some([2; 32]));
+    assert_eq!(fs::read(&path).unwrap(), expected, "a reopen keeps the log");
+}
+
+#[test]
+fn a_recent_mtime_is_not_stored() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = cache_path(&dir);
+    let store = FileHashes::open(&path);
+    let (recent, old) = (key_aged("a", -1_000), key("bb"));
+    store.put(&recent, [1; 32]);
+    store.put(&old, [2; 32]);
+    assert_eq!(store.get(&recent), None);
+    assert_eq!(store.len(), 1, "only the old row is stored");
+    drop(store);
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        [MAGIC.to_vec(), row(&old, [2; 32])].concat()
+    );
+}
+
+#[test]
+fn a_future_mtime_is_not_stored() {
+    let store = FileHashes::memory();
+    let (future, old) = (key_aged("a", 60_000), key("bb"));
+    store.put(&future, [1; 32]);
+    store.put(&old, [2; 32]);
+    assert_eq!(store.get(&future), None);
+    assert_eq!(store.len(), 1, "only the old row is stored");
+}
+
+#[test]
+fn a_reader_puts_stay_in_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = cache_path(&dir);
+    let first = FileHashes::open(&path);
+    let second = FileHashes::open(&path);
+    assert_eq!(second.mode(), CacheMode::Reader);
+    let a = key("a");
+    second.put(&a, [1; 32]);
+    assert_eq!(second.get(&a), Some([1; 32]));
+    second.flush();
+    drop(second);
+    assert!(!path.exists(), "a reader writes nothing");
+    assert_eq!(first.get(&a), None);
+    let memory = FileHashes::memory();
+    memory.put(&a, [2; 32]);
+    assert_eq!(memory.get(&a), Some([2; 32]));
+}
+
+#[test]
+fn drop_flushes_pending_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = cache_path(&dir);
+    let a = key("a");
+    let store = FileHashes::open(&path);
+    store.put(&a, [1; 32]);
+    assert!(!path.exists(), "puts are buffered");
+    drop(store);
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        [MAGIC.to_vec(), row(&a, [1; 32])].concat()
+    );
+}
+
+#[test]
+fn an_equal_put_appends_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = cache_path(&dir);
+    let a = key("a");
+    let store = FileHashes::open(&path);
+    store.put(&a, [1; 32]);
+    store.flush();
+    let length = fs::metadata(&path).unwrap().len();
+    store.put(&a, [1; 32]);
+    store.flush();
+    drop(store);
+    assert_eq!(fs::metadata(&path).unwrap().len(), length);
+}
+
+#[test]
+fn the_1024th_put_appends_without_a_flush() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = cache_path(&dir);
+    let store = FileHashes::open(&path);
+    let a = key("a");
+    for n in 0..1023u32 {
+        let mut hash = [1; 32];
+        hash[..4].copy_from_slice(&n.to_le_bytes());
+        store.put(&a, hash);
+    }
+    assert!(!path.exists(), "1,023 records stay buffered");
+    store.put(&a, [9; 32]);
+    assert_eq!(fs::metadata(&path).unwrap().len(), 8 + 1024 * 72);
+}
+
+#[test]
+fn a_failed_append_stops_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = cache_path(&dir);
+    let store = FileHashes::open(&path);
+    assert_eq!(store.mode(), CacheMode::Writer);
+    fs::create_dir_all(&path).unwrap();
+    let a = key("a");
+    store.put(&a, [1; 32]);
+    store.flush();
+    assert_eq!(store.mode(), CacheMode::Reader, "the writer is dropped");
+    assert_eq!(store.get(&a), Some([1; 32]), "rows stay in memory");
+    fs::remove_dir(&path).unwrap();
+    store.put(&key("bb"), [2; 32]);
+    drop(store);
+    assert!(!path.exists(), "a failed writer never writes again");
 }
