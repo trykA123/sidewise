@@ -109,6 +109,11 @@ fn recover_and_check(undone: &Undone, case: &str) -> Result<bool, String> {
     if recovered.failed != 0 || recovered.damaged != 0 || recovered.kept != 0 {
         return Err(format!("{case}: not settled: {recovered:?}"));
     }
+    // The copy committed before the undo began: every job rolled back here is the undo.
+    let undos = (recovered.rolled_back_undos, recovered.restored_undos);
+    if undos != (recovered.rolled_back, recovered.restored) {
+        return Err(format!("{case}: undo counts wrong: {recovered:?}"));
+    }
     let committed = check_settled(undone, case)?;
     let (_journal, again) =
         Journal::open(&dir, Arc::new(RealDisk)).map_err(|e| format!("{case}: reopen: {e}"))?;
@@ -173,4 +178,25 @@ fn undo_fault_at_every_op_is_rolled_back_or_whole() {
             "{case}: the result says what the disk holds"
         );
     }
+}
+
+/// Recovery names a rolled-back interrupted `Undo` as an undo, and counts the files it put
+/// back as the copy left them in `restored_undos`.
+#[test]
+fn interrupted_undo_is_counted_as_an_undo() {
+    let (base, ops) = op_counts();
+    let (mut rolled, mut restored) = (0, 0);
+    for n in 1..=ops {
+        let (undone, _, _) = undo_run(Plan::CrashAt(base + n));
+        let dir = undone.fixture.journal_dir();
+        let (_journal, recovered) = Journal::open(&dir, Arc::new(RealDisk)).unwrap();
+        assert_eq!(recovered.rolled_back_undos, recovered.rolled_back, "op {n}");
+        assert_eq!(recovered.restored_undos, recovered.restored, "op {n}");
+        rolled += recovered.rolled_back_undos;
+        restored += recovered.restored_undos;
+    }
+    assert!(
+        rolled > 0 && restored > 0,
+        "{rolled} undos, {restored} files"
+    );
 }

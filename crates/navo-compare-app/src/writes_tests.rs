@@ -272,6 +272,7 @@ fn the_recovery_note_counts_and_names_the_folder() {
             failed: 3,
             ..Swept::default()
         },
+        ..Recovered::default()
     };
     let parts = [
         t!("compare-recovery-restored", count = 2),
@@ -294,4 +295,54 @@ fn the_recovery_note_counts_and_names_the_folder() {
         note.starts_with(&t!("compare-recovery-sweep-failed", count = 1)),
         "{note}"
     );
+}
+
+/// A rolled-back undo is named as an undo, never as a copy: alone, with restored files, and
+/// beside a rolled-back copy; each kind shows its rolled-back line only without its restores.
+#[test]
+fn the_recovery_note_names_undos_apart_from_copies() {
+    use sidewise_l10n::t;
+    let dir = std::path::Path::new("/j");
+    let undo = Recovered {
+        rolled_back: 1,
+        rolled_back_undos: 1,
+        ..Recovered::default()
+    };
+    let note = t!("compare-recovery-undo-rolled-back", count = 1);
+    assert!(note.contains("undo"), "{note}");
+    assert_eq!(recovery_note(&undo, dir), Some(note));
+    let undo_restored = Recovered {
+        rolled_back: 2,
+        rolled_back_undos: 2,
+        restored: 3,
+        restored_undos: 3,
+        ..Recovered::default()
+    };
+    let note = t!("compare-recovery-restored-undo", count = 3);
+    assert!(note.contains("undo"), "{note}");
+    assert_eq!(recovery_note(&undo_restored, dir), Some(note));
+    let mixed = Recovered {
+        rolled_back: 3,
+        rolled_back_undos: 1,
+        restored: 2,
+        restored_undos: 0,
+        ..Recovered::default()
+    };
+    let parts = [
+        t!("compare-recovery-restored", count = 2),
+        t!("compare-recovery-undo-rolled-back", count = 1),
+    ];
+    assert_eq!(recovery_note(&mixed, dir), Some(parts.join(" ")));
+    let both_restored = Recovered {
+        rolled_back: 2,
+        rolled_back_undos: 1,
+        restored: 5,
+        restored_undos: 4,
+        ..Recovered::default()
+    };
+    let parts = [
+        t!("compare-recovery-restored", count = 1),
+        t!("compare-recovery-restored-undo", count = 4),
+    ];
+    assert_eq!(recovery_note(&both_restored, dir), Some(parts.join(" ")));
 }

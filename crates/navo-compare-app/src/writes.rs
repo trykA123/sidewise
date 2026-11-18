@@ -81,19 +81,26 @@ fn off(reason: &str) -> String {
     t!("compare-writes-off", reason = reason)
 }
 
-/// The recovery toast: copies rolled back, files restored after an interrupted copy, what was
-/// left, old backups the sweep could not remove, and the journal folder that keeps the
-/// backups. `None` when there is nothing to report.
+/// The recovery toast: copies and undos rolled back, files restored after each, what was left,
+/// old backups the sweep could not remove, and the journal folder that keeps the backups.
+/// `None` when there is nothing to report.
 pub(crate) fn recovery_note(recovered: &Recovered, dir: &Path) -> Option<String> {
-    // The restored line already says a copy was rolled back: show this one only without it.
-    let rolled_back = if recovered.restored == 0 {
-        recovered.rolled_back
-    } else {
-        0
-    };
+    let copies = recovered
+        .rolled_back
+        .saturating_sub(recovered.rolled_back_undos);
+    let copy_files = recovered.restored.saturating_sub(recovered.restored_undos);
+    let (undos, undo_files) = (recovered.rolled_back_undos, recovered.restored_undos);
     let counts = [
-        ("compare-recovery-rolled-back", rolled_back),
-        ("compare-recovery-restored", recovered.restored),
+        (
+            "compare-recovery-rolled-back",
+            shown_without(copies, copy_files),
+        ),
+        ("compare-recovery-restored", copy_files),
+        (
+            "compare-recovery-undo-rolled-back",
+            shown_without(undos, undo_files),
+        ),
+        ("compare-recovery-restored-undo", undo_files),
         ("compare-recovery-kept", recovered.kept),
         ("compare-recovery-failed", recovered.failed),
         ("compare-recovery-damaged", recovered.damaged),
@@ -104,9 +111,15 @@ pub(crate) fn recovery_note(recovered: &Recovered, dir: &Path) -> Option<String>
         .filter(|(_, count)| *count > 0)
         .map(|(id, count)| t!(id, count = *count))
         .collect();
-    if counts[2..].iter().any(|(_, count)| *count > 0) {
+    if counts[4..].iter().any(|(_, count)| *count > 0) {
         let folder = dir.display().to_string();
         parts.push(t!("compare-recovery-folder", folder = folder));
     }
     (!parts.is_empty()).then(|| parts.join(" "))
+}
+
+/// The rolled-back job count to show: `jobs`, or 0 when `restored` files were counted, since
+/// the restored line already says those jobs were rolled back.
+fn shown_without(jobs: u32, restored: u32) -> u32 {
+    if restored == 0 { jobs } else { 0 }
 }

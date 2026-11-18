@@ -205,6 +205,14 @@ compare-recovery-restored = Sidewise restored { $count ->
     [one] 1 file
    *[other] { $count } files
 } after an interrupted copy.
+compare-recovery-undo-rolled-back = { $count ->
+    [one] An interrupted undo was rolled back; the files are as they were after the copy.
+   *[other] { $count } interrupted undos were rolled back; the files are as they were after the copies.
+}
+compare-recovery-restored-undo = Sidewise restored { $count ->
+    [one] 1 file
+   *[other] { $count } files
+} after an interrupted undo.
 compare-recovery-kept = { $count ->
     [one] 1 file changed since the interrupted copy and was kept as is.
    *[other] { $count } files changed since the interrupted copy and were kept as is.

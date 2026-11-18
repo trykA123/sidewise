@@ -11,7 +11,7 @@ use sidewise_fs::durable::{Disk, ReplaceError};
 use crate::error::{JournalError, journal_io};
 use crate::files::remove_if_present;
 use crate::journal::{Inner, still_named};
-use crate::record::{JobId, Record, decode, encode};
+use crate::record::{JobId, JobKind, Record, decode, encode};
 use crate::rollback::roll_back;
 use crate::sweep::Swept;
 
@@ -27,8 +27,12 @@ pub struct Recovered {
     /// Open jobs that recovery closed as `Aborted`, whatever each item's outcome (an item killed
     /// before its target changed restores nothing, yet the job was still rolled back).
     pub rolled_back: u32,
+    /// The `Undo` jobs among `rolled_back`: their targets are back as the copy left them.
+    pub rolled_back_undos: u32,
     /// Targets put back to their old bytes and modified time.
     pub restored: u32,
+    /// The targets among `restored` that rolling back an `Undo` job put back.
+    pub restored_undos: u32,
     /// Targets changed by someone else since the write: file and backup are both kept.
     pub kept: u32,
     /// Items, logs or jobs that could not be settled now; the next start retries them.
@@ -78,6 +82,17 @@ impl Job {
         self.records
             .iter()
             .any(|record| matches!(record, Record::Commit | Record::Aborted { .. }))
+    }
+
+    /// True when the log's `Begin` names an `Undo` job.
+    fn is_undo(&self) -> bool {
+        matches!(
+            self.records.first(),
+            Some(Record::Begin {
+                kind: JobKind::Undo,
+                ..
+            })
+        )
     }
 }
 
@@ -255,7 +270,11 @@ fn settle_job(disk: &dyn Disk, job: &Job, recovered: &mut Recovered) -> bool {
         return true;
     }
     let rolled = roll_back(disk, &job.dir, &job.id, &job.records);
+    let undo = job.is_undo();
     recovered.restored += rolled.restored;
+    if undo {
+        recovered.restored_undos += rolled.restored;
+    }
     recovered.kept += rolled.kept;
     recovered.failed += rolled.failed;
     if rolled.failed != 0 {
@@ -266,6 +285,7 @@ fn settle_job(disk: &dyn Disk, job: &Job, recovered: &mut Recovered) -> bool {
         return false;
     }
     recovered.rolled_back += 1;
+    recovered.rolled_back_undos += u32::from(undo);
     true
 }
 
