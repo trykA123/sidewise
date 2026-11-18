@@ -3,6 +3,8 @@
 
 use std::path::Path;
 
+use sidewise_git_address::{RemoteRev, RemoteUrl};
+
 use crate::args::{ArgError, SideSpec};
 
 /// Longest accepted Git revision, in bytes (NC21).
@@ -12,6 +14,15 @@ const MAX_REV_BYTES: usize = 256;
 /// Fails with `BadRev` when a selected revision breaks NC21.
 pub fn side(text: &str, cwd: &Path, exists: &dyn Fn(&Path) -> bool) -> Result<SideSpec, ArgError> {
     let text = crate::quote::unquote(text);
+    if let Some((url_text, rev_text)) = split_address(text) {
+        let bad = || ArgError::BadUrl(text.to_owned());
+        let url = RemoteUrl::parse(url_text).map_err(|_| bad())?;
+        let rev = RemoteRev::parse(rev_text).map_err(|_| bad())?;
+        return Ok(SideSpec::GitUrl {
+            url: url.as_str().to_owned(),
+            rev: rev.as_str().to_owned(),
+        });
+    }
     let whole = cwd.join(text);
     if exists(&whole) {
         return Ok(SideSpec::Path(whole));
@@ -32,6 +43,24 @@ pub fn side(text: &str, cwd: &Path, exists: &dyn Fn(&Path) -> bool) -> Result<Si
         }
     }
     Ok(SideSpec::Path(whole))
+}
+
+/// Splits an address attempt (ASCII letters, then `://`) into url text and revision text.
+/// The url ends at the first `@` after the first `/` past `://`; no such `@` gives an empty
+/// revision. Returns `None` when `text` is not an address attempt.
+fn split_address(text: &str) -> Option<(&str, &str)> {
+    let letters = text.bytes().take_while(u8::is_ascii_alphabetic).count();
+    if letters == 0 || !text[letters..].starts_with("://") {
+        return None;
+    }
+    let after = letters + 3;
+    let Some(slash) = text[after..].find('/').map(|i| after + i) else {
+        return Some((text, ""));
+    };
+    match text[slash..].find('@') {
+        Some(i) => Some((&text[..slash + i], &text[slash + i + 1..])),
+        None => Some((text, "")),
+    }
 }
 
 /// Accepts a revision unless it is empty, dash-led, control-bearing or over 256 bytes.

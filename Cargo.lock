@@ -5624,6 +5624,9 @@ dependencies = [
 [[package]]
 name = "navo-compare-cli"
 version = "0.1.0-alpha.4"
+dependencies = [
+ "sidewise-git-address",
+]
 
 [[package]]
 name = "navo-compare-profile"

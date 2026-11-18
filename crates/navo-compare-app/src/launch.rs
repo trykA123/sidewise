@@ -46,6 +46,12 @@ pub fn decide(args: &[OsString], cwd: &Path, exists: &dyn Fn(&Path) -> bool) -> 
         Action::Start { left: Some(_) } => {
             refuse("give two sides (two folders, two files or Git revisions), or none.")
         }
+        Action::Compare { left, right }
+            if matches!(left, SideSpec::GitUrl { .. })
+                || matches!(right, SideSpec::GitUrl { .. }) =>
+        {
+            refuse("Remote Git sides are typed in the window, not on the command line.")
+        }
         Action::Compare { left, right } => Launch::Open(Opening {
             pair: Some((left, right)),
             profile,
@@ -202,5 +208,25 @@ mod tests {
             ),
             Launch::Open(expected)
         );
+    }
+
+    /// A remote address on the command line is refused with the window hint (spec 7).
+    #[test]
+    fn remote_side_is_refused() {
+        let Launch::Refuse(text) = run(&["https://github.com/o/r@main", r"C:\x"], &[]) else {
+            panic!("expected a refusal");
+        };
+        assert!(
+            text.ends_with("Remote Git sides are typed in the window, not on the command line.")
+        );
+    }
+
+    /// A bad address names the typed text.
+    #[test]
+    fn bad_address_is_refused_by_name() {
+        let Launch::Refuse(text) = run(&["http://github.com/o/r", "b"], &[]) else {
+            panic!("expected a refusal");
+        };
+        assert!(text.contains("http://github.com/o/r"));
     }
 }

@@ -59,6 +59,7 @@ pub enum ArgError {
     MissingValue(&'static str),
     NotUnicode,
     BadRev(String),
+    BadUrl(String),
     ThreeWay,
     PickWithSides,
     TooManyArgs(usize),
@@ -101,6 +102,10 @@ impl fmt::Display for ArgError {
             Self::MissingValue(flag) => write!(f, "option `{flag}` needs a value."),
             Self::NotUnicode => write!(f, "an argument is not valid Unicode."),
             Self::BadRev(rev) => write!(f, "the revision {rev:?} is not valid."),
+            Self::BadUrl(text) => write!(
+                f,
+                "{text:?} is not a supported address: only https:// addresses without a user name are supported."
+            ),
             Self::ThreeWay => write!(f, "three-way merge arrives in a later release."),
             Self::PickWithSides => write!(
                 f,

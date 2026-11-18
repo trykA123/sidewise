@@ -6,6 +6,9 @@ mod quote;
 mod side_arg;
 
 #[cfg(test)]
+mod side_arg_tests;
+
+#[cfg(test)]
 mod args_pick_tests;
 
 #[cfg(test)]
