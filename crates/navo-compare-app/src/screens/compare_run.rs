@@ -82,17 +82,19 @@ impl CompareRun {
             options,
             wake,
         };
-        run.restart(hooks);
+        run.restart(hooks, false);
         Ok(run)
     }
 
     /// Starts the folder walk anew (F5): each side opens again, so a Git side re-resolves its
     /// revision while other tabs keep the side they hold. The old walk is cancelled and its
-    /// queued updates are dropped. Does nothing for two files.
-    pub fn restart(&mut self, hooks: &dyn CompareHooks) {
+    /// queued updates are dropped. With `recheck` (F5) every file is read again: Recheck all.
+    /// Does nothing for two files.
+    pub fn restart(&mut self, hooks: &dyn CompareHooks, recheck: bool) {
         if self.kind != RunKind::Folders {
             return;
         }
+        self.options.fresh_hashes = recheck;
         let (sender, updates) = mpsc::channel();
         let wake = Arc::clone(&self.wake);
         let sink: CompareSink = Arc::new(move |update| {
