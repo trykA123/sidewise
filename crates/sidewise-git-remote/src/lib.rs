@@ -6,6 +6,7 @@ pub mod capped;
 pub mod choose;
 pub mod failure;
 pub mod fetch;
+mod lent;
 pub mod problem;
 
 pub use at::{RemoteAt, RemoteAtError};

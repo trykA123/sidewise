@@ -9,14 +9,10 @@ use std::sync::atomic::AtomicBool;
 
 use gix::bstr::BStr;
 use gix::progress::Discard;
-use gix::remote::fetch::{Shallow, Tags};
-use gix::remote::{Direction, ref_map};
-use gix_transport::Protocol;
-use gix_transport::client::blocking_io::Transport;
-use gix_transport::client::blocking_io::http::{
-    GetResponse, Http, PostBodyDataKind, PostResponse, connect_http,
-};
+use gix::remote::{Direction, fetch::Shallow, fetch::Tags, ref_map};
+use gix_transport::client::blocking_io::http::Http;
 
+use crate::lent::lend;
 use crate::{Budget, Capped, DeadlineGuard, Limits, RemoteProblem, RemoteRev, RemoteUrl};
 use crate::{candidates, choose, problem_of};
 
@@ -98,15 +94,8 @@ fn run<H: Http>(job: &Job<'_>, http: H, limits: Limits) -> Result<String, Remote
     let result = fetch_ref(job, &mut capped, &interrupt);
     // The join inside the drop makes the timer's `TimedOut` visible to `problem_of`.
     drop(guard);
-    match result {
-        Ok(Ok(())) => Ok(job.local.clone()),
-        Ok(Err(problem)) => Err(problem),
-        // With no credentials gix drops the 401 cause and keeps only the `Unauthenticated` class.
-        Err(err) => match problem_of(&err, &budget) {
-            RemoteProblem::Broken if err.is_unauthenticated() => Err(RemoteProblem::NotFound),
-            problem => Err(problem),
-        },
-    }
+    let fetched = result.map_err(|err| problem_of(&err, &budget))?;
+    fetched.map(|()| job.local.clone())
 }
 
 /// Connection 1: the names the server lists for the candidates of the rev (ls-refs prefixes).
@@ -157,51 +146,5 @@ fn fetch_ref<C: Http>(
         .with_shallow(Shallow::DepthAtRemote(NonZeroU32::MIN))
         .receive(Discard, interrupt)?;
     let written = job.repo.try_find_reference(job.local.as_str())?.is_some();
-    Ok(if written {
-        Ok(())
-    } else {
-        Err(RemoteProblem::Broken)
-    })
-}
-
-/// A fresh protocol v2 transport for one connection, borrowing `http`. gix's HTTP transport keeps
-/// the first response's reader, so a second handshake needs its own transport.
-fn lend<'a, C: Http>(http: &'a mut C, url: &gix::Url) -> impl Transport + 'a {
-    connect_http(Lent(http), url.clone(), Protocol::V2, false)
-}
-
-/// Lends one `Http` backend to a transport; every call goes to the borrowed backend.
-struct Lent<'a, C>(&'a mut C);
-
-impl<C: Http> Http for Lent<'_, C> {
-    type Headers = C::Headers;
-    type ResponseBody = C::ResponseBody;
-    type PostBody = C::PostBody;
-
-    fn get(
-        &mut self,
-        url: &str,
-        base_url: &str,
-        headers: impl IntoIterator<Item = impl AsRef<str>>,
-    ) -> gix::Result<GetResponse<C::Headers, C::ResponseBody>> {
-        self.0.get(url, base_url, headers)
-    }
-
-    fn post(
-        &mut self,
-        url: &str,
-        base_url: &str,
-        headers: impl IntoIterator<Item = impl AsRef<str>>,
-        body: PostBodyDataKind,
-    ) -> gix::Result<PostResponse<C::Headers, C::ResponseBody, C::PostBody>> {
-        self.0.post(url, base_url, headers, body)
-    }
-
-    fn configure(&mut self, config: &dyn std::any::Any) -> gix::Result {
-        self.0.configure(config)
-    }
-
-    fn redirected_base_url(&self) -> Option<String> {
-        self.0.redirected_base_url()
-    }
+    Ok(written.then_some(()).ok_or(RemoteProblem::Broken))
 }

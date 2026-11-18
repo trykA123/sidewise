@@ -18,7 +18,8 @@ pub fn problem_of(err: &gix::Error, budget: &Budget) -> RemoteProblem {
     if let Some(problem) = budget.problem() {
         return problem;
     }
-    if err.iter_errors().any(|e| e.is::<AuthenticationRequired>()) {
+    // A refused sign-in loses the 401 cause in gix and keeps only the `Unauthenticated` class.
+    if err.is_unauthenticated() || err.iter_errors().any(|e| e.is::<AuthenticationRequired>()) {
         return RemoteProblem::NotFound;
     }
     if let Some(problem) = err.iter_errors().find_map(transport_problem) {
@@ -85,6 +86,16 @@ mod tests {
             io::ErrorKind::PermissionDenied,
             AuthenticationRequired::default(),
         ));
+        assert_eq!(problem_of(&err, &fresh()), RemoteProblem::NotFound);
+    }
+
+    #[test]
+    fn refused_sign_in_is_not_found() {
+        // With credentials refused, gix drops the 401 cause and keeps only this class.
+        let cause: gix::Error = gix::error::unauthenticated("no credentials returned").into();
+        let err = gix::Exn::new(cause)
+            .raise(gix::error::message("fetch failed"))
+            .into_error();
         assert_eq!(problem_of(&err, &fresh()), RemoteProblem::NotFound);
     }
 
