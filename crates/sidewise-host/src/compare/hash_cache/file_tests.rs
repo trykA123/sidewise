@@ -10,9 +10,12 @@ use navo_core::{FileIdentity, FileIdentityKind, ProviderId, ProviderPath};
 use super::file::{CacheMode, FileHashes, Limits};
 use super::record::{MAGIC, encode, key_digest};
 
-/// A local key for `name`, modified an hour ago, with a native identity.
+/// A fixed, settled modified time (2023-11-14): a key built twice must digest the same.
+const SETTLED_MS: i64 = 1_700_000_000_000;
+
+/// A local key for `name`, modified at `SETTLED_MS`, with a native identity.
 fn key(name: &str) -> ContentKey {
-    key_aged(name, -3_600_000)
+    key_at(name, SETTLED_MS)
 }
 
 /// A local key for `name`, modified `offset_ms` from now (negative is the past).
@@ -21,11 +24,16 @@ fn key_aged(name: &str, offset_ms: i64) -> ContentKey {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
+    key_at(name, i64::try_from(now).unwrap() + offset_ms)
+}
+
+/// A local key for `name` modified at `modified_ms`, with a native identity.
+fn key_at(name: &str, modified_ms: i64) -> ContentKey {
     ContentKey {
         provider: ProviderId::local(),
         full_path: ProviderPath::from_text(&format!("/data/{name}")),
         size: 10,
-        modified: Some(i64::try_from(now).unwrap() + offset_ms),
+        modified: Some(modified_ms),
         file_id: Some(FileIdentity {
             volume: 7,
             file: [name.len() as u8; 16],

@@ -1,7 +1,6 @@
 //! Tests for clearing the hash cache: the writer removes the file, a reader refuses.
 
 use std::fs;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use navo_compare::model::{ContentKey, HashCache};
 use navo_core::{FileIdentity, FileIdentityKind, ProviderId, ProviderPath};
@@ -9,17 +8,14 @@ use navo_core::{FileIdentity, FileIdentityKind, ProviderId, ProviderPath};
 use super::file::{CacheMode, ClearError, FileHashes};
 use super::record::MAGIC;
 
-/// A local key for `name`, modified an hour ago, with a native identity.
+/// A local key for `name`, modified at a fixed settled time (2023-11-14), with a native
+/// identity; a fixed time keeps the digest equal when the key is built twice.
 fn key(name: &str) -> ContentKey {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
     ContentKey {
         provider: ProviderId::local(),
         full_path: ProviderPath::from_text(&format!("/data/{name}")),
         size: 10,
-        modified: Some(i64::try_from(now).unwrap() - 3_600_000),
+        modified: Some(1_700_000_000_000),
         file_id: Some(FileIdentity {
             volume: 7,
             file: [name.len() as u8; 16],
