@@ -344,3 +344,25 @@ fn local_at_never_touches_the_network() {
     assert_eq!(cache.local_at(&at("other.git", "main")), None);
     assert_eq!(names(&root.path().join("cache")), listed);
 }
+
+#[test]
+fn local_at_marks_the_repository_as_recently_used() {
+    let served = served();
+    let root = TempDir::new().unwrap();
+    let cache = Cache::new(root.path().to_path_buf());
+    fetch(&cache, served.path(), "main").unwrap();
+    let used = root.path().join(format!("{}.used", key()));
+    let old = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+    std::fs::File::options()
+        .write(true)
+        .open(&used)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    assert_eq!(cache.local_at(&at("other.git", "main")), None);
+    let still = std::fs::metadata(&used).unwrap().modified().unwrap();
+    assert_eq!(still, old, "a miss must not mark the repository");
+    assert!(cache.local_at(&at("small.git", "main")).is_some());
+    let now = std::fs::metadata(&used).unwrap().modified().unwrap();
+    assert!(now > old + Duration::from_secs(86_400), "{now:?}");
+}

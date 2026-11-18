@@ -14,6 +14,8 @@ use sidewise_host::compare::diff::sides::side_of;
 use sidewise_host::compare::handle::{CompareTarget, OpenFailure};
 use sidewise_host::compare::pane::LocalTarget;
 
+use super::git_remote_sides::{is_remote, remote_side, remote_target};
+
 /// The app's one cache, shared by the compare engine and every diff backend; made on first use.
 pub fn shared_sides() -> Arc<GitSides> {
     static SIDES: OnceLock<Arc<GitSides>> = OnceLock::new();
@@ -136,7 +138,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// A Git side's problem as an opener failure: its compare reason and its l10n text.
-fn failure_of(problem: GitProblem) -> OpenFailure {
+pub(super) fn failure_of(problem: GitProblem) -> OpenFailure {
     OpenFailure {
         reason: problem.reason(),
         text_id: Some(problem.l10n_id()),
@@ -162,6 +164,9 @@ pub fn target_for(sides: Arc<GitSides>) -> LocalTarget {
         if location.is_local() {
             return CompareTarget::Local(location.clone());
         }
+        if is_remote(location) {
+            return remote_target(location, Arc::clone(&sides));
+        }
         let parsed = parse(location);
         let sides = Arc::clone(&sides);
         CompareTarget::Side(Box::new(move || {
@@ -180,15 +185,27 @@ pub fn side_fn(sides: Arc<GitSides>) -> SideFn {
         if location.is_local() {
             return side_of(location, settings);
         }
+        if is_remote(location) {
+            return remote_side(location, &sides);
+        }
         let at = parse(location).map_err(|_| Reason::Unsupported)?;
-        let side = sides.side(&at).map_err(GitProblem::reason)?;
-        let rel = RelPath::new(ProviderPath::from_text(&at.inner));
-        file_only(side.kind(&rel)?)?;
-        let stamp = side.stamp(&rel)?;
-        let entry = SideEntry::new(rel, EntryKind::File, stamp.size, None);
-        let source: Arc<dyn SideSource> = side;
-        Ok((source, entry))
+        file_side(&sides, &at)
     })
+}
+
+/// The file side of a parsed Git location in `sides`: the newest side for it and the entry of
+/// its inner path. A missing path or revision is `NotFound`, a non-file as `file_only`.
+pub(super) fn file_side(
+    sides: &GitSides,
+    at: &GitAt,
+) -> Result<(Arc<dyn SideSource>, SideEntry), Reason> {
+    let side = sides.side(at).map_err(GitProblem::reason)?;
+    let rel = RelPath::new(ProviderPath::from_text(&at.inner));
+    file_only(side.kind(&rel)?)?;
+    let stamp = side.stamp(&rel)?;
+    let entry = SideEntry::new(rel, EntryKind::File, stamp.size, None);
+    let source: Arc<dyn SideSource> = side;
+    Ok((source, entry))
 }
 
 #[cfg(test)]

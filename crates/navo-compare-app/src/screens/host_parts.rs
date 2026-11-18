@@ -45,6 +45,12 @@ pub(crate) fn install_hashes(explicit: Option<&Path>) {
     let _ = HASH_PROFILE.set(explicit.map(Path::to_path_buf));
 }
 
+/// The profile folder choice made at start: `None` before `install_hashes` ran (tests), else
+/// `Some(None)` for the platform folders. Other caches of the profile use the same choice.
+pub(crate) fn profile_choice() -> Option<&'static Option<PathBuf>> {
+    HASH_PROFILE.get()
+}
+
 /// Opens `cache/hashes.v1` of the profile. A profile error is logged and the cache lives in
 /// memory for the run, so the compare still works.
 pub(crate) fn open_hashes(explicit: Option<&Path>) -> Arc<FileHashes> {

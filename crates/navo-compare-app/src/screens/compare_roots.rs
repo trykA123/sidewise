@@ -1,11 +1,13 @@
 //! Turns the two sides of a compare into a run kind and two roots; part of the compare run model.
-//! A path side is a local root; a Git side is a stored-form `git` folder root.
+//! A path side is a local root; a Git side is a stored-form `git` folder root; a remote Git
+//! side is a `git-remote` root.
 
 use std::path::Path;
 
 use navo_compare_cli::args::SideSpec;
 use sidewise_core::{Location, ProviderPath};
 use sidewise_git::location::{Form, encode};
+use sidewise_git_remote::{RemoteRev, RemoteUrl, at};
 
 use super::compare_run::{RunError, RunKind};
 use crate::start::Side;
@@ -55,10 +57,17 @@ fn root_of(spec: &SideSpec) -> Result<Location, RunError> {
         SideSpec::Path(path) => location_of(path),
         SideSpec::GitRev { repo, rev } => encode(repo, rev, Form::Stored)
             .map_err(|error| RunError::Location(format!("{error:?}"))),
-        SideSpec::GitUrl { .. } => Err(RunError::Location(
-            "remote Git sides are not connected yet".into(),
-        )),
+        SideSpec::GitUrl { url, rev } => remote_root(url, rev),
     }
+}
+
+/// Turns a remote address and revision into a `git-remote` root; an address or revision the
+/// parsers refuse is a `Location` error.
+fn remote_root(url: &str, rev: &str) -> Result<Location, RunError> {
+    let fail = |error: &dyn std::fmt::Debug| RunError::Location(format!("{error:?}"));
+    let url = RemoteUrl::parse(url).map_err(|error| fail(&error))?;
+    let rev = RemoteRev::parse(rev).map_err(|error| fail(&error))?;
+    at::encode(&url, &rev, "").map_err(|error| fail(&error))
 }
 
 /// Classifies a Git side against a path side: a folder is `Folders`, a file is `Mixed`.

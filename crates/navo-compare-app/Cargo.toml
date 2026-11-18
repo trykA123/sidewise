@@ -26,6 +26,7 @@ sidewise-core = { path = "../sidewise-core" }
 sidewise-engine = { path = "../sidewise-engine" }
 sidewise-fs = { path = "../sidewise-fs" }
 sidewise-git = { path = "../sidewise-git" }
+sidewise-git-remote = { path = "../sidewise-git-remote" }
 sidewise-host = { path = "../sidewise-host" }
 sidewise-journal = { path = "../sidewise-journal" }
 sidewise-kit = { path = "../sidewise-kit" }
@@ -43,6 +44,8 @@ embed-resource = "3.0.12"
 navo-compare-profile = { path = "../navo-compare-profile" }
 
 [dev-dependencies]
+blake3 = "=1.8.7"
+tempfile = "=3.27.0"
 gpui-kit = { version = "=0.9.1", features = ["test-support"] }
 sidewise-git = { path = "../sidewise-git", features = ["test-support"] }
 sidewise-fs = { path = "../sidewise-fs", features = ["test-support"] }

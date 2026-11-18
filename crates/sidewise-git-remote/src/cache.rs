@@ -81,16 +81,19 @@ impl Cache {
     }
 
     /// The stored Git location of an earlier fetch of `at`, or `None` when the repository or
-    /// its ref is missing or will not open. Never uses the network and never writes.
+    /// its ref is missing or will not open. Never uses the network; a hit only sets the mtime of
+    /// `<key>.used`, so a restored tab's repository counts as recently used (it takes no lock).
     #[must_use]
     pub fn local_at(&self, at: &RemoteAt) -> Option<GitAt> {
-        let live = Names::new(&self.root, at.url.cache_key()).live();
+        let names = Names::new(&self.root, at.url.cache_key());
+        let live = names.live();
         if !matches!(live_state(&live), Live::Opens) {
             return None;
         }
         let repo = gix::open_opts(&live, open_options()).ok()?;
         let local = local_ref(&at.rev);
         repo.try_find_reference(local.as_str()).ok()??;
+        touch(&names.used());
         Some(git_at(live, local, at))
     }
 }

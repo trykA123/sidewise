@@ -96,14 +96,30 @@ fn folder_and_missing_is_missing_right() {
     );
 }
 
-/// A remote Git side is not connected yet: its root is a `Location` error.
+/// A remote Git side's root is the `git-remote` location that `at::parse` reads back.
 #[test]
-fn a_remote_side_is_a_location_error() {
+fn a_remote_side_encodes_a_git_remote_location() {
     let remote = SideSpec::GitUrl {
         url: "https://github.com/owner/repo".into(),
         rev: "main".into(),
     };
     let dir = Dir::new("rm");
+    let (kind, [left, _]) =
+        roots_of(&remote, &SideSpec::Path(dir.path().to_path_buf())).expect("roots");
+    assert_eq!(kind, RunKind::Folders);
+    let at = sidewise_git_remote::at::parse(&left).expect("parses back");
+    assert_eq!(at.url.as_str(), "https://github.com/owner/repo");
+    assert_eq!((at.rev.as_str(), at.inner.as_str()), ("main", ""));
+}
+
+/// An address the parser refuses is a `Location` error naming the side's problem.
+#[test]
+fn a_bad_remote_address_is_a_location_error() {
+    let remote = SideSpec::GitUrl {
+        url: "not an address".into(),
+        rev: "main".into(),
+    };
+    let dir = Dir::new("rb");
     let result = roots_of(&remote, &SideSpec::Path(dir.path().to_path_buf()));
     assert!(matches!(result, Err(RunError::Location(_))));
 }

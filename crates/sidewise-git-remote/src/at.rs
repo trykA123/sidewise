@@ -5,7 +5,7 @@ use sidewise_git::location::{MAX_LOCATION_BYTES, ParseError, decode, encode_part
 use sidewise_git_address::{AddressError, RemoteRev, RemoteUrl};
 
 /// The provider name of this form.
-const PROVIDER: &str = "git-remote";
+pub const PROVIDER: &str = "git-remote";
 
 /// A parsed remote location: address, revision and path inside the repository.
 #[derive(Clone, Debug, PartialEq, Eq)]
