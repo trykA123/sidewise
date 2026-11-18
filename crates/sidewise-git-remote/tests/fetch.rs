@@ -140,6 +140,76 @@ fn refetch_moves_the_ref() {
     assert_eq!(oid(&dir, &second), oid(&bare, "v1"));
 }
 
+/// Wraps `CgiHttp` and runs `act` just before its second GET, the handshake of connection 2:
+/// the server's refs change between listing and fetching.
+struct Racy {
+    inner: CgiHttp,
+    gets: usize,
+    act: Box<dyn FnMut()>,
+}
+
+impl Http for Racy {
+    type Headers = <CgiHttp as Http>::Headers;
+    type ResponseBody = <CgiHttp as Http>::ResponseBody;
+    type PostBody = <CgiHttp as Http>::PostBody;
+
+    fn get(
+        &mut self,
+        url: &str,
+        base_url: &str,
+        headers: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> gix::Result<GetResponse<Self::Headers, Self::ResponseBody>> {
+        self.gets += 1;
+        if self.gets == 2 {
+            (self.act)();
+        }
+        self.inner.get(url, base_url, headers)
+    }
+
+    fn post(
+        &mut self,
+        url: &str,
+        base_url: &str,
+        headers: impl IntoIterator<Item = impl AsRef<str>>,
+        body: PostBodyDataKind,
+    ) -> gix::Result<PostResponse<Self::Headers, Self::ResponseBody, Self::PostBody>> {
+        self.inner.post(url, base_url, headers, body)
+    }
+
+    fn configure(&mut self, config: &dyn std::any::Any) -> gix::Result {
+        self.inner.configure(config)
+    }
+}
+
+/// Fetches `main` of a fresh `small.git` while `git <args>` runs in it between the connections.
+fn raced(args: &'static [&'static str]) -> Result<String, RemoteProblem> {
+    let root = small_root();
+    let bare = root.path().join("small.git");
+    let cache = TempDir::new().unwrap();
+    let http = Racy {
+        inner: CgiHttp::new(root.path()),
+        gets: 0,
+        act: Box::new(move || {
+            git(&bare, args);
+        }),
+    };
+    let url = RemoteUrl::parse("https://test.invalid/small.git").unwrap();
+    let rev = RemoteRev::parse("main").unwrap();
+    fetch_with(&cache.path().join("c.git"), &url, &rev, http, ROOMY)
+}
+
+#[test]
+fn ref_deleted_between_connections_is_no_such_revision() {
+    let got = raced(&["update-ref", "-d", "refs/heads/main"]);
+    assert_eq!(got, Err(RemoteProblem::NoSuchRevision));
+}
+
+#[test]
+fn ref_moved_between_connections_is_no_such_revision() {
+    let got = raced(&["update-ref", "refs/heads/main", "v1"]);
+    assert_eq!(got, Err(RemoteProblem::NoSuchRevision));
+}
+
 /// Fetches `path` and `rev` from the small root into a fresh cache with `limits`; the error.
 fn small_problem(path: &str, rev: &str, limits: Limits) -> RemoteProblem {
     let root = small_root();

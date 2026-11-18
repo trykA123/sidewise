@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use gix_transport::client::blocking_io::http::{GetResponse, Http, PostBodyDataKind, PostResponse};
 
-use crate::RemoteProblem;
+use crate::{HttpStatus, RemoteProblem};
 
 /// The caps of one fetch: response bytes and wall-clock time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,7 +151,9 @@ impl<H: Http> Http for Capped<H> {
         base_url: &str,
         headers: impl IntoIterator<Item = impl AsRef<str>>,
     ) -> gix::Result<GetResponse<Self::Headers, Self::ResponseBody>> {
+        self.before_call()?;
         let response = self.inner.get(url, base_url, headers)?;
+        self.after_call()?;
         Ok(GetResponse {
             headers: self.wrap(response.headers),
             body: self.wrap(response.body),
@@ -165,7 +167,9 @@ impl<H: Http> Http for Capped<H> {
         headers: impl IntoIterator<Item = impl AsRef<str>>,
         body: PostBodyDataKind,
     ) -> gix::Result<PostResponse<Self::Headers, Self::ResponseBody, Self::PostBody>> {
+        self.before_call()?;
         let response = self.inner.post(url, base_url, headers, body)?;
+        self.after_call()?;
         Ok(PostResponse {
             post_body: response.post_body,
             headers: self.wrap(response.headers),
@@ -177,8 +181,28 @@ impl<H: Http> Http for Capped<H> {
         self.inner.configure(config)
     }
 
+    /// Always `None`: a followed redirect already failed the call, so gix never changes host.
     fn redirected_base_url(&self) -> Option<String> {
-        self.inner.redirected_base_url()
+        None
+    }
+}
+
+impl<H: Http> Capped<H> {
+    /// Fails with `TimedOut` once the deadline has passed, before the backend connects or sends.
+    fn before_call(&self) -> gix::Result<()> {
+        if self.budget.remaining().is_zero() {
+            let err = self.budget.fail(RemoteProblem::TimedOut);
+            return Err(gix::Error::from_error(err));
+        }
+        Ok(())
+    }
+
+    /// Fails as HTTP 302 (`Redirected`) when the backend followed a redirect to another base.
+    fn after_call(&self) -> gix::Result<()> {
+        if self.inner.redirected_base_url().is_some() {
+            return Err(gix::Error::from_error(io::Error::other(HttpStatus(302))));
+        }
+        Ok(())
     }
 }
 
@@ -219,171 +243,4 @@ impl Drop for DeadlineGuard {
 }
 
 #[cfg(test)]
-mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        reason = "test: a failed step should abort the test"
-    )]
-
-    use super::*;
-    use std::io::{BufReader, Cursor, Sink};
-
-    /// An in-memory `Http`: every response is `headers` then `body`, read 4 bytes at a time.
-    struct Fake {
-        headers: Vec<u8>,
-        body: Vec<u8>,
-    }
-
-    type Reader = BufReader<Cursor<Vec<u8>>>;
-
-    impl Fake {
-        fn reader(bytes: &[u8]) -> Reader {
-            BufReader::with_capacity(4, Cursor::new(bytes.to_vec()))
-        }
-    }
-
-    impl Http for Fake {
-        type Headers = Reader;
-        type ResponseBody = Reader;
-        type PostBody = Sink;
-
-        fn get(
-            &mut self,
-            _: &str,
-            _: &str,
-            _: impl IntoIterator<Item = impl AsRef<str>>,
-        ) -> gix::Result<GetResponse<Reader, Reader>> {
-            Ok(GetResponse {
-                headers: Self::reader(&self.headers),
-                body: Self::reader(&self.body),
-            })
-        }
-
-        fn post(
-            &mut self,
-            url: &str,
-            base: &str,
-            headers: impl IntoIterator<Item = impl AsRef<str>>,
-            _: PostBodyDataKind,
-        ) -> gix::Result<PostResponse<Reader, Reader, Sink>> {
-            let got = self.get(url, base, headers)?;
-            Ok(PostResponse {
-                post_body: io::sink(),
-                headers: got.headers,
-                body: got.body,
-            })
-        }
-
-        fn configure(&mut self, _: &dyn std::any::Any) -> gix::Result {
-            Ok(())
-        }
-    }
-
-    fn capped(headers: usize, body: usize, limits: Limits) -> (Capped<Fake>, Arc<Budget>) {
-        let budget = Arc::new(Budget::new(limits));
-        let fake = Fake {
-            headers: vec![b'h'; headers],
-            body: vec![b'b'; body],
-        };
-        (Capped::new(fake, Arc::clone(&budget)), budget)
-    }
-
-    fn limits(max_bytes: u64, deadline_ms: u64) -> Limits {
-        Limits {
-            max_bytes,
-            deadline: Duration::from_millis(deadline_ms),
-        }
-    }
-
-    #[test]
-    fn product_limits() {
-        assert_eq!(Limits::PRODUCT.max_bytes, 268_435_456);
-        assert_eq!(Limits::PRODUCT.deadline, Duration::from_secs(300));
-    }
-
-    #[test]
-    fn body_within_cap_reads_whole() {
-        let (mut http, budget) = capped(10, 30, limits(40, 60_000));
-        let mut got = http.get("u", "b", ["x"]).unwrap();
-        let mut out = Vec::new();
-        got.headers.read_to_end(&mut out).unwrap();
-        got.body.read_to_end(&mut out).unwrap();
-        assert_eq!(out.len(), 40);
-        assert_eq!(budget.problem(), None);
-    }
-
-    #[test]
-    fn body_over_cap_fails_too_large() {
-        let (mut http, budget) = capped(10, 31, limits(40, 60_000));
-        let mut got = http
-            .post("u", "b", ["x"], PostBodyDataKind::Unbounded)
-            .unwrap();
-        let mut out = Vec::new();
-        got.headers.read_to_end(&mut out).unwrap();
-        let err = got.body.read_to_end(&mut out).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::FileTooLarge);
-        assert!(
-            out.len() <= 40,
-            "handed out {} bytes over a 40-byte cap",
-            out.len()
-        );
-        assert_eq!(budget.problem(), Some(RemoteProblem::TooLarge));
-    }
-
-    #[test]
-    fn read_after_deadline_fails_timed_out() {
-        let (mut http, budget) = capped(0, 64, limits(1 << 20, 40));
-        let mut got = http.get("u", "b", ["x"]).unwrap();
-        let mut chunk = [0; 4];
-        assert_eq!(got.body.read(&mut chunk).unwrap(), 4);
-        std::thread::sleep(Duration::from_millis(60));
-        let err = got.body.read(&mut chunk).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
-        assert_eq!(budget.problem(), Some(RemoteProblem::TimedOut));
-    }
-
-    #[test]
-    fn first_problem_wins() {
-        let (mut http, budget) = capped(0, 64, limits(4, 0));
-        let mut got = http.get("u", "b", ["x"]).unwrap();
-        assert!(got.body.read(&mut [0; 8]).is_err());
-        assert_eq!(budget.problem(), Some(RemoteProblem::TimedOut));
-        let _ = budget.charge(100);
-        assert_eq!(budget.problem(), Some(RemoteProblem::TimedOut));
-    }
-
-    #[test]
-    fn guard_sets_interrupt_at_deadline() {
-        let budget = Arc::new(Budget::new(limits(1, 50)));
-        let flag = Arc::new(AtomicBool::new(false));
-        let guard = DeadlineGuard::start(Arc::clone(&budget), Arc::clone(&flag)).unwrap();
-        assert!(!flag.load(Ordering::SeqCst));
-        let start = Instant::now();
-        while !flag.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(5) {
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        assert!(flag.load(Ordering::SeqCst), "interrupt not set after 5 s");
-        assert_eq!(budget.problem(), Some(RemoteProblem::TimedOut));
-        drop(guard);
-    }
-
-    #[test]
-    fn dropping_guard_ends_thread_without_interrupt() {
-        let budget = Arc::new(Budget::new(limits(1, 3_600_000)));
-        let flag = Arc::new(AtomicBool::new(false));
-        let guard = DeadlineGuard::start(Arc::clone(&budget), Arc::clone(&flag)).unwrap();
-        let start = Instant::now();
-        drop(guard);
-        assert!(
-            start.elapsed() < Duration::from_secs(2),
-            "drop waited for the deadline"
-        );
-        assert_eq!(
-            Arc::strong_count(&budget),
-            1,
-            "timer thread still holds the budget"
-        );
-        assert!(!flag.load(Ordering::SeqCst));
-        assert_eq!(budget.problem(), None);
-    }
-}
+mod tests;
