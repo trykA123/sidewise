@@ -11,6 +11,7 @@ use navo_core::Location;
 use navo_ui::compare_diff::CompareOptions;
 
 use super::convert::settings_from;
+use super::hash_cache::policy::session_cache;
 use super::pane::LocalTarget;
 use super::rules;
 use super::settings::{CompareSettings, network_cap};
@@ -120,6 +121,8 @@ enum Command {
 pub struct Opened {
     pub session: Session,
     pub refresh: Vec<Arc<dyn SideSource>>,
+    /// The cache the session uses; the pump flushes it.
+    pub cache: Arc<dyn HashCache>,
 }
 
 /// A running compare. Methods only queue a command and never block.
@@ -211,15 +214,20 @@ fn open_session(request: CompareStart) -> Result<Opened, CompareError> {
     let right = open_side(request.right, &mut refresh).map_err(CompareError::Right)?;
     let rules = rules::build(&*left, &*right, &request.settings)
         .map_err(|error| CompareError::Rules(error.to_string()))?;
+    let cache = session_cache(request.cache, left.is_network() || right.is_network());
     let options = SessionOptions {
         rules: Arc::new(rules),
-        cache: request.cache,
+        cache: Arc::clone(&cache),
         read_hint: ReadHint::Buffered,
         check_mode: request.settings.content_check,
         network_cap: Some(network_cap()),
     };
     let session = Session::start(left, right, options);
-    Ok(Opened { session, refresh })
+    Ok(Opened {
+        session,
+        refresh,
+        cache,
+    })
 }
 
 /// Opens one side on the session thread; an opener's side is also kept for `refresh`.
@@ -239,7 +247,15 @@ pub fn open_side(
 
 /// Runs until `Cancel`, a closed command channel or a closed event channel.
 /// Leaving drops the session here, which joins its workers off the UI thread.
-fn pump(mut opened: Opened, events: &Sender<CompareEvent>, inbox: &Receiver<Command>) {
+/// The cache is flushed after each final batch and once more when the session is gone.
+fn pump(opened: Opened, events: &Sender<CompareEvent>, inbox: &Receiver<Command>) {
+    let cache = Arc::clone(&opened.cache);
+    pump_batches(opened, events, inbox);
+    cache.flush();
+}
+
+/// The command and batch loop of `pump`; it drops the session when it returns.
+fn pump_batches(mut opened: Opened, events: &Sender<CompareEvent>, inbox: &Receiver<Command>) {
     let mut stopped = None;
     loop {
         if !run_commands(&mut opened, inbox) {
@@ -247,8 +263,12 @@ fn pump(mut opened: Opened, events: &Sender<CompareEvent>, inbox: &Receiver<Comm
         }
         match opened.session.batches().recv_timeout(POLL) {
             Ok(batch) => {
+                let is_final = batch.is_final;
                 if !forward_limit(events, &mut stopped, &batch) || !forward(events, batch) {
                     return;
+                }
+                if is_final {
+                    opened.cache.flush();
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}

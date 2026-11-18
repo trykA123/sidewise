@@ -3,9 +3,12 @@
 
 mod compact;
 pub mod file;
+pub mod policy;
 pub mod record;
 
 #[cfg(test)]
 mod file_tests;
 #[cfg(test)]
 mod record_tests;
+#[cfg(test)]
+mod reuse_tests;
