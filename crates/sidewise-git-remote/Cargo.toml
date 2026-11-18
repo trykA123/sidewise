@@ -12,6 +12,11 @@ sidewise-core = { path = "../sidewise-core" }
 sidewise-engine = { path = "../sidewise-engine" }
 sidewise-git = { path = "../sidewise-git" }
 sidewise-git-address = { path = "../sidewise-git-address" }
+gix = { version = "=0.90.0", default-features = false, features = ["sha1", "revision", "parallel", "blocking-network-client"] }
+gix-transport = { version = "=0.62.0", default-features = false, features = ["http-client"] }
+
+[dev-dependencies]
+tempfile = "=3.27.0"
 
 [lints]
 workspace = true
