@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use navo_compare::model::{ContentKey, HashCache};
 use navo_core::{FileIdentity, FileIdentityKind, ProviderId, ProviderPath};
 
-use super::file::{CacheMode, FileHashes};
+use super::file::{CacheMode, FileHashes, Limits};
 use super::record::{MAGIC, encode, key_digest};
 
 /// A local key for `name`, modified an hour ago, with a native identity.
@@ -311,4 +311,87 @@ fn a_failed_append_stops_writing() {
     store.put(&key("bb"), [2; 32]);
     drop(store);
     assert!(!path.exists(), "a failed writer never writes again");
+}
+
+/// Limits small enough to test: keep 4 rows at open, refuse new keys at 5.
+const SMALL: Limits = Limits {
+    cap_rows: 4,
+    ceiling_rows: 5,
+};
+
+#[test]
+fn over_the_cap_keeps_the_newest_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = cache_path(&dir);
+    let keys: Vec<_> = (1..=6).map(|n| key(&"k".repeat(n))).collect();
+    let mut bytes = vec![MAGIC.to_vec()];
+    bytes.extend(keys.iter().map(|k| row(k, [1; 32])));
+    bytes.push(row(&keys[0], [9; 32]));
+    write_file(&path, &bytes.concat());
+    let store = FileHashes::open_with(&path, SMALL);
+    assert_eq!(store.mode(), CacheMode::Writer);
+    assert_eq!(store.len(), 4);
+    assert_eq!(store.get(&keys[0]), Some([9; 32]), "a rewritten key is new");
+    assert_eq!(store.get(&keys[1]), None);
+    assert_eq!(store.get(&keys[2]), None);
+    let mut kept = vec![MAGIC.to_vec()];
+    kept.extend(keys[3..].iter().map(|k| row(k, [1; 32])));
+    kept.push(row(&keys[0], [9; 32]));
+    assert_eq!(fs::read(&path).unwrap(), kept.concat());
+    assert!(!temp_exists(&path));
+}
+
+#[test]
+fn the_ceiling_stops_new_keys_in_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = cache_path(&dir);
+    let keys: Vec<_> = (1..=6).map(|n| key(&"k".repeat(n))).collect();
+    let store = FileHashes::open_with(&path, SMALL);
+    for k in &keys {
+        store.put(k, [1; 32]);
+    }
+    assert_eq!(store.len(), 5);
+    assert_eq!(store.get(&keys[5]), None, "the sixth key is refused");
+    store.put(&keys[0], [2; 32]);
+    assert_eq!(
+        store.get(&keys[0]),
+        Some([2; 32]),
+        "a known key still updates"
+    );
+    store.flush();
+    let mut expected = vec![MAGIC.to_vec()];
+    expected.extend(keys[..5].iter().map(|k| row(k, [1; 32])));
+    expected.push(row(&keys[0], [2; 32]));
+    assert_eq!(fs::read(&path).unwrap(), expected.concat());
+}
+
+#[test]
+fn a_log_of_stale_repeats_is_compacted() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = cache_path(&dir);
+    let (a, b) = (key("a"), key("bb"));
+    let repeats = |count: usize| {
+        let mut bytes = vec![MAGIC.to_vec(), row(&b, [7; 32])];
+        bytes.extend((0..count).map(|n| row(&a, [(n % 200) as u8; 32])));
+        bytes.concat()
+    };
+    // 2 live rows allow 2 * 2 + 4096 = 4100 records: one under the limit, then one over.
+    let at_limit = repeats(4099);
+    write_file(&path, &at_limit);
+    drop(FileHashes::open(&path));
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        at_limit,
+        "at the limit the log stays"
+    );
+    write_file(&path, &repeats(4100));
+    let store = FileHashes::open(&path);
+    assert_eq!(store.get(&a), Some([(4099 % 200) as u8; 32]));
+    assert_eq!(store.get(&b), Some([7; 32]));
+    let compact = [
+        MAGIC.to_vec(),
+        row(&b, [7; 32]),
+        row(&a, [(4099 % 200) as u8; 32]),
+    ];
+    assert_eq!(fs::read(&path).unwrap(), compact.concat());
 }

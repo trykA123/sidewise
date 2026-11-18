@@ -10,7 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use navo_compare::model::{ContentKey, HashCache};
 
-use super::compact::rewrite;
+pub use super::compact::Limits;
+use super::compact::{keep_newest, needs_rewrite, rewrite};
 use super::record::{self, Digest, MAGIC, RECORD_LEN};
 
 /// How a store keeps its rows.
@@ -27,6 +28,8 @@ pub enum CacheMode {
 /// Content hashes keyed by file digest, kept in memory and, for the writer, in a file.
 pub struct FileHashes {
     path: Option<PathBuf>,
+    /// Rows at which `put` stops adding new keys.
+    ceiling_rows: usize,
     state: Mutex<State>,
 }
 
@@ -57,9 +60,14 @@ const FLUSH_RECORDS: usize = 1024;
 const RACY_MS: i64 = 10_000;
 
 impl FileHashes {
-    /// Opens the cache at `path`. Never fails: problems are logged and the store falls back to
-    /// reader or memory mode.
+    /// Opens the cache at `path` with the default limits; see `open_with`.
     pub fn open(path: &Path) -> Self {
+        Self::open_with(path, Limits::DEFAULT)
+    }
+
+    /// Opens the cache at `path`, keeping at most `limits.cap_rows` rows. Never fails:
+    /// problems are logged and the store falls back to reader or memory mode.
+    pub fn open_with(path: &Path, limits: Limits) -> Self {
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -69,29 +77,14 @@ impl FileHashes {
             return Self::memory();
         }
         let mut writer = take_lock(path);
-        let replay = match fs::read(path) {
-            Ok(bytes) => record::replay(&bytes),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => record::replay(&[]),
-            Err(error) => {
-                tracing::warn!(%error, path = %path.display(), "hash cache unreadable");
-                record::Replay::default()
-            }
-        };
-        let mut rows = HashMap::with_capacity(replay.rows.len());
-        let mut next_seq = 0;
-        for (key, hash) in replay.rows {
-            rows.insert(
-                key,
-                Row {
-                    hash,
-                    seq: next_seq,
-                },
-            );
-            next_seq += 1;
-        }
+        let replay = read_log(path);
         let damaged = !replay.header_ok || replay.bad > 0 || replay.torn;
+        let records = replay.rows.len() + replay.bad;
+        let (mut rows, next_seq) = index_rows(replay.rows);
+        let stale = needs_rewrite(records, rows.len(), limits);
+        keep_newest(&mut rows, limits.cap_rows);
         if writer.is_some()
-            && damaged
+            && (damaged || stale)
             && let Err(error) = rewrite(path, &rows)
         {
             tracing::warn!(%error, path = %path.display(), "hash cache rewrite failed; not writing");
@@ -99,6 +92,7 @@ impl FileHashes {
         }
         Self {
             path: Some(path.to_path_buf()),
+            ceiling_rows: limits.ceiling_rows,
             state: Mutex::new(State {
                 rows,
                 next_seq,
@@ -112,6 +106,7 @@ impl FileHashes {
     pub fn memory() -> Self {
         Self {
             path: None,
+            ceiling_rows: Limits::DEFAULT.ceiling_rows,
             state: Mutex::new(State {
                 rows: HashMap::new(),
                 next_seq: 0,
@@ -163,6 +158,37 @@ impl FileHashes {
         }
         pending.clear();
     }
+}
+
+/// Reads and replays the log at `path`; a missing file is an empty log, and an unreadable
+/// one (logged) replays as a bad header, so a writer rewrites it.
+fn read_log(path: &Path) -> record::Replay {
+    match fs::read(path) {
+        Ok(bytes) => record::replay(&bytes),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => record::replay(&[]),
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "hash cache unreadable");
+            record::Replay::default()
+        }
+    }
+}
+
+/// Builds the row map from replayed records in file order; a later record for a key wins
+/// and takes the later `seq`. Returns the map and the next free `seq`.
+fn index_rows(records: Vec<(Digest, Digest)>) -> (HashMap<Digest, Row>, u64) {
+    let mut rows = HashMap::with_capacity(records.len());
+    let mut next_seq = 0;
+    for (key, hash) in records {
+        rows.insert(
+            key,
+            Row {
+                hash,
+                seq: next_seq,
+            },
+        );
+        next_seq += 1;
+    }
+    (rows, next_seq)
 }
 
 /// Appends `bytes` to the log at `path`, opening it on first use and writing `MAGIC` into
@@ -228,7 +254,8 @@ impl HashCache for FileHashes {
     }
 
     /// Stores `hash` for a settled file; a writer buffers the record and appends at
-    /// `FLUSH_RECORDS`. An untrusted key, a racy time or an unchanged row stores nothing.
+    /// `FLUSH_RECORDS`. An untrusted key, a racy time, an unchanged row or a new key at
+    /// the ceiling stores nothing.
     fn put(&self, key: &ContentKey, hash: [u8; 32]) {
         let Some(digest) = record::key_digest(key) else {
             return;
@@ -237,8 +264,10 @@ impl HashCache for FileHashes {
             return;
         }
         let mut state = self.state();
-        if state.rows.get(&digest).is_some_and(|row| row.hash == hash) {
-            return;
+        match state.rows.get(&digest) {
+            Some(row) if row.hash == hash => return,
+            None if state.rows.len() >= self.ceiling_rows => return,
+            _ => {}
         }
         let seq = state.next_seq;
         state.next_seq += 1;
