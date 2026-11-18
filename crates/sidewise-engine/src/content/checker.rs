@@ -1,5 +1,7 @@
 //! Content comparison with validated file stamps and cached hashes.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use blake3::Hasher;
 
 use crate::model::{
@@ -15,6 +17,10 @@ use super::stream::{Counts, Stream, probe_zero_sizes};
 use super::{CheckOptions, ContentProgress, ContentResult, LARGE_CONTENT_THRESHOLD, Side};
 
 type CachedHashes = (Option<[u8; 32]>, Option<[u8; 32]>);
+
+/// A file modified less than this many ms before its check began may still be written
+/// (git's "racy clean"), so its hash is not stored.
+const RACY_MS: i64 = 10_000;
 
 #[derive(Clone, Copy)]
 pub(super) struct Sides<'a> {
@@ -60,6 +66,7 @@ pub fn check(
         cancel: options.cancel,
         read_hint: options.read_hint,
         known_same: options.known_same,
+        started_ms: now_ms(),
         left_stamp: Stamp::default(),
         right_stamp: Stamp::default(),
         progress,
@@ -72,6 +79,7 @@ struct Checker<'a, 'b> {
     cancel: &'a CancelToken,
     read_hint: ReadHint,
     known_same: bool,
+    started_ms: Option<i64>,
     left_stamp: Stamp,
     right_stamp: Stamp,
     progress: &'b mut dyn FnMut(ContentProgress),
@@ -305,7 +313,7 @@ impl Checker<'_, '_> {
         if digest.hash != cached.hash {
             return None;
         }
-        self.cache.put(cached.key, digest.hash);
+        self.store(cached.key, digest.hash);
         Some(outcome(Status::Same, class(digest.saw_nul)))
     }
 
@@ -322,8 +330,8 @@ impl Checker<'_, '_> {
         hashers: (&Hasher, &Hasher),
         saw_nul: bool,
     ) -> ContentResult {
-        self.cache.put(keys.0, *hashers.0.finalize().as_bytes());
-        self.cache.put(keys.1, *hashers.1.finalize().as_bytes());
+        self.store(keys.0, *hashers.0.finalize().as_bytes());
+        self.store(keys.1, *hashers.1.finalize().as_bytes());
         outcome(Status::Same, class(saw_nul))
     }
 
@@ -345,10 +353,26 @@ impl Checker<'_, '_> {
         }
     }
 
+    /// Stores `hash` only when the file was modified at least `RACY_MS` before the check
+    /// began; a missing time or an unreadable clock stores nothing.
+    fn store(&self, key: &ContentKey, hash: [u8; 32]) {
+        if let (Some(modified), Some(started)) = (key.modified, self.started_ms)
+            && modified <= started.saturating_sub(RACY_MS)
+        {
+            self.cache.put(key, hash);
+        }
+    }
+
     fn report(&mut self, done: u64, total: u64) {
         (self.progress)(ContentProgress {
             bytes_done: done.min(total),
             bytes_total: total,
         });
     }
+}
+
+/// The wall clock in ms since the epoch; `None` when the clock is before 1970 or too large.
+fn now_ms() -> Option<i64> {
+    let since = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+    i64::try_from(since.as_millis()).ok()
 }

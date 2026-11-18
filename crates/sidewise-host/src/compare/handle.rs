@@ -247,7 +247,7 @@ pub fn open_side(
 
 /// Runs until `Cancel`, a closed command channel or a closed event channel.
 /// Leaving drops the session here, which joins its workers off the UI thread.
-/// The cache is flushed after each final batch and once more when the session is gone.
+/// The cache is flushed before each final batch is sent and once more when the session is gone.
 fn pump(opened: Opened, events: &Sender<CompareEvent>, inbox: &Receiver<Command>) {
     let cache = Arc::clone(&opened.cache);
     pump_batches(opened, events, inbox);
@@ -263,12 +263,12 @@ fn pump_batches(mut opened: Opened, events: &Sender<CompareEvent>, inbox: &Recei
         }
         match opened.session.batches().recv_timeout(POLL) {
             Ok(batch) => {
-                let is_final = batch.is_final;
+                // Flush first, so a listener that reopens the store after `Finished` sees the rows.
+                if batch.is_final {
+                    opened.cache.flush();
+                }
                 if !forward_limit(events, &mut stopped, &batch) || !forward(events, batch) {
                     return;
-                }
-                if is_final {
-                    opened.cache.flush();
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}

@@ -11,6 +11,8 @@ mod clear_tests;
 #[cfg(test)]
 mod file_tests;
 #[cfg(test)]
+mod flush_tests;
+#[cfg(test)]
 mod record_tests;
 #[cfg(test)]
 mod reuse_tests;
