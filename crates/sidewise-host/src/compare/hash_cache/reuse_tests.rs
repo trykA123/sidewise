@@ -9,10 +9,12 @@ use std::time::{Duration, Instant, SystemTime};
 use navo_compare::model::{ContentKey, HashCache};
 use navo_compare::session::Totals;
 use navo_core::{Location, ProviderPath};
+use navo_ui::browser::{CompareHooks, CompareSink, CompareUpdate};
 use navo_ui::compare_diff::CompareOptions;
 
 use super::file::FileHashes;
-use crate::compare::handle::{CompareEvent, CompareHandle, CompareStart, CompareTarget};
+use crate::compare::handle::{CompareEvent, CompareHandle, CompareStart, CompareTarget, std_local};
+use crate::compare::pane::PaneCompare;
 
 const WAIT: Duration = Duration::from_secs(20);
 
@@ -21,6 +23,7 @@ struct Counting {
     inner: Arc<dyn HashCache>,
     hits: AtomicUsize,
     flushes: AtomicUsize,
+    puts: AtomicUsize,
 }
 
 impl Counting {
@@ -29,6 +32,7 @@ impl Counting {
             inner,
             hits: AtomicUsize::new(0),
             flushes: AtomicUsize::new(0),
+            puts: AtomicUsize::new(0),
         })
     }
 }
@@ -43,6 +47,7 @@ impl HashCache for Counting {
     }
 
     fn put(&self, key: &ContentKey, hash: [u8; 32]) {
+        self.puts.fetch_add(1, Ordering::SeqCst);
         self.inner.put(key, hash);
     }
 
@@ -125,4 +130,41 @@ fn stored_hashes_answer_a_second_run() {
     let totals = run_once(&left, &right, second.clone());
     assert_eq!(totals.same, 3);
     assert_eq!(second.hits.load(Ordering::SeqCst), 6);
+}
+
+/// Starts a pane compare of two folders and waits for `Finished` on the sink.
+fn pane_run(left: &Path, right: &Path, cache: Arc<dyn HashCache>, fresh_hashes: bool) {
+    let (sender, receiver) = mpsc::channel();
+    let sink: CompareSink = Arc::new(move |update| {
+        if matches!(update, CompareUpdate::Finished { .. }) {
+            let _ = sender.send(());
+        }
+    });
+    let options = CompareOptions {
+        fresh_hashes,
+        ..CompareOptions::default()
+    };
+    let hooks = PaneCompare::new(cache, std_local());
+    let _control = hooks.start((&loc(left), &loc(right)), &options, sink);
+    receiver.recv_timeout(WAIT).expect("compare finishes");
+}
+
+#[test]
+fn a_recheck_start_misses_every_stored_hash() {
+    let dir = tempfile::tempdir().unwrap();
+    let (left, right) = (dir.path().join("l"), dir.path().join("r"));
+    fs::create_dir_all(&left).unwrap();
+    fs::create_dir_all(&right).unwrap();
+    let files: [(&str, &[u8]); 2] = [("a", b"one"), ("b", b"two")];
+    old_tree(&left, &files);
+    old_tree(&right, &files);
+    let store: Arc<dyn HashCache> = Arc::new(FileHashes::memory());
+    run_once(&left, &right, store.clone());
+    let fresh = Counting::new(store.clone());
+    pane_run(&left, &right, fresh.clone(), true);
+    assert_eq!(fresh.hits.load(Ordering::SeqCst), 0);
+    assert!(fresh.puts.load(Ordering::SeqCst) > 0);
+    let reuse = Counting::new(store);
+    pane_run(&left, &right, reuse.clone(), false);
+    assert!(reuse.hits.load(Ordering::SeqCst) > 0);
 }
