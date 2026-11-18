@@ -4,6 +4,7 @@
 pub mod compare_host;
 #[cfg(test)]
 mod compare_host_tests;
+mod compare_labels;
 pub mod compare_roots;
 #[cfg(test)]
 mod compare_roots_tests;
