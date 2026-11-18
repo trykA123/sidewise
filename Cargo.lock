@@ -7971,6 +7971,7 @@ dependencies = [
 name = "sidewise-git-remote"
 version = "0.1.0-alpha.4"
 dependencies = [
+ "blake3",
  "gix",
  "gix-transport",
  "sidewise-core",
