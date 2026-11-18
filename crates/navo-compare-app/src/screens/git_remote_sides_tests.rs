@@ -12,7 +12,7 @@ use sidewise_git_remote::{Cache, RemoteProblem, RemoteRev, RemoteUrl};
 use sidewise_host::compare::handle::{CompareTarget, OpenFailure};
 use tempfile::TempDir;
 
-use super::super::git_sides::{GitSides, side_fn, target_for};
+use super::super::git_sides::GitSides;
 use super::{Fetch, remote_cache, remote_side_with, target_with};
 
 /// A remote address that never resolves: the tests never reach the network.
@@ -178,6 +178,8 @@ fn there_is_one_remote_cache_per_process() {
 #[cfg(not(windows))]
 #[test]
 fn the_hooks_route_a_remote_location_and_it_is_unsupported_off_windows() {
+    use super::super::git_sides::{side_fn, target_for};
+
     let sides = Arc::new(GitSides::isolated());
     let opened = open(target_for(Arc::clone(&sides))(&location("main")));
     assert_eq!(
