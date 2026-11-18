@@ -1,21 +1,20 @@
 //! The start screen: two side fields with live hints, the Compare button and the recent rows.
 //! It checks typed sides off the UI thread (NS12) and emits events; the launch atom listens later.
 
-use std::cell::Cell;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::{
     AppContext as _, EventEmitter, FocusHandle, Focusable as _, KeyBinding, Subscription, Task,
 };
-use navo_compare_cli::args::{self, SideSpec};
+use navo_compare_cli::args::SideSpec;
 use navo_compare_profile::recent::StartRows;
 use sidewise_kit::prelude::*;
 use sidewise_kit::primitives::{TextFieldState, text_field_state};
 
 use crate::menu_host::MenuSlot;
-use crate::start_git::git_hint;
+use crate::start_git::probe;
 use crate::start_menu::{CopyPaths, ForgetSelected, ShowRowMenu};
 use crate::start_rows::{LIST_CONTEXT, RowBounds, row_at, row_count};
 use crate::start_tabs::{StartChoice, StartMode, StartTabs};
@@ -95,22 +94,6 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("delete", ForgetSelected, Some(LIST_CONTEXT)),
         KeyBinding::new("shift-f10", ShowRowMenu, Some(LIST_CONTEXT)),
     ]);
-}
-
-/// Classifies one typed side against the disk (NS3, NS17); blocks, so it runs off the UI thread.
-/// A path that does not exist, and a `repo@` with no revision, give `NotFound`.
-fn probe(text: &str, cwd: &Path) -> SideHint {
-    let found = Cell::new(false);
-    let exists = |path: &Path| {
-        let answer = path.exists();
-        found.set(found.get() || answer);
-        answer
-    };
-    match args::side(text, cwd, &exists) {
-        Ok(spec @ SideSpec::GitRev { .. }) => git_hint(spec),
-        Ok(spec @ SideSpec::Path(_)) if found.get() => SideHint::Path(spec),
-        Ok(SideSpec::Path(_)) | Err(_) => SideHint::NotFound,
-    }
 }
 
 /// The side a good hint stands for: a path that exists or a git revision that resolved.

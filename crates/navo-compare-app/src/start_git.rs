@@ -1,9 +1,28 @@
 //! The Start screen's Git probe: opens the typed repository and resolves its revision.
-//! It blocks, so `start::probe` calls it only from the off-thread side check (NC195).
+//! It blocks, so the Start screen calls `probe` only from the off-thread side check (NC195).
 
-use navo_compare_cli::args::SideSpec;
+use std::cell::Cell;
+use std::path::Path;
+
+use navo_compare_cli::args::{self, SideSpec};
 
 use crate::start::SideHint;
+
+/// Classifies one typed side against the disk (NS3, NS17); blocks, so it runs off the UI thread.
+/// A path that does not exist, and a `repo@` with no revision, give `NotFound`.
+pub(crate) fn probe(text: &str, cwd: &Path) -> SideHint {
+    let found = Cell::new(false);
+    let exists = |path: &Path| {
+        let answer = path.exists();
+        found.set(found.get() || answer);
+        answer
+    };
+    match args::side(text, cwd, &exists) {
+        Ok(spec @ SideSpec::GitRev { .. }) => git_hint(spec),
+        Ok(spec @ SideSpec::Path(_)) if found.get() => SideHint::Path(spec),
+        Ok(SideSpec::Path(_)) | Err(_) => SideHint::NotFound,
+    }
+}
 
 /// Resolves a `repo@rev` side: `GitRef` when the revision names one commit, else the problem.
 pub(crate) fn git_hint(spec: SideSpec) -> SideHint {
