@@ -185,3 +185,46 @@ fn abs_root(name: &str) -> PathBuf {
         PathBuf::from(format!("/{name}"))
     }
 }
+
+/// Whether the Folders view holds the focus.
+fn view_focused(
+    cx: &mut TestAppContext,
+    window: AnyWindowHandle,
+    view: &gpui_kit::Entity<FoldersView>,
+) -> bool {
+    cx.update_window(window, |_, w, cx| view.read(cx).focus.is_focused(w))
+        .expect("window")
+}
+
+/// A mouse-chosen Copy left path gives the focus back to the tree and keeps the cursor line.
+#[gpui_kit::test]
+fn copy_by_mouse_refocuses_the_tree(cx: &mut TestAppContext) {
+    let (window, view) = right_click_the_left_only_file(cx);
+    cx.update_window(window, |_, w, cx| {
+        w.render_frame(cx);
+        w.within("context-menu")
+            .within(("menu-level", 0usize))
+            .click(("menu-row", 3usize), cx);
+    })
+    .expect("window");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |view, _| view.menu.is_none()));
+    let text = cx.read_from_clipboard().and_then(|item| item.text());
+    let want = abs_root("left").join("a").join("b").join("y.txt");
+    assert_eq!(text.as_deref(), want.to_str());
+    assert!(
+        view_focused(cx, window, &view),
+        "the tree had the focus when the menu opened"
+    );
+    cx.update(|cx| assert_eq!(view.read(cx).selected_path().as_deref(), Some("a/b/y.txt")));
+}
+
+/// Escape closes the Folders menu and gives the focus back to the tree.
+#[gpui_kit::test]
+fn escape_refocuses_the_tree(cx: &mut TestAppContext) {
+    let (window, view) = right_click_the_left_only_file(cx);
+    cx.simulate_keystrokes(window, "escape");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |view, _| view.menu.is_none()));
+    assert!(view_focused(cx, window, &view));
+}

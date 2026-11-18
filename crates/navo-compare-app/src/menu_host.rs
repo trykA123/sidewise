@@ -27,7 +27,8 @@ pub enum MenuLine {
 pub type MenuSlot = Option<(Entity<ContextMenu>, Subscription)>;
 
 /// Where and for whom a menu opens: the anchor, the focus that gets the chosen action, a title.
-/// A menu closed without a choice gives the focus back to whatever held it when it opened.
+/// A closed menu gives the focus back to whatever held it when it opened, unless a chosen action
+/// moved it.
 pub struct MenuAt {
     pub anchor: Point<Pixels>,
     pub focus: FocusHandle,
@@ -93,7 +94,8 @@ fn to_entries(lines: &[MenuLine]) -> Vec<MenuEntry> {
 }
 
 /// Reacts to the menu: ignores a submenu opening; else closes it, then runs a chosen action on
-/// `focus[0]` after `window.defer`, or gives the focus back to `focus[1]` (held before opening).
+/// `focus[0]` after `window.defer`. The focus then goes back to `focus[1]` (held before opening),
+/// unless the action moved it elsewhere.
 fn on_event<V: 'static>(
     host: &mut V,
     (event, [focus, back], slot): (&ContextMenuEvent, &[FocusHandle; 2], SlotOf<V>),
@@ -111,10 +113,14 @@ fn on_event<V: 'static>(
     let Ok(action) = cx.build_action(name, None) else {
         return window.focus(back, cx);
     };
-    let focus = focus.clone();
+    let (focus, back) = (focus.clone(), back.clone());
     window.defer(cx, move |window, cx| {
         window.focus(&focus, cx);
         focus.dispatch_action(action.as_ref(), window, cx);
+        // A command that moved the focus (Open) keeps it; else the opener gets it back.
+        if focus != back && focus.is_focused(window) {
+            window.focus(&back, cx);
+        }
     });
 }
 

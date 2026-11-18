@@ -90,3 +90,53 @@ fn a_named_row_dims_remove(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(enabled(cx, &s), [true, true, false]);
 }
+
+/// Clicks line `line` of the open menu with the left button and settles.
+fn click_line(cx: &mut TestAppContext, window: AnyWindowHandle, line: usize) {
+    cx.update_window(window, |_, w, cx| {
+        w.render_frame(cx);
+        w.within("context-menu")
+            .within(("menu-level", 0usize))
+            .click(("menu-row", line), cx);
+    })
+    .expect("window");
+    cx.run_until_parked();
+}
+
+/// Whether the row list holds the focus.
+fn list_focused(cx: &mut TestAppContext, s: &Screen) -> bool {
+    cx.update_window(s.0, |_, w, cx| s.1.read(cx).list_focus.is_focused(w))
+        .expect("window")
+}
+
+/// A mouse-chosen Copy paths gives the focus back to the row list and keeps the selection.
+#[gpui_kit::test]
+fn copy_paths_by_mouse_refocuses_the_list(cx: &mut TestAppContext) {
+    let (s, _dir) = setup(cx, "menu-copy-focus");
+    act(cx, &s, |screen, window, cx| screen.enter_list(window, cx));
+    right_click(cx, s.0, 1);
+    cx.run_until_parked();
+    click_line(cx, s.0, 1);
+    assert!(s.1.read_with(cx, |screen, _| screen.menu.is_none()));
+    let copied = cx.read_from_clipboard().and_then(|item| item.text());
+    assert_eq!(copied.as_deref(), Some("c\nd"));
+    assert!(
+        list_focused(cx, &s),
+        "the list had the focus when the menu opened"
+    );
+    assert_eq!(s.1.read_with(cx, |screen, _| screen.selected), Some(1));
+}
+
+/// Escape closes the menu and gives the focus back to the row list.
+#[gpui_kit::test]
+fn escape_refocuses_the_list(cx: &mut TestAppContext) {
+    let (s, _dir) = setup(cx, "menu-escape-focus");
+    act(cx, &s, |screen, window, cx| screen.enter_list(window, cx));
+    right_click(cx, s.0, 1);
+    cx.run_until_parked();
+    cx.simulate_keystrokes(s.0, "escape");
+    cx.run_until_parked();
+    assert!(s.1.read_with(cx, |screen, _| screen.menu.is_none()));
+    assert!(list_focused(cx, &s));
+    assert_eq!(s.1.read_with(cx, |screen, _| screen.selected), Some(1));
+}

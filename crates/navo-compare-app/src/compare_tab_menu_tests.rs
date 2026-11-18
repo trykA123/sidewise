@@ -152,3 +152,48 @@ fn the_menu_key_opens_the_menu_inside_the_compare_screen(cx: &mut TestAppContext
         "the menu row {row:?} starts inside the main pane {pane:?}"
     );
 }
+
+/// Whether the file diff holds the focus and no menu does.
+fn diff_focused(cx: &mut TestAppContext, opened: &Opened) -> bool {
+    cx.update_window(opened.0, |_, window, _| {
+        let stack = window.context_stack();
+        let has = |name| stack.iter().any(|context| context.contains(name));
+        has("CompareView") && !has("ContextMenu")
+    })
+    .expect("window")
+}
+
+/// A mouse-chosen Previous changed file (one file: it stays) in the diff menu closes it with the focus back on the diff.
+#[gpui_kit::test]
+fn a_mouse_chosen_line_gives_the_focus_back_to_the_diff(cx: &mut TestAppContext) {
+    let (opened, _dirs) = walked(cx, "dc");
+    cx.update(crate::screens::compare_host::bind_compare_keys);
+    cx.simulate_keystrokes(opened.0, "enter");
+    cx.run_until_parked();
+    cx.simulate_keystrokes(opened.0, "shift-f10");
+    cx.run_until_parked();
+    let menu = screen(cx, &opened).read_with(cx, |screen, _| screen.compare_menu_view());
+    let line = menu.expect("open menu").read_with(cx, |menu, _| {
+        let items = &menu.menu().items;
+        let texts: Vec<_> = items.iter().map(|item| item.text.clone()).collect();
+        let at = items
+            .iter()
+            .position(|item| item.text.contains("Previous changed file"));
+        at.ok_or(texts)
+    });
+    let line = line.expect("a Previous changed file line");
+    cx.update_window(opened.0, |_, window, cx| {
+        window.render_frame(cx);
+        window
+            .within("context-menu")
+            .within(("menu-level", 0usize))
+            .click(("menu-row", line), cx);
+    })
+    .expect("window");
+    cx.run_until_parked();
+    assert!(!menu_open(cx, &opened), "the click closes the menu");
+    assert!(
+        diff_focused(cx, &opened),
+        "the diff had the focus when the menu opened"
+    );
+}
