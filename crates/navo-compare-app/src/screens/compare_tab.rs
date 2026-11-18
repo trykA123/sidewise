@@ -22,7 +22,7 @@ use super::compare_tab_large::large_timer;
 use super::folders_head::SideRoot;
 use super::folders_view::FoldersView;
 use super::git_sides::{shared_sides, target_for};
-use super::host_parts::NoHashes;
+use super::host_parts::SharedHashes;
 use super::large_view::LargeView;
 use crate::layers::toast;
 use crate::start_tabs::StartChoice;
@@ -65,7 +65,7 @@ impl Global for CompareHooks {}
 /// Sets the app's one `Arc<PaneCompare>` global, over the shared Git sides; `window::run` calls it once, tests call it before opening a shell.
 pub fn install_compare_hooks(cx: &mut App) {
     cx.set_global(CompareHooks(Arc::new(PaneCompare::new(
-        Arc::new(NoHashes),
+        Arc::new(SharedHashes),
         target_for(shared_sides()),
     ))));
 }
