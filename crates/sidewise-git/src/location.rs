@@ -90,7 +90,7 @@ pub fn encode(repo: &Path, rev: &str, form: Form) -> Result<Location, LocationEr
 }
 
 /// Appends `text` to `out`, escaping `%` and `@`, and `/` when `slash` is set.
-fn encode_part(text: &str, slash: bool, out: &mut String) {
+pub fn encode_part(text: &str, slash: bool, out: &mut String) {
     for character in text.chars() {
         match character {
             '%' => out.push_str("%25"),
@@ -133,7 +133,7 @@ pub fn parse(location: &Location) -> Result<GitAt, ParseError> {
 
 /// Percent-decodes `text` into a UTF-8 string.
 /// Fails with `BadEscape` for a malformed escape and `InvalidUtf8` for non-UTF-8 bytes.
-fn decode(text: &str) -> Result<String, ParseError> {
+pub fn decode(text: &str) -> Result<String, ParseError> {
     let bytes = text.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut at = 0;

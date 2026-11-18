@@ -7817,6 +7817,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sidewise-git-remote"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "sidewise-core",
+ "sidewise-git",
+ "sidewise-git-address",
+]
+
+[[package]]
 name = "sidewise-host"
 version = "0.1.0-alpha.4"
 dependencies = [

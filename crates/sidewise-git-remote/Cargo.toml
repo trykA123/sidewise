@@ -1,0 +1,16 @@
+# The sidewise-git-remote crate: remote Git sides for Sidewise (this atom: the location form only).
+[package]
+name = "sidewise-git-remote"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+sidewise-core = { path = "../sidewise-core" }
+sidewise-git = { path = "../sidewise-git" }
+sidewise-git-address = { path = "../sidewise-git-address" }
+
+[lints]
+workspace = true
