@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 sidewise-core = { path = "../sidewise-core" }
+sidewise-engine = { path = "../sidewise-engine" }
 sidewise-git = { path = "../sidewise-git" }
 sidewise-git-address = { path = "../sidewise-git-address" }
 
