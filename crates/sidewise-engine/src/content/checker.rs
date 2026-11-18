@@ -1,7 +1,5 @@
 //! Content comparison with validated file stamps and cached hashes.
 
-use std::io::Read;
-
 use blake3::Hasher;
 
 use crate::model::{
@@ -11,102 +9,23 @@ use crate::model::{
 use super::hash::{block_for, update};
 use super::read::{
     changed, check_kinds, check_object_ids, class, content_key, different, different_class,
-    finish_side, first_difference, open_pair, outcome, probe_zero_size, read_block, read_pair,
-    stamp_matches, stopped, unavailable,
+    finish_side, first_difference, outcome, read_block, stamp_matches, stopped, unavailable,
 };
+use super::stream::{Counts, Stream, probe_zero_sizes};
 use super::{CheckOptions, ContentProgress, ContentResult, LARGE_CONTENT_THRESHOLD, Side};
 
 type CachedHashes = (Option<[u8; 32]>, Option<[u8; 32]>);
 
 #[derive(Clone, Copy)]
-struct Sides<'a> {
-    left: Side<'a>,
-    right: Side<'a>,
+pub(super) struct Sides<'a> {
+    pub(super) left: Side<'a>,
+    pub(super) right: Side<'a>,
 }
 
 #[derive(Clone, Copy)]
 struct Cached<'a> {
     key: &'a ContentKey,
     hash: [u8; 32],
-}
-
-#[derive(Clone, Copy)]
-struct Counts {
-    done: u64,
-    total: u64,
-}
-
-impl Counts {
-    const fn new(total: u64) -> Self {
-        Self { done: 0, total }
-    }
-
-    fn add(&mut self, read: usize, block: usize) -> bool {
-        self.done = self
-            .done
-            .saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
-        self.done > self.total || (read < block && self.done != self.total)
-    }
-}
-
-fn probe_zero_sizes(
-    left: Side<'_>,
-    right: Side<'_>,
-) -> Result<(Option<Stamp>, Option<Stamp>), ContentResult> {
-    let left_stamp = probe_zero_size(left).map_err(unavailable)?;
-    let right_stamp = probe_zero_size(right).map_err(unavailable)?;
-    Ok((left_stamp, right_stamp))
-}
-
-struct Stream {
-    left_reader: Box<dyn Read + Send>,
-    right_reader: Box<dyn Read + Send>,
-    left_buffer: Vec<u8>,
-    right_buffer: Vec<u8>,
-    left_counts: Counts,
-    right_counts: Counts,
-}
-
-struct Step {
-    left: usize,
-    right: usize,
-    left_eof: bool,
-    right_eof: bool,
-}
-
-impl Stream {
-    fn open(sides: Sides<'_>, hint: ReadHint) -> Result<Self, ContentResult> {
-        let (left_reader, right_reader) = open_pair(sides.left, sides.right, hint)?;
-        let block = block_for(sides.left.entry.size);
-        Ok(Self {
-            left_reader,
-            right_reader,
-            left_buffer: vec![0u8; block],
-            right_buffer: vec![0u8; block],
-            left_counts: Counts::new(sides.left.entry.size),
-            right_counts: Counts::new(sides.right.entry.size),
-        })
-    }
-
-    fn step(&mut self) -> Result<Step, ContentResult> {
-        let (left, right) = read_pair(
-            &mut *self.left_reader,
-            &mut *self.right_reader,
-            &mut self.left_buffer,
-            &mut self.right_buffer,
-        )?;
-        let left_changed = self.left_counts.add(left, self.left_buffer.len());
-        let right_changed = self.right_counts.add(right, self.right_buffer.len());
-        if left_changed || right_changed {
-            return Err(changed());
-        }
-        Ok(Step {
-            left,
-            right,
-            left_eof: left < self.left_buffer.len(),
-            right_eof: right < self.right_buffer.len(),
-        })
-    }
 }
 
 #[derive(Clone, Copy)]
