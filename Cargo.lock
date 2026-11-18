@@ -7810,6 +7810,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sidewise-git-address"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "blake3",
+]
+
+[[package]]
 name = "sidewise-host"
 version = "0.1.0-alpha.4"
 dependencies = [
