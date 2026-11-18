@@ -1,7 +1,7 @@
 //! Tests of `FoldersView`: cursor keys, Enter on a file, and the summary chips.
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gpui_kit::test::TestWindowExt;
@@ -281,6 +281,30 @@ fn a_git_root_draws_its_revision(cx: &mut TestAppContext) {
     assert_eq!(
         label_of(window, ("head", 1), cx).as_deref(),
         abs_root("work").join("right").to_str()
+    );
+}
+
+/// A remote side's header reads `host/path @ rev`, never joined to the working folder.
+#[gpui_kit::test]
+fn a_remote_root_is_not_joined_to_the_working_folder(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        apply_sidewise(PaletteId::Violet, Mode::Light, cx);
+    });
+    let roots = [
+        SideRoot {
+            path: PathBuf::from("github.com/owner/repo"),
+            rev: Some("main".to_owned()),
+        },
+        SideRoot::folder(abs_root("work").join("right")),
+    ];
+    let (window, _) = open(cx, |_, cx| FoldersView::new(cx).with_roots(roots));
+    cx.update_window(window, |_, window, cx| window.render_frame(cx))
+        .expect("window");
+    let want = format!("{} @ main", Path::new("github.com/owner/repo").display());
+    assert_eq!(
+        label_of(window, ("head", 0), cx).as_deref(),
+        Some(want.as_str())
     );
 }
 

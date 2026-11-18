@@ -19,10 +19,15 @@ pub(super) fn path_of(spec: &SideSpec) -> &Path {
     }
 }
 
-/// The header's view of one side: its path, plus the revision for a Git side.
+/// The header's view of one side: its path (absolute for a local side, kept as given when that
+/// fails; the bare address for a remote side), plus the revision for a Git side.
 pub(super) fn side_root(spec: &SideSpec) -> SideRoot {
+    let path = path_of(spec);
     SideRoot {
-        path: path_of(spec).to_path_buf(),
+        path: match spec {
+            SideSpec::GitUrl { .. } => path.to_path_buf(),
+            _ => std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()),
+        },
         rev: match spec {
             SideSpec::Path(_) => None,
             SideSpec::GitRev { rev, .. } | SideSpec::GitUrl { rev, .. } => Some(rev.clone()),
@@ -72,6 +77,16 @@ mod tests {
             choice: Default::default(),
         };
         assert_eq!(title_of(&request).as_ref(), "repo@main ↔ app");
+    }
+
+    /// A local side's header root is absolute; a remote side's root is its bare address.
+    #[test]
+    fn side_roots_are_absolute_only_for_local_sides() {
+        let local = super::side_root(&SideSpec::Path(PathBuf::from("rel")));
+        assert!(local.path.is_absolute(), "{}", local.path.display());
+        let remote = super::side_root(&remote());
+        assert_eq!(remote.path, Path::new("github.com/owner/repo"));
+        assert_eq!(remote.rev.as_deref(), Some("main"));
     }
 
     /// The header shows a remote side without its scheme.

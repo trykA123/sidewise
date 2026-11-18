@@ -101,13 +101,10 @@ impl FoldersView {
         }
     }
 
-    /// Sets the two folder roots the headers name; each goes through `absolute`, kept as given
-    /// when that fails.
+    /// Sets the two folder roots the headers name, as given: the caller makes local paths
+    /// absolute, and a remote address is not a path on this PC.
     pub fn with_roots(mut self, roots: [SideRoot; 2]) -> Self {
-        self.roots = Some(roots.map(|root| SideRoot {
-            path: std::path::absolute(&root.path).unwrap_or(root.path),
-            rev: root.rev,
-        }));
+        self.roots = Some(roots);
         self
     }
 
