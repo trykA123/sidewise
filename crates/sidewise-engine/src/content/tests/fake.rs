@@ -22,7 +22,7 @@ pub(super) struct Stats {
 }
 
 impl Stats {
-    fn opens(&self) -> u64 {
+    pub(super) fn opens(&self) -> u64 {
         self.opens.load(Ordering::Relaxed)
     }
 

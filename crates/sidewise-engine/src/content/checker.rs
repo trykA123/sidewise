@@ -9,7 +9,7 @@ use crate::model::{
 use super::hash::{block_for, update};
 use super::read::{
     changed, check_kinds, check_object_ids, class, content_key, different, different_class,
-    finish_side, first_difference, outcome, read_block, stamp_matches, stopped, unavailable,
+    first_difference, outcome, read_block, stamp_matches, stopped, unavailable,
 };
 use super::stream::{Counts, Stream, probe_zero_sizes};
 use super::{CheckOptions, ContentProgress, ContentResult, LARGE_CONTENT_THRESHOLD, Side};
@@ -121,23 +121,24 @@ impl Checker<'_, '_> {
             (Some(left_hash), Some(right_hash)) if left_hash == right_hash => {
                 outcome(Status::Same, ContentClass::Unknown)
             }
-            (Some(_), Some(_)) => different(None, ContentClass::Unknown),
-            (Some(cached), None) => self.one_side(
-                sides,
-                sides.right,
-                Cached {
+            // NC208: a cached hash may only say Same; Different needs a lockstep read.
+            (Some(_), Some(_)) => self.both(sides, keys),
+            (Some(cached), None) => {
+                let cached = Cached {
                     key: keys.1,
                     hash: cached,
-                },
-            ),
-            (None, Some(cached)) => self.one_side(
-                sides,
-                sides.left,
-                Cached {
+                };
+                let one = self.one_side(sides, sides.right, cached);
+                one.unwrap_or_else(|| self.both(sides, keys))
+            }
+            (None, Some(cached)) => {
+                let cached = Cached {
                     key: keys.0,
                     hash: cached,
-                },
-            ),
+                };
+                let one = self.one_side(sides, sides.left, cached);
+                one.unwrap_or_else(|| self.both(sides, keys))
+            }
             (None, None) => self.both(sides, keys),
         }
     }
@@ -189,10 +190,15 @@ impl Checker<'_, '_> {
         }
     }
 
-    fn one_side(&mut self, sides: Sides<'_>, read: Side<'_>, cached: Cached<'_>) -> ContentResult {
+    fn one_side(
+        &mut self,
+        sides: Sides<'_>,
+        read: Side<'_>,
+        cached: Cached<'_>,
+    ) -> Option<ContentResult> {
         let mut reader = match read.source.open(&read.entry.rel, self.read_hint) {
             Ok(reader) => reader,
-            Err(reason) => return unavailable(reason),
+            Err(reason) => return Some(unavailable(reason)),
         };
         let mut counts = Counts::new(read.entry.size);
         let mut hasher = Hasher::new();
@@ -202,14 +208,14 @@ impl Checker<'_, '_> {
         let mut buffer = vec![0u8; block];
         loop {
             if self.cancel.is_cancelled() {
-                return stopped();
+                return Some(stopped());
             }
             let read_bytes = match read_block(&mut *reader, &mut buffer) {
                 Ok(read) => read,
-                Err(_) => return unavailable(Reason::ReadError),
+                Err(_) => return Some(unavailable(Reason::ReadError)),
             };
             if counts.add(read_bytes, buffer.len()) {
-                return changed();
+                return Some(changed());
             }
             if read_bytes == 0 {
                 let digest = Digest {
@@ -287,16 +293,20 @@ impl Checker<'_, '_> {
         }
     }
 
-    fn finish_one(&self, sides: Sides<'_>, cached: Cached<'_>, digest: Digest) -> ContentResult {
-        match self.unchanged(sides) {
-            Ok(()) => finish_side(
-                self.cache,
-                cached.key,
-                (digest.hash, cached.hash),
-                digest.saw_nul,
-            ),
-            Err(result) => result,
+    fn finish_one(
+        &self,
+        sides: Sides<'_>,
+        cached: Cached<'_>,
+        digest: Digest,
+    ) -> Option<ContentResult> {
+        if let Err(result) = self.unchanged(sides) {
+            return Some(result);
         }
+        if digest.hash != cached.hash {
+            return None;
+        }
+        self.cache.put(cached.key, digest.hash);
+        Some(outcome(Status::Same, class(digest.saw_nul)))
     }
 
     fn finish_both(&self, sides: Sides<'_>, completion: Completion<'_>) -> ContentResult {

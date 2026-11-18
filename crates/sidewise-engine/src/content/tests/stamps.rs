@@ -176,3 +176,61 @@ fn a_same_size_new_mtime_rewrite_does_not_trust_the_cache() {
     assert_eq!(cache.gets(), 0);
     assert_eq!(cache.puts(), 0);
 }
+
+#[test]
+fn two_cached_hashes_that_disagree_are_verified_by_reading() {
+    let size = 2 * CONTENT_BLOCK;
+    let bytes = vec![0x5A; size];
+    let left_entry = entry("a.bin", u64::try_from(size).unwrap());
+    let right_entry = entry("a.bin", u64::try_from(size).unwrap());
+    let left_source = source("a.bin", bytes.clone()).with_root("left");
+    let right_source = source("a.bin", bytes).with_root("right");
+    let left_stats = left_source.stats();
+    let right_stats = right_source.stats();
+    let cache = FakeCache::with(content_key(&left_source, &left_entry), [1; 32]);
+    cache.seed(content_key(&right_source, &right_entry), [2; 32]);
+    let cancel = CancelToken::new();
+
+    let result = check(
+        side(&left_entry, &left_source),
+        side(&right_entry, &right_source),
+        &options(&cache, &cancel),
+        &mut |_| {},
+    );
+
+    assert_eq!(result.status, Status::Same);
+    let read = u64::try_from(size).unwrap();
+    assert_reads(&left_stats, 1, read);
+    assert_reads(&right_stats, 1, read);
+}
+
+#[test]
+fn a_one_sided_hit_that_disagrees_reads_both_sides() {
+    let size = 2 * CONTENT_BLOCK;
+    let left_bytes = vec![0x11; size];
+    let mut right_bytes = left_bytes.clone();
+    right_bytes[CONTENT_BLOCK + 5] = 0x22;
+    let left_entry = entry("a.bin", u64::try_from(size).unwrap());
+    let right_entry = entry("a.bin", u64::try_from(size).unwrap());
+    let left_source = source("a.bin", left_bytes.clone()).with_root("left");
+    let right_source = source("a.bin", right_bytes).with_root("right");
+    let left_stats = left_source.stats();
+    let hash = *blake3::hash(&left_bytes).as_bytes();
+    let cache = FakeCache::with(content_key(&left_source, &left_entry), hash);
+    let cancel = CancelToken::new();
+
+    let result = check(
+        side(&left_entry, &left_source),
+        side(&right_entry, &right_source),
+        &options(&cache, &cancel),
+        &mut |_| {},
+    );
+
+    assert_eq!(
+        result.status,
+        Status::Different {
+            first_difference: Some(CONTENT_BLOCK as u64 + 5)
+        }
+    );
+    assert_eq!(left_stats.opens(), 1);
+}
