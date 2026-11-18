@@ -4,6 +4,27 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Faster re-compares. Sidewise remembers each file's content hash on this PC. When you compare the same folders again (from Recent, by typing the paths, or after a restart), files whose size, modified time and file identity did not change are not read again. A row shows Different only after both files were read in this run; a remembered hash only ever confirms Same.
+- `F5` is now "Recheck all": it reads every file again and refreshes the remembered hashes. The Folders right-click menu has "Recheck all" and "Clear compare cache".
+- Viewed marks are kept across restarts. "Clear all viewed marks" in the Stream right-click menu removes them.
+
+### Changed
+
+- After a command chosen with the mouse in a right-click menu, the focus returns to the list the menu was opened from.
+
+### Fixed
+
+- A rolled-back interrupted Undo now says it was an undo, and that the files are as they were after the copy.
+
+### Known limits
+
+- The compare cache holds up to 500,000 files, in the profile's `cache\hashes.v1`. Older entries go first.
+- Files are never remembered on a network drive (a UNC path or a mapped drive), on FAT32 or exFAT, on a Git side, when modified in the last 10 seconds, or with a modified time before 1990.
+- A file changed in place that keeps its size, modified time and file identity shows Same until `F5`.
+- When two Sidewise windows are open, only the first one saves remembered hashes; "Clear compare cache" in the second one says the cache is busy.
+
 ## [0.1.0-alpha.4] — 2026-11-18
 
 ### Added
