@@ -11,6 +11,7 @@ use gix_transport::client::AuthenticationRequired;
 use gix_transport::client::blocking_io::http::{GetResponse, Http, PostBodyDataKind, PostResponse};
 use sidewise_winhttp::{Exchange, Target, Verb, WinHttpError};
 
+use crate::headers::{header_block, split_url};
 use crate::{HttpStatus, NetworkFailure};
 
 /// The largest POST body buffered for one request, in bytes (R3).
@@ -146,48 +147,22 @@ impl Write for PostBody {
     }
 }
 
-/// Splits `https://host[:port]/path?query` into host (IPv6 without brackets), port and path.
-/// Fails with `InvalidInput` for another scheme, user info, an empty host or a bad port.
-fn split_url(url: &str) -> io::Result<(&str, u16, &str)> {
-    let bad = || io::Error::new(io::ErrorKind::InvalidInput, "not an https address");
-    let scheme_ok = url
-        .get(..8)
-        .is_some_and(|s| s.eq_ignore_ascii_case("https://"));
-    let rest = url.get(8..).filter(|_| scheme_ok).ok_or_else(bad)?;
-    let (authority, path) = rest.find('/').map_or((rest, "/"), |at| rest.split_at(at));
-    let (host, port) = match authority.rsplit_once(':') {
-        Some((host, port)) if !port.contains(']') => (host, port.parse().map_err(|_| bad())?),
-        _ => (authority, 443),
-    };
-    let host = host
-        .strip_prefix('[')
-        .and_then(|h| h.strip_suffix(']'))
-        .unwrap_or(host);
-    if host.is_empty() || authority.contains('@') {
-        return Err(bad());
-    }
-    Ok((host, port, path))
-}
-
-/// Opens `verb url` with gix's header lines; nothing is sent yet. Header lines with CR or LF fail.
+/// Opens `verb url` with gix's header lines minus `User-Agent`; nothing is sent yet. Header lines
+/// with CR or LF fail.
 fn open(
     url: &str,
     verb: Verb,
     headers: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> gix::Result<Shared> {
     let (host, port, path) = split_url(url).map_err(gix::Error::from_error)?;
-    let lines: Vec<String> = headers.into_iter().map(|h| h.as_ref().to_owned()).collect();
-    if lines.iter().any(|line| line.contains(['\r', '\n'])) {
-        let err = io::Error::new(io::ErrorKind::InvalidInput, "header line with a line break");
-        return Err(gix::Error::from_error(err));
-    }
+    let block = header_block(headers).map_err(gix::Error::from_error)?;
     let target = Target {
         host,
         port,
         user_agent: "Sidewise",
         timeouts_ms: TIMEOUTS_MS,
     };
-    let exchange = Exchange::open(&target, verb, path, &lines.join("\r\n"))
+    let exchange = Exchange::open(&target, verb, path, &block)
         .map_err(|err| gix::Error::from_error(io_error(err)))?;
     let state = State::Unsent;
     Ok(Rc::new(RefCell::new(Call {

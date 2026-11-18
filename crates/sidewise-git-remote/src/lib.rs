@@ -8,6 +8,14 @@ pub mod capped;
 pub mod choose;
 pub mod failure;
 pub mod fetch;
+#[cfg_attr(
+    not(windows),
+    allow(
+        dead_code,
+        reason = "used only by the Windows WinHTTP backend; tested everywhere"
+    )
+)]
+mod headers;
 mod lent;
 pub mod problem;
 #[cfg(windows)]

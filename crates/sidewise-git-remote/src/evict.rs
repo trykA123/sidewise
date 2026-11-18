@@ -18,15 +18,16 @@ const OTHERS: usize = 15;
 pub struct EvictReport {
     /// Keys whose repository went to trash.
     pub evicted: usize,
-    /// Keys skipped because another handle holds their lock; they count against the 15.
+    /// Keys skipped because another handle holds their lock or their size walk failed; they
+    /// count against the 15.
     pub busy: usize,
     /// Bytes of the repositories still in the cache (links count 0).
     pub bytes: u64,
 }
 
 /// Evicts least recently used keys under `root` so `keep_key` (whose lock the caller holds)
-/// plus at most 15 others fit in 2 GiB − `max_bytes`. Fails when the root or a size walk fails;
-/// trash and staging removed before that stay removed.
+/// plus at most 15 others fit in 2 GiB − `max_bytes`. Fails when the root or the fetching key's
+/// size walk fails; another key that cannot be measured is kept and counted as busy.
 pub fn evict(root: &Path, keep_key: &str, max_bytes: u64) -> io::Result<EvictReport> {
     let keys = scan(root)?;
     let mut report = EvictReport {
@@ -38,17 +39,17 @@ pub fn evict(root: &Path, keep_key: &str, max_bytes: u64) -> io::Result<EvictRep
         let names = Names::new(root, key);
         let Some(lock) = try_lock(&names.lock()) else {
             report.busy += 1;
-            report.bytes += size(&names.live())?;
+            report.bytes += size(&names.live()).unwrap_or(0);
             continue;
         };
         names.remove_staging();
+        // An unmeasured key is kept (busy), so one unreadable entry never stops the eviction.
+        let Ok(bytes) = size(&names.live()) else {
+            report.busy += 1;
+            continue;
+        };
         let used = std::fs::symlink_metadata(names.used()).and_then(|meta| meta.modified());
-        held.push((
-            used.ok(),
-            size(&names.live())?,
-            names.key().to_owned(),
-            lock,
-        ));
+        held.push((used.ok(), bytes, names.key().to_owned(), lock));
     }
     // Newest `.used` first; a missing one (`None`) sorts last, as the oldest.
     held.sort_by_key(|one| std::cmp::Reverse(one.0));
@@ -74,8 +75,9 @@ pub fn evict(root: &Path, keep_key: &str, max_bytes: u64) -> io::Result<EvictRep
 /// returns the keys that have a repository, a `.used` mark or a staging folder.
 fn scan(root: &Path) -> io::Result<BTreeSet<String>> {
     let mut keys = BTreeSet::new();
-    for entry in std::fs::read_dir(root)? {
-        let (entry, name) = entry.map(|entry| (entry.path(), entry.file_name()))?;
+    // An entry that cannot be read is skipped, never fatal (fail closed: its key is not touched).
+    for entry in std::fs::read_dir(root)?.filter_map(Result::ok) {
+        let (entry, name) = (entry.path(), entry.file_name());
         let split = name.to_str().and_then(|name| name.split_once('.'));
         let Some((key, suffix)) = split.filter(|(key, _)| is_hex(key, 32)) else {
             continue;

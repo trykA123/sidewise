@@ -199,3 +199,31 @@ fn a_link_counts_zero_bytes_and_its_target_survives() {
     assert!(!has(root, &format!("{}.git", key(1))), "oldest key kept");
     assert_eq!(big.metadata().unwrap().len(), 3 * GIB, "link target lost");
 }
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_key_is_kept_as_busy_and_others_still_go() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    entry(root, &key(0), MIB, None);
+    for n in 1..=17 {
+        entry(root, &key(n), MIB, Some(u64::from(n) * 10));
+    }
+    let locked = root.join(format!("{}.git/objects", key(1)));
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let report = evict(root, &key(0), 256 * MIB);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let report = report.unwrap();
+    assert_eq!(report.busy, 1, "the unmeasured key counts as busy");
+    assert!(
+        has(root, &format!("{}.git", key(1))),
+        "unmeasured key evicted"
+    );
+    for n in 2..=15 {
+        assert!(has(root, &format!("{}.git", key(n))), "key {n} evicted");
+    }
+    for n in 16..=17 {
+        assert!(!has(root, &format!("{}.git", key(n))), "key {n} kept");
+    }
+}
