@@ -163,8 +163,14 @@ fn p6_timing_second_run_skips_reading() {
 fn p6_network_paths_skip_the_cache() {
     use super::reuse_tests::pane_run;
 
-    let (scale, _) = scale();
-    let root = root_dir();
+    // Always the small mix in its own folder: a large tree over SMB outlasts the run wait.
+    let scale = Scale {
+        big: 50,
+        big_len: 256 * KIB,
+        small: 500,
+        small_len: 4 * KIB,
+    };
+    let root = root_dir().join("net");
     let _ = fs::remove_dir_all(&root);
     build_tree(&root, &scale);
     let text = root.to_str().unwrap();
