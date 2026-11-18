@@ -63,6 +63,16 @@ fn loc(path: &Path) -> Location {
 
 /// Compares two local folders with `cache` and returns the last totals.
 pub(super) fn run_once(left: &Path, right: &Path, cache: Arc<dyn HashCache>) -> Totals {
+    run_once_within(left, right, cache, WAIT)
+}
+
+/// Like `run_once`, but waits up to `wait` for the compare to finish.
+pub(super) fn run_once_within(
+    left: &Path,
+    right: &Path,
+    cache: Arc<dyn HashCache>,
+    wait: Duration,
+) -> Totals {
     let (sender, receiver) = mpsc::channel();
     let start = CompareStart::new(
         (
@@ -73,7 +83,7 @@ pub(super) fn run_once(left: &Path, right: &Path, cache: Arc<dyn HashCache>) -> 
         cache,
     );
     let _handle = CompareHandle::start(start, sender);
-    let deadline = Instant::now() + WAIT;
+    let deadline = Instant::now() + wait;
     let mut totals = Totals::default();
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
@@ -133,7 +143,7 @@ fn stored_hashes_answer_a_second_run() {
 }
 
 /// Starts a pane compare of two folders and waits for `Finished` on the sink.
-fn pane_run(left: &Path, right: &Path, cache: Arc<dyn HashCache>, fresh_hashes: bool) {
+pub(super) fn pane_run(left: &Path, right: &Path, cache: Arc<dyn HashCache>, fresh_hashes: bool) {
     let (sender, receiver) = mpsc::channel();
     let sink: CompareSink = Arc::new(move |update| {
         if matches!(update, CompareUpdate::Finished { .. }) {

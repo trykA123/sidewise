@@ -16,3 +16,5 @@ mod flush_tests;
 mod record_tests;
 #[cfg(test)]
 mod reuse_tests;
+#[cfg(test)]
+mod timing_tests;
