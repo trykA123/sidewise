@@ -110,6 +110,19 @@ fn a_non_local_target_is_read_only() {
     assert_eq!(ends_of(&request).unwrap_err(), CopyRefusal::ReadOnly);
 }
 
+/// A target on the `git-remote` provider is never copyable.
+#[test]
+fn a_git_remote_target_is_read_only() {
+    let (_work, mut request) = fixture(LEFT, RIGHT);
+    let remote = Location::with_provider(
+        ProviderId::new("git-remote").unwrap(),
+        ProviderPath::from_text("https://h/r@main/x"),
+    )
+    .unwrap();
+    request.pair.right = Some(remote);
+    assert_eq!(ends_of(&request).unwrap_err(), CopyRefusal::ReadOnly);
+}
+
 #[test]
 fn a_one_sided_pair_is_not_copyable() {
     let (_work, mut request) = fixture(LEFT, RIGHT);

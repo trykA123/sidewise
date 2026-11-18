@@ -18,4 +18,6 @@ pub mod viewed_file;
 pub mod write;
 
 #[cfg(test)]
+mod sources_tests;
+#[cfg(test)]
 mod tests;
