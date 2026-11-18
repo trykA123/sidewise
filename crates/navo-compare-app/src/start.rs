@@ -43,6 +43,10 @@ pub enum SideHint {
     Path(SideSpec),
     GitRef(SideSpec),
     GitProblem(sidewise_git::repo::GitProblem),
+    /// A well-formed remote address; nothing is fetched until Compare.
+    Remote(SideSpec),
+    /// Text that looks like an address but is refused.
+    BadAddress,
     NotFound,
 }
 
@@ -99,7 +103,7 @@ pub fn bind_keys(cx: &mut App) {
 /// The side a good hint stands for: a path that exists or a git revision that resolved.
 fn good(hint: &SideHint) -> Option<&SideSpec> {
     match hint {
-        SideHint::Path(spec) | SideHint::GitRef(spec) => Some(spec),
+        SideHint::Path(spec) | SideHint::GitRef(spec) | SideHint::Remote(spec) => Some(spec),
         _ => None,
     }
 }

@@ -4,11 +4,12 @@
 use std::cell::Cell;
 use std::path::Path;
 
-use navo_compare_cli::args::{self, SideSpec};
+use navo_compare_cli::args::{self, ArgError, SideSpec};
 
 use crate::start::SideHint;
 
 /// Classifies one typed side against the disk (NS3, NS17); blocks, so it runs off the UI thread.
+/// A well-formed `https://` address gives `Remote` and a refused one `BadAddress`, with no network.
 /// A path that does not exist, and a `repo@` with no revision, give `NotFound`.
 pub(crate) fn probe(text: &str, cwd: &Path) -> SideHint {
     let found = Cell::new(false);
@@ -20,7 +21,8 @@ pub(crate) fn probe(text: &str, cwd: &Path) -> SideHint {
     match args::side(text, cwd, &exists) {
         Ok(spec @ SideSpec::GitRev { .. }) => git_hint(spec),
         Ok(spec @ SideSpec::Path(_)) if found.get() => SideHint::Path(spec),
-        Ok(SideSpec::GitUrl { .. }) => SideHint::NotFound,
+        Ok(spec @ SideSpec::GitUrl { .. }) => SideHint::Remote(spec),
+        Err(ArgError::BadUrl(_)) => SideHint::BadAddress,
         Ok(SideSpec::Path(_)) | Err(_) => SideHint::NotFound,
     }
 }

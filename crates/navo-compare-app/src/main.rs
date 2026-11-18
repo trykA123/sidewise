@@ -70,6 +70,8 @@ mod start_keys_tests;
 mod start_menu;
 #[cfg(test)]
 mod start_menu_tests;
+#[cfg(test)]
+mod start_remote_tests;
 mod start_rows;
 #[cfg(test)]
 mod start_rows_tests;

@@ -24,6 +24,8 @@ fn chip(hint: &SideHint, cx: &App) -> Option<Div> {
         SideHint::Path(_) => ("Path".to_string(), t.colors.muted),
         SideHint::GitRef(_) => (t!("git-chip-revision"), t.colors.muted),
         SideHint::GitProblem(p) => (t!(p.l10n_id()), t.colors.warn),
+        SideHint::Remote(_) => (t!("git-remote-chip-revision"), t.colors.muted),
+        SideHint::BadAddress => (t!("git-remote-chip-bad-address"), t.colors.warn),
         SideHint::NotFound => ("Not found".to_string(), t.colors.warn),
         SideHint::Empty | SideHint::Checking => return None,
     };
