@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod at;
+pub mod cache;
 pub mod capped;
 pub mod choose;
 pub mod failure;
@@ -10,6 +11,7 @@ mod lent;
 pub mod problem;
 
 pub use at::{RemoteAt, RemoteAtError};
+pub use cache::Cache;
 pub use capped::{Budget, Capped, CappedRead, DeadlineGuard, Limits};
 pub use choose::{candidates, choose};
 pub use failure::problem_of;

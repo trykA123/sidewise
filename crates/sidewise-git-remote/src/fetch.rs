@@ -13,7 +13,7 @@ use gix::protocol::handshake::Ref;
 use gix::remote::{Direction, fetch::Shallow, fetch::Tags, ref_map};
 use gix_transport::client::blocking_io::http::Http;
 
-mod job;
+pub(crate) mod job;
 
 use self::job::Job;
 use crate::lent::lend;

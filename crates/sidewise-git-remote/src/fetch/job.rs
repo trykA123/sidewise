@@ -9,13 +9,13 @@ use crate::{RemoteProblem, RemoteRev, RemoteUrl};
 
 /// The open options of a cache repository: no global, system or environment config (NC219),
 /// and the per-object and thread caps of NC221.
-fn open_options() -> gix::open::Options {
+pub(crate) fn open_options() -> gix::open::Options {
     gix::open::Options::isolated()
         .cli_overrides(["gitoxide.objects.allocLimit=67108864", "pack.threads=4"])
 }
 
 /// The local ref a revision is fetched to: `refs/sidewise/<16 hex of blake3(rev)>`.
-fn local_ref(rev: &RemoteRev) -> String {
+pub(crate) fn local_ref(rev: &RemoteRev) -> String {
     let hash = blake3::hash(rev.as_str().as_bytes());
     format!("refs/sidewise/{}", &hash.to_hex()[..16])
 }
