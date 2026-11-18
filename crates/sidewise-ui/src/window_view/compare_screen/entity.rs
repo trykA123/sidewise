@@ -237,6 +237,9 @@ pub enum ScreenEvent {
     WalkFile { from: u64, step: i32 },
     /// The resync wait ended: rebuild the Stream from the folder compare.
     Resync,
+    /// All Viewed marks were cleared (or could not be): show `text` in a toast; with `cleared`
+    /// set, other screens drop their marks too.
+    ViewedCleared { text: String, cleared: bool },
     /// A copy or an undo finished: show `text` in a toast, with Undo of copy `job` when set;
     /// other screens reload the `reload` files, which an undo may have rewritten (NC148).
     Wrote {

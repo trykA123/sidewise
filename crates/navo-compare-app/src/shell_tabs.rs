@@ -6,7 +6,7 @@ use sidewise_kit::prelude::*;
 use super::Shell;
 use crate::chrome::topbar_status::{Crumbs, TopbarMode};
 use crate::screens::compare_run::RunError;
-use crate::screens::compare_tab::{CompareRequest, CompareTab, Rewrote, TabView};
+use crate::screens::compare_tab::{ClearedViewed, CompareRequest, CompareTab, Rewrote, TabView};
 use crate::start::{StartEvent, StartScreen};
 
 /// The start screen's crumb detail: the two kinds of compare its tabs offer.
@@ -186,6 +186,10 @@ impl Shell {
             shell.reload_others(&source, targets, cx);
         })
         .detach();
+        cx.subscribe(&tab, |shell, source, _: &ClearedViewed, cx| {
+            shell.clear_viewed_in_others(&source, cx);
+        })
+        .detach();
         self.tabs[index] = ShellTab {
             title: tab.read(cx).title(),
             kind: TabKind::Compare(tab),
@@ -207,6 +211,14 @@ impl Shell {
         for tab in self.compare_tabs().iter().filter(|tab| *tab != source) {
             let screen = tab.read(cx).screen().clone();
             screen.update(cx, |screen, cx| screen.reload_written(targets, cx));
+        }
+    }
+
+    /// Drops the Viewed marks shown by every compare tab but `source`, which cleared them.
+    fn clear_viewed_in_others(&self, source: &Entity<CompareTab>, cx: &mut Context<Self>) {
+        for tab in self.compare_tabs().iter().filter(|tab| *tab != source) {
+            let screen = tab.read(cx).screen().clone();
+            screen.update(cx, |screen, cx| screen.viewed_cleared(cx));
         }
     }
 

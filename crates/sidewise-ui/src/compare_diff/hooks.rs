@@ -342,6 +342,12 @@ pub trait DiffHooks: Send + Sync {
     /// Opens a Stream using the compare settings in `options`.
     fn open_stream(&self, options: &CompareOptions, sink: StreamSink) -> Box<dyn StreamControl>;
 
+    /// Removes every Viewed mark and returns how many there were. It may block on the disk, so
+    /// callers run it off the UI thread. The default has no store and clears nothing.
+    fn clear_viewed(&self) -> Result<usize, String> {
+        Ok(0)
+    }
+
     /// Copies one change and reports once through `done`, never blocking the caller. The
     /// default refuses, for a backend that cannot write.
     fn copy_change(&self, change: CopyChange, done: CopySink) {

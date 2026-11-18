@@ -95,6 +95,9 @@ mod theme_tests;
 mod ui_matrix_tests;
 mod updates;
 mod updates_check;
+mod viewed_store;
+#[cfg(test)]
+mod viewed_store_tests;
 mod window;
 mod writes;
 #[cfg(test)]

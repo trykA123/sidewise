@@ -113,6 +113,11 @@ pub struct Rewrote(pub Vec<sidewise_core::Location>);
 
 impl gpui_kit::EventEmitter<Rewrote> for CompareTab {}
 
+/// The tab cleared every Viewed mark; the shell clears them in the other tabs (VD2).
+pub struct ClearedViewed;
+
+impl gpui_kit::EventEmitter<ClearedViewed> for CompareTab {}
+
 impl CompareTab {
     /// Starts the run for `request`; a bad side returns `RunError` before any entity exists.
     /// The shell calls this outside `cx.new`, so an error leaves no half-made tab behind.

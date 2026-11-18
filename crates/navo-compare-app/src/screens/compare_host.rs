@@ -8,7 +8,6 @@ use gpui_kit::{App, KeyBinding, KeyBindingContextPredicate};
 use navo_compare_profile::appearance::{LayoutPref, UiPrefs, ViewPresetPref};
 use sidewise_host::compare::diff::copy_port::CopyHost;
 use sidewise_host::compare::diff::hooks::{BackendParts, DiffBackend};
-use sidewise_host::compare::diff::viewed::MemoryViewed;
 use sidewise_host::compare::diff::write::host::LocalCopyHost;
 use sidewise_host::compare::dirs::CompareDirs;
 use sidewise_ui::browser::Waker;
@@ -42,13 +41,13 @@ pub(crate) fn diff_hooks_for(host: Option<Arc<LocalCopyHost>>) -> Arc<dyn DiffHo
     Arc::new(hooks_with(host.map(|host| host as Arc<dyn CopyHost>)))
 }
 
-/// The diff backend over local and Git sides and in-memory Viewed marks, writing copies through
-/// `host` when there is one.
+/// The diff backend over local and Git sides and the process-wide Viewed store, writing copies
+/// through `host` when there is one.
 pub(crate) fn hooks_with(host: Option<Arc<dyn CopyHost>>) -> DiffBackend {
     let backend = DiffBackend::new(BackendParts {
         dirs: CompareDirs::default(),
         side: side_fn(shared_sides()),
-        viewed: Arc::new(|| Arc::new(MemoryViewed::default())),
+        viewed: Arc::new(crate::viewed_store::shared),
     });
     match host {
         Some(host) => backend.with_copy_host(host),

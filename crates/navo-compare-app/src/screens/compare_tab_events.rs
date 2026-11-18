@@ -9,7 +9,7 @@ use sidewise_ui::compare_diff::{PairRequest, UndoStart};
 use sidewise_ui::window_view::{CompareScreen, ScreenEvent};
 
 use super::compare_run::RunKind;
-use super::compare_tab::{CompareRequest, CompareTab, Rewrote, TabView};
+use super::compare_tab::{ClearedViewed, CompareRequest, CompareTab, Rewrote, TabView};
 use super::folders_view::FoldersEvent;
 use super::pair_requests::{neighbour, pair_request, stream_one};
 use crate::layers::toast;
@@ -105,6 +105,12 @@ impl CompareTab {
                 self.toast_write(text, job.as_deref(), cx);
                 if !reload.is_empty() {
                     cx.emit(Rewrote(reload.clone()));
+                }
+            }
+            ScreenEvent::ViewedCleared { text, cleared } => {
+                toast::notify(text.clone(), cx);
+                if *cleared {
+                    cx.emit(ClearedViewed);
                 }
             }
             ScreenEvent::OpenSettings(_) | ScreenEvent::Resync => {}

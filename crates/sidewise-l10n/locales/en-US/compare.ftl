@@ -73,6 +73,7 @@ cmd-compare-view-menu = View menu of the file diff
 cmd-compare-changes = List of changes
 cmd-compare-details = Details of the pair
 cmd-compare-toggle-viewed = Mark file as viewed
+cmd-compare-clear-viewed = Clear all viewed marks
 cmd-compare-fold = Fold or unfold the card
 cmd-compare-open-file = Open the file diff
 cmd-compare-search = Search the differences
@@ -196,6 +197,12 @@ compare-undo-failed = The copy was not undone: { $reason }
 compare-undo-not-newest = Only the latest copy can be undone here; use Ctrl+Z.
 compare-undo-gone = That copy was already undone.
 compare-undo-tab-closed = Use Ctrl+Z in an open compare tab.
+compare-viewed-cleared = { $count ->
+    [one] Cleared 1 viewed mark.
+   *[other] Cleared { $count } viewed marks.
+}
+compare-viewed-none = There are no viewed marks to clear.
+compare-viewed-clear-failed = Viewed marks were not cleared: { $reason }
 compare-writes-off = Copying is off: { $reason }
 compare-recovery-rolled-back = { $count ->
     [one] Rolled back an interrupted copy.

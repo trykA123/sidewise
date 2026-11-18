@@ -38,6 +38,7 @@ pub struct Calls {
     pub(crate) undoable: AtomicBool,
     pub(crate) undo_sink: Mutex<Option<UndoSink>>,
     pub(crate) undo_calls: Mutex<u32>,
+    pub(crate) clears: Mutex<u32>,
 }
 
 /// A fake that records calls and lets a test push updates.
@@ -97,6 +98,15 @@ impl FakeDiffHooks {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    /// How many times `clear_viewed` ran.
+    pub fn clears(&self) -> u32 {
+        *self
+            .calls
+            .clears
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Every `copy_change` request so far, oldest first.
@@ -348,6 +358,15 @@ impl StreamControl for FakeStream {
 }
 
 impl DiffHooks for FakeDiffHooks {
+    fn clear_viewed(&self) -> Result<usize, String> {
+        *self
+            .calls
+            .clears
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) += 1;
+        Ok(2)
+    }
+
     fn open_pair(
         &self,
         request: PairRequest,

@@ -142,6 +142,10 @@ impl ViewedMarks for FileViewed {
         state.records += 1;
         Ok(())
     }
+
+    fn clear_all(&self) -> Result<usize, ViewedError> {
+        FileViewed::clear_all(self)
+    }
 }
 
 /// Replays log bytes into marks, returning the marks, record count and whether a

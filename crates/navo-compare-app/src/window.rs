@@ -27,6 +27,7 @@ pub fn run(opening: Opening) -> std::process::ExitCode {
             report(&message);
         }
         crate::updates::install_updates(profile.as_deref(), cx);
+        crate::viewed_store::install_viewed(profile.as_deref());
         let writes = crate::writes::install_writes(profile.as_deref());
         let opened = initialised
             .map_err(|error| error.to_string())
