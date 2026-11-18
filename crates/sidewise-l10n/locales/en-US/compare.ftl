@@ -203,6 +203,13 @@ compare-viewed-cleared = { $count ->
 }
 compare-viewed-none = There are no viewed marks to clear.
 compare-viewed-clear-failed = Viewed marks were not cleared: { $reason }
+compare-cache-cleared = { $count ->
+    [one] Cleared 1 file from the compare cache.
+   *[other] Cleared { $shown } files from the compare cache.
+}
+compare-cache-none = The compare cache is already empty.
+compare-cache-busy = Another Sidewise window is using the compare cache. Close it, then clear again.
+compare-cache-clear-failed = Could not clear the compare cache: { $reason }
 compare-writes-off = Copying is off: { $reason }
 compare-recovery-rolled-back = { $count ->
     [one] Rolled back an interrupted copy.

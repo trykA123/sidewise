@@ -3,14 +3,17 @@
 
 use std::path::{Path, PathBuf};
 
-use gpui_kit::{Action, ClipboardItem};
+use gpui_kit::{Action, AppContext as _, ClipboardItem};
 use gpui_kit::{Context, Div, InteractiveElement as _, Pixels, Point, Window};
+use sidewise_host::compare::hash_cache::file::ClearError;
+use sidewise_kit::format::bytes as grouped;
 use sidewise_l10n::t;
 
 use super::{Activate, FoldersEvent, FoldersView};
 use crate::layers::toast;
 use crate::menu_host::{MenuAt, MenuLine, show_menu};
 use crate::screens::folders_model::TreeLine;
+use crate::screens::host_parts::clear_hashes;
 use crate::screens::reveal::reveal;
 
 gpui_kit::actions!(
@@ -23,6 +26,7 @@ gpui_kit::actions!(
         RevealLeft,
         RevealRight,
         ExpandAll,
+        ClearCache,
         ShowMenu
     ]
 );
@@ -43,7 +47,7 @@ fn run(label: &str, action: impl Action, enabled: bool) -> MenuLine {
     }
 }
 
-/// The menu lines of `line`: open, a break, then the copies and the Reveal lines. A copy of a side is dimmed when
+/// The menu lines of `line`: open, a break, the copies and the Reveal lines, a break, then the cache lines. A copy of a side is dimmed when
 /// that side is missing or the compare gave no roots (`has_roots` false); Reveal also needs Windows.
 pub(super) fn lines_for(line: &TreeLine, has_roots: bool) -> Vec<MenuLine> {
     let reveal_ok = has_roots && cfg!(windows);
@@ -80,6 +84,9 @@ pub(super) fn lines_for(line: &TreeLine, has_roots: bool) -> Vec<MenuLine> {
             RevealRight,
             reveal_ok && line.right.is_some(),
         ),
+        MenuLine::Break,
+        run("Recheck all", super::super::compare_tab_keys::Refresh, true),
+        run("Clear compare cache", ClearCache, true),
     ]);
     lines
 }
@@ -181,12 +188,35 @@ impl FoldersView {
         }
     }
 
+    /// Forgets every stored hash on a background task, then toasts the outcome.
+    fn clear_cache(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |_, cx| {
+            let result = cx.background_spawn(async { clear_hashes() }).await;
+            let _ = cx.update(|cx| toast::notify(cache_toast(&result), cx));
+        })
+        .detach();
+    }
+
     /// Copies the name of the cursor line and toasts.
     fn copy_name(&mut self, cx: &mut Context<Self>) {
         if let Some((_, line)) = self.current() {
             cx.write_to_clipboard(ClipboardItem::new_string(line.name));
             toast::notify("Copied name", cx);
         }
+    }
+}
+
+/// The toast text for the end of a cache clear (NC211): the count, "already empty", busy or the reason.
+pub(super) fn cache_toast(result: &Result<usize, ClearError>) -> String {
+    match result {
+        Ok(0) => t!("compare-cache-none"),
+        Ok(count) => t!(
+            "compare-cache-cleared",
+            count = *count,
+            shown = grouped(*count as u64)
+        ),
+        Err(ClearError::Busy) => t!("compare-cache-busy"),
+        Err(ClearError::Io(text)) => t!("compare-cache-clear-failed", reason = text.as_str()),
     }
 }
 
@@ -197,6 +227,7 @@ pub(super) fn menu_actions(root: Div, cx: &mut Context<FoldersView>) -> Div {
         .on_action(cx.listener(|this, _: &CopyRightPath, _, cx| this.copy_side(1, cx)))
         .on_action(cx.listener(|this, _: &RevealLeft, _, cx| this.reveal_side(0, cx)))
         .on_action(cx.listener(|this, _: &RevealRight, _, cx| this.reveal_side(1, cx)))
+        .on_action(cx.listener(|this, _: &ClearCache, _, cx| this.clear_cache(cx)))
         .on_action(cx.listener(|this, _: &CopyName, _, cx| this.copy_name(cx)))
         .on_action(cx.listener(|this, _: &ShowMenu, window, cx| this.show_menu_at_line(window, cx)))
 }

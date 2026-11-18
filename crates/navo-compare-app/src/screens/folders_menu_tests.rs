@@ -8,11 +8,13 @@ use gpui_kit::{
     TestAppContext, VisualTestContext,
 };
 
+use super::menu::cache_toast;
 use super::tests::{shown, view_with};
 use super::{FoldersView, bind_keys};
 use crate::layers::toast::{self, ToastHost};
 use crate::menu_host::{bind_menu_keys, menu_view};
 use crate::screens::folders_head::SideRoot;
+use sidewise_host::compare::hash_cache::file::ClearError;
 use sidewise_l10n::t;
 
 /// A focused view over the fixture with roots `/left` and `/right`, menu keys bound.
@@ -100,12 +102,17 @@ fn right_click_selects_and_shows_the_file_menu(cx: &mut TestAppContext) {
             "Copy right path",
             "Copy name",
             "Reveal left in Explorer",
-            "Reveal right in Explorer"
+            "Reveal right in Explorer",
+            "Recheck all",
+            "Clear compare cache"
         ]
     );
     let enabled: Vec<_> = lines.iter().map(|l| l.2).collect();
     let left = cfg!(windows);
-    assert_eq!(enabled, [true, true, true, false, true, left, false]);
+    assert_eq!(
+        enabled,
+        [true, true, true, false, true, left, false, true, true]
+    );
 }
 
 #[gpui_kit::test]
@@ -227,4 +234,49 @@ fn escape_refocuses_the_tree(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(view.read_with(cx, |view, _| view.menu.is_none()));
     assert!(view_focused(cx, window, &view));
+}
+
+/// The last two lines of every Folders menu are Recheck all and Clear compare cache, enabled.
+#[gpui_kit::test]
+fn the_menu_offers_recheck_and_clear(cx: &mut TestAppContext) {
+    let (_, view) = right_click_the_left_only_file(cx);
+    let lines = menu_lines(cx, &view);
+    let tail: Vec<_> = lines[lines.len() - 2..]
+        .iter()
+        .map(|l| (l.0.as_str(), l.2))
+        .collect();
+    assert_eq!(tail, [("Recheck all", true), ("Clear compare cache", true)]);
+}
+
+/// Each outcome of a clear has its own toast text.
+#[test]
+fn cache_toast_names_each_outcome() {
+    assert_eq!(cache_toast(&Ok(0)), "The compare cache is already empty.");
+    assert_eq!(
+        cache_toast(&Ok(1234)),
+        "Cleared 1,234 files from the compare cache."
+    );
+    assert!(cache_toast(&Err(ClearError::Busy)).starts_with("Another Sidewise window"));
+    let failed = cache_toast(&Err(ClearError::Io("disk full".into())));
+    assert!(
+        failed.starts_with("Could not clear the compare cache:") && failed.contains("disk full")
+    );
+}
+
+/// Choosing Clear compare cache by mouse ends in a toast that names the compare cache.
+#[gpui_kit::test]
+fn clear_compare_cache_toasts(cx: &mut TestAppContext) {
+    let (window, _) = right_click_the_left_only_file(cx);
+    let host = cx.new(|_| ToastHost::new());
+    cx.update(|cx| toast::install_sink(&host, cx));
+    cx.update_window(window, |_, w, cx| {
+        w.render_frame(cx);
+        w.within("context-menu")
+            .within(("menu-level", 0usize))
+            .click(("menu-row", 10usize), cx);
+    })
+    .expect("window");
+    cx.run_until_parked();
+    let got = host.read_with(cx, |host, _| host.messages());
+    assert!(got.iter().any(|m| m.contains("compare cache")), "{got:?}");
 }

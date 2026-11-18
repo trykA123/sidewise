@@ -69,7 +69,6 @@ pub(crate) fn shared_hashes() -> Arc<FileHashes> {
 }
 
 /// Forgets every stored hash; fails with `Busy` when another window holds the cache.
-#[expect(dead_code, reason = "the Folders menu calls it in U2")]
 pub(crate) fn clear_hashes() -> Result<usize, ClearError> {
     shared_hashes().clear_all()
 }
