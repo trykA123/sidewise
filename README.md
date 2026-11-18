@@ -105,9 +105,19 @@ Do not edit or delete files in the journal folder while Sidewise runs.
 
 ## Git compare
 
-On the Start screen, type `<repository folder>@<revision>` in a side field, for example `C:\src\app@main`, `C:\src\app@v1.2`, `C:\src\app@HEAD~3` or `C:\src\app@1a2b3c4`. The other side can be another revision or a plain folder, such as `C:\src\app` itself; on the command line, run `sidewise C:\src\app@main C:\src\app`. A revision is one commit: a branch, a tag, a commit id or an expression such as `HEAD~3`. A range, or a name that is not a commit, shows "No such revision", and the repository folder must be the top folder of the repository. A Git side is read-only: Sidewise copies nothing to it, and it has no file on disk to reveal. Sidewise never starts `git`, never runs hooks, filters or other programs from the repository, and never fetches. A file over 64 MiB shows as unreadable.
+On the Start screen, type `<repository folder>@<revision>` in a side field, for example `C:\src\app@main`, `C:\src\app@v1.2`, `C:\src\app@HEAD~3` or `C:\src\app@1a2b3c4`. The other side can be another revision or a plain folder, such as `C:\src\app` itself; on the command line, run `sidewise C:\src\app@main C:\src\app`. A revision is one commit: a branch, a tag, a commit id or an expression such as `HEAD~3`. A range, or a name that is not a commit, shows "No such revision", and the repository folder must be the top folder of the repository. A Git side is read-only: Sidewise copies nothing to it, and it has no file on disk to reveal. Sidewise never starts `git`, never runs hooks, filters or other programs from the repository, and never fetches into your repository. A file over 64 MiB shows as unreadable.
 
-A clone's remote branches work as sides too: type `C:\src\app@origin/main` to compare the remote branch as it was at your last `git fetch`. Sidewise never fetches, so run `git fetch` yourself to bring the remote branch up to date. Pull request refs such as `@refs/pull/12/head` work the same way when your fetch settings bring them into the clone.
+A clone's remote branches work as sides too: type `C:\src\app@origin/main` to compare the remote branch as it was at your last `git fetch`. Sidewise never fetches into a clone, so run `git fetch` yourself to bring the remote branch up to date. Pull request refs such as `@refs/pull/12/head` work the same way when your fetch settings bring them into the clone.
+
+### Remote Git sides
+
+Without a clone, type a public `https://` address in a side field: `https://github.com/owner/repo@main`, `https://codeberg.org/forgejo/forgejo@v9.0.0`, `https://github.com/owner/repo@refs/pull/12/head`. Without `@revision`, the server's default branch is used. The chip under the field says "Remote Git revision · downloaded when you compare"; typing never uses the network.
+
+- Pressing Compare, opening the row from Recent or pressing `F5` downloads that one commit. Opening a file, the Stream and the diff read what the compare downloaded and never download.
+- Only public `https://` repositories work. Sidewise sends no credentials, follows no redirect, uses your Windows proxy settings and certificate store, and sends the client name `Sidewise`.
+- A download over 256 MiB, or a file in it over 64 MiB, is refused. When a download fails, the tab says why in one line, for example "Repository not found, or it needs a sign-in (not supported yet)".
+- Downloads are kept in `%LOCALAPPDATA%\Sidewise\cache\git-remote` (or `<DIR>\cache\git-remote` with `--profile DIR`): at most 16 repositories and 2 GiB, least recently used deleted first.
+- A remote side is read-only, as any Git side, and the command line refuses it: type it in the window.
 
 ## Uninstall
 
@@ -122,7 +132,7 @@ Open Settings > Apps > Installed apps, find Sidewise and choose Uninstall. Your 
 - Recent sessions on the Start screen.
 - Five colour themes, with System, Light and Dark mode.
 - Copy a change to the other side, with Undo.
-- Git compare: a branch, tag or commit against another one or a folder, read-only.
+- Git compare: a branch, tag or commit against another one or a folder, read-only, from a local repository or a public `https://` address.
 - Command line: `sidewise <left> <right>`, `--profile DIR`, `--version` and `--help`.
 
 ## Not in this alpha
@@ -138,6 +148,7 @@ Open Settings > Apps > Installed apps, find Sidewise and choose Uninstall. Your 
 - `crates/navo-compare-cli`: the command-line parser.
 - `crates/navo-compare-profile`: the profile, recent and named sessions.
 - `crates/sidewise-update`: the update check: version rules, the GitHub release list and the request.
+- `crates/sidewise-git-address`, `crates/sidewise-git-remote`: remote Git sides: the address rules, the download and its cache.
 - `assets/brand`: the app icon.
 - `installer/`: the Inno Setup script of the installer.
 - `scripts/`: the local gate, the Windows build and the release.

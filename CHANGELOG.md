@@ -8,6 +8,7 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Faster re-compares. Sidewise remembers each file's content hash on this PC. When you compare the same folders again (from Recent, by typing the paths, or after a restart), files whose size, modified time and file identity did not change are not read again. A row shows Different only after both files were read in this run; a remembered hash only ever confirms Same.
 - `F5` is now "Recheck all": it reads every file again and refreshes the remembered hashes. The Folders right-click menu has "Recheck all" and "Clear compare cache".
+- Remote Git sides. Type a public `https://` address with a revision in a side field, for example `https://github.com/owner/repo@main`, `https://codeberg.org/forgejo/forgejo@v9.0.0` or `https://github.com/owner/repo@refs/pull/12/head`. Without `@revision`, the server's default branch is used. Pressing Compare, opening the row from Recent or pressing `F5` downloads that one commit; then it compares like a local Git side, read-only. Opening a file, the Stream and the diff never download.
 - Viewed marks are kept across restarts. "Clear all viewed marks" in the Stream right-click menu removes them.
 
 ### Changed
@@ -24,6 +25,8 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Files are never remembered on a network drive (a UNC path or a mapped drive), on FAT32 or exFAT, on a Git side, when modified in the last 10 seconds, or with a modified time before 1990.
 - A file changed in place that keeps its size, modified time and file identity shows Same until `F5`.
 - When two Sidewise windows are open, only the first one saves remembered hashes; "Clear compare cache" in the second one says the cache is busy.
+- Remote Git sides: public `https://` repositories only. No sign-in, no `http://` or `ssh://`, no user name in the address, no redirects. A download over 256 MiB, or a file in it over 64 MiB, is refused. Sidewise keeps up to 16 downloaded repositories (2 GiB) in the profile's `cache\git-remote` and deletes the least recently used first.
+- A remote Git side cannot be given on the command line; the command line exits with code 2.
 
 ## [0.1.0-alpha.4] — 2026-11-18
 
