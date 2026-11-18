@@ -7923,7 +7923,14 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sidewise-winhttp",
  "tracing",
+]
+
+[[package]]
+name = "sidewise-winhttp"
+version = "0.1.0-alpha.4"
+dependencies = [
  "windows-sys 0.61.2",
 ]
 

@@ -20,17 +20,25 @@ pub const TIMEOUTS_MS: [i32; 4] = [5_000, 5_000, 5_000, 10_000];
 /// Whole-fetch limit: per-call timeouts alone let a slow sender hold the thread.
 pub const FETCH_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// The largest body chunk read at a time, in bytes.
-pub const CHUNK_BYTES: usize = 64 * 1024;
-
-#[cfg(windows)]
-#[path = "winhttp.rs"]
-mod winhttp;
+/// The HTTPS port of the release list request.
+pub const PORT: u16 = 443;
 
 /// Fetches the release feed body through WinHTTP; fails with `Network`, `Status` or `TooLarge`.
 #[cfg(windows)]
 pub fn fetch_feed() -> Result<Vec<u8>, CheckError> {
-    winhttp::get(HOST, PATH)
+    use sidewise_winhttp::{Target, WinHttpError};
+    let target = Target {
+        host: HOST,
+        port: PORT,
+        user_agent: USER_AGENT,
+        timeouts_ms: TIMEOUTS_MS,
+    };
+    let max_bytes = crate::feed::MAX_FEED_BYTES;
+    sidewise_winhttp::get(&target, PATH, HEADERS, max_bytes, FETCH_DEADLINE).map_err(|e| match e {
+        WinHttpError::Network(code) => CheckError::Network(code),
+        WinHttpError::Status(status) => CheckError::Status(status),
+        WinHttpError::TooLarge => CheckError::TooLarge,
+    })
 }
 
 /// Fetches the release feed body; off Windows there is no transport, so always `Unsupported`.
