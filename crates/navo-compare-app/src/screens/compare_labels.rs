@@ -9,11 +9,13 @@ use sidewise_kit::prelude::*;
 use super::compare_tab::CompareRequest;
 use super::folders_head::SideRoot;
 
-/// The path of a `Path` side, or the repository of a `GitRev` side.
+/// The path of a `Path` side, the repository of a `GitRev` side, or the address of a `GitUrl`
+/// side without its `https://`.
 pub(super) fn path_of(spec: &SideSpec) -> &Path {
     match spec {
         SideSpec::Path(path) => path,
         SideSpec::GitRev { repo, .. } => repo,
+        SideSpec::GitUrl { url, .. } => Path::new(url.strip_prefix("https://").unwrap_or(url)),
     }
 }
 
@@ -23,7 +25,7 @@ pub(super) fn side_root(spec: &SideSpec) -> SideRoot {
         path: path_of(spec).to_path_buf(),
         rev: match spec {
             SideSpec::Path(_) => None,
-            SideSpec::GitRev { rev, .. } => Some(rev.clone()),
+            SideSpec::GitRev { rev, .. } | SideSpec::GitUrl { rev, .. } => Some(rev.clone()),
         },
     }
 }
@@ -39,8 +41,42 @@ pub(super) fn title_of(request: &CompareRequest) -> SharedString {
         );
         match spec {
             SideSpec::Path(_) => base,
-            SideSpec::GitRev { rev, .. } => format!("{base}@{rev}"),
+            SideSpec::GitRev { rev, .. } | SideSpec::GitUrl { rev, .. } => format!("{base}@{rev}"),
         }
     };
     format!("{} ↔ {}", name(&request.left), name(&request.right)).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use navo_compare_cli::args::SideSpec;
+
+    use super::{CompareRequest, path_of, title_of};
+
+    /// A remote side.
+    fn remote() -> SideSpec {
+        SideSpec::GitUrl {
+            url: "https://github.com/owner/repo".into(),
+            rev: "main".into(),
+        }
+    }
+
+    /// A remote side and a folder title the tab `repo@main ↔ app`.
+    #[test]
+    fn a_remote_title_reads_name_at_rev() {
+        let request = CompareRequest {
+            left: remote(),
+            right: SideSpec::Path(PathBuf::from("/w/app")),
+            choice: Default::default(),
+        };
+        assert_eq!(title_of(&request).as_ref(), "repo@main ↔ app");
+    }
+
+    /// The header shows a remote side without its scheme.
+    #[test]
+    fn a_remote_path_drops_the_scheme() {
+        assert_eq!(path_of(&remote()), Path::new("github.com/owner/repo"));
+    }
 }

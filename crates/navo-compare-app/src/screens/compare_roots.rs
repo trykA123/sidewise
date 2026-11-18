@@ -55,6 +55,9 @@ fn root_of(spec: &SideSpec) -> Result<Location, RunError> {
         SideSpec::Path(path) => location_of(path),
         SideSpec::GitRev { repo, rev } => encode(repo, rev, Form::Stored)
             .map_err(|error| RunError::Location(format!("{error:?}"))),
+        SideSpec::GitUrl { .. } => Err(RunError::Location(
+            "remote Git sides are not connected yet".into(),
+        )),
     }
 }
 
@@ -74,9 +77,16 @@ fn git_with_path(path: &Path, side: Side) -> Result<RunKind, RunError> {
 pub fn roots_of(left: &SideSpec, right: &SideSpec) -> Result<(RunKind, [Location; 2]), RunError> {
     let kind = match (left, right) {
         (SideSpec::Path(l), SideSpec::Path(r)) => classify(l, r)?,
-        (SideSpec::GitRev { .. }, SideSpec::GitRev { .. }) => RunKind::Folders,
-        (SideSpec::GitRev { .. }, SideSpec::Path(path)) => git_with_path(path, Side::Right)?,
-        (SideSpec::Path(path), SideSpec::GitRev { .. }) => git_with_path(path, Side::Left)?,
+        (
+            SideSpec::GitRev { .. } | SideSpec::GitUrl { .. },
+            SideSpec::GitRev { .. } | SideSpec::GitUrl { .. },
+        ) => RunKind::Folders,
+        (SideSpec::GitRev { .. } | SideSpec::GitUrl { .. }, SideSpec::Path(path)) => {
+            git_with_path(path, Side::Right)?
+        }
+        (SideSpec::Path(path), SideSpec::GitRev { .. } | SideSpec::GitUrl { .. }) => {
+            git_with_path(path, Side::Left)?
+        }
     };
     Ok((kind, [root_of(left)?, root_of(right)?]))
 }

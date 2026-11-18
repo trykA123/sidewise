@@ -95,3 +95,15 @@ fn folder_and_missing_is_missing_right() {
         Err(RunError::Missing(Side::Right))
     );
 }
+
+/// A remote Git side is not connected yet: its root is a `Location` error.
+#[test]
+fn a_remote_side_is_a_location_error() {
+    let remote = SideSpec::GitUrl {
+        url: "https://github.com/owner/repo".into(),
+        rev: "main".into(),
+    };
+    let dir = Dir::new("rm");
+    let result = roots_of(&remote, &SideSpec::Path(dir.path().to_path_buf()));
+    assert!(matches!(result, Err(RunError::Location(_))));
+}

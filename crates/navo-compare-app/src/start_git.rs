@@ -20,6 +20,7 @@ pub(crate) fn probe(text: &str, cwd: &Path) -> SideHint {
     match args::side(text, cwd, &exists) {
         Ok(spec @ SideSpec::GitRev { .. }) => git_hint(spec),
         Ok(spec @ SideSpec::Path(_)) if found.get() => SideHint::Path(spec),
+        Ok(SideSpec::GitUrl { .. }) => SideHint::NotFound,
         Ok(SideSpec::Path(_)) | Err(_) => SideHint::NotFound,
     }
 }

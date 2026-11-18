@@ -41,7 +41,15 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SideSpec {
     Path(PathBuf),
-    GitRev { repo: PathBuf, rev: String },
+    GitRev {
+        repo: PathBuf,
+        rev: String,
+    },
+    /// A revision of a remote https repository: canonical address and revision (`HEAD` when none was typed).
+    GitUrl {
+        url: String,
+        rev: String,
+    },
 }
 
 /// Why a command line was refused, before any file or program is touched.

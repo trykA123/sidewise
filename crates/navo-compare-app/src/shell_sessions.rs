@@ -36,13 +36,15 @@ fn side_ref(spec: &SideSpec) -> SideRef {
     match spec {
         SideSpec::Path(path) => SideRef::path(path.clone()),
         SideSpec::GitRev { repo, rev } => SideRef::git(repo.clone(), rev.clone()),
+        SideSpec::GitUrl { url, rev } => SideRef::remote(url.clone(), rev.clone()),
     }
 }
 
 /// Turns a stored side back into the start side that opens it.
 fn side_spec(side: SideRef) -> SideSpec {
-    match side.rev {
-        Some(rev) if side.kind == SideKind::Git => SideSpec::GitRev {
+    match (side.rev, side.url) {
+        (Some(rev), Some(url)) if side.kind == SideKind::Remote => SideSpec::GitUrl { url, rev },
+        (Some(rev), _) if side.kind == SideKind::Git => SideSpec::GitRev {
             repo: side.path,
             rev,
         },
@@ -181,6 +183,15 @@ mod tests {
         let spec = SideSpec::GitRev {
             repo: PathBuf::from("/tmp/repo"),
             rev: "main".to_string(),
+        };
+        assert_eq!(side_spec(side_ref(&spec)), spec);
+    }
+
+    #[test]
+    fn a_remote_side_round_trips() {
+        let spec = SideSpec::GitUrl {
+            url: "https://github.com/owner/repo".into(),
+            rev: "main".into(),
         };
         assert_eq!(side_spec(side_ref(&spec)), spec);
     }
