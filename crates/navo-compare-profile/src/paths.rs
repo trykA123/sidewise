@@ -152,6 +152,11 @@ impl Profile {
         self.folders.data.join("cache")
     }
 
+    /// Returns the Viewed marks log, `data/viewed.log`.
+    pub fn viewed_file(&self) -> PathBuf {
+        self.folders.data.join("viewed.log")
+    }
+
     /// Returns the journal folder, `data/journal`.
     pub fn journal_dir(&self) -> PathBuf {
         self.folders.data.join("journal")
