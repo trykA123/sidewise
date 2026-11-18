@@ -1,7 +1,12 @@
-//! Sidewise's shared Windows HTTPS client: one synchronous GET through WinHTTP, system proxy and OS TLS.
+//! Sidewise's shared Windows HTTPS client: a synchronous GET and a streaming `Exchange` through
+//! WinHTTP, system proxy and OS TLS.
 //! Holds all WinHTTP FFI; unsafe code is allowed function by function here (workspace lint: deny).
 //! Off Windows the crate compiles to nothing.
 #![cfg(windows)]
+
+mod exchange;
+
+pub use exchange::{Exchange, Verb};
 
 use std::ffi::c_void;
 use std::mem::size_of;
@@ -87,7 +92,7 @@ pub fn get(
     // Declared session, connection, request: they drop, and close, in reverse.
     let session = open_session(target)?;
     let connection = connect(&session, target)?;
-    let request = open_request(&connection, path)?;
+    let request = open_request(&connection, "GET", path)?;
     send(&request, headers)?;
     let status = status_code(&request)?;
     if status != 200 {
@@ -170,10 +175,10 @@ fn connect(session: &Handle, target: &Target<'_>) -> Result<Handle, WinHttpError
     Handle::new(unsafe { WinHttpConnect(session.0, server.as_ptr(), target.port, 0) })
 }
 
-/// Opens a TLS `GET path` request with redirects, cookies and Windows logon credentials off.
+/// Opens a TLS `verb path` request with redirects, cookies and Windows logon credentials off.
 #[allow(unsafe_code, reason = "WinHttpOpenRequest is an FFI call")]
-fn open_request(connection: &Handle, path: &str) -> Result<Handle, WinHttpError> {
-    let verb = wide("GET");
+fn open_request(connection: &Handle, verb: &str, path: &str) -> Result<Handle, WinHttpError> {
+    let verb = wide(verb);
     let object = wide(path);
     // SAFETY: `connection` is open; `verb` and `object` are NUL-terminated and outlive the call;
     // null version, referrer and accept types are WinHTTP's documented defaults.
