@@ -229,6 +229,10 @@ fn leftover_staging_of_the_key_is_removed_and_other_names_are_kept() {
         std::fs::create_dir(root.path().join(name)).unwrap();
     }
     std::fs::write(root.path().join("notes.txt"), "keep").unwrap();
+    // Another window holds the other key, so eviction must leave its staging alone.
+    let other_lock = root.path().join("0123456789abcdef0123456789abcdef.lock");
+    let held = std::fs::File::create(&other_lock).unwrap();
+    held.lock().unwrap();
     fetch(
         &Cache::new(root.path().to_path_buf()),
         served.path(),
@@ -244,6 +248,7 @@ fn leftover_staging_of_the_key_is_removed_and_other_names_are_kept() {
     let mut expect: Vec<String> = expect
         .into_iter()
         .chain([other.to_owned(), "notes.txt".to_owned()])
+        .chain(["0123456789abcdef0123456789abcdef.lock".to_owned()])
         .collect();
     expect.sort();
     assert_eq!(after, expect);

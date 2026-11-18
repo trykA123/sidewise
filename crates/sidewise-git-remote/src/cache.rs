@@ -11,8 +11,12 @@ use std::time::SystemTime;
 use gix_transport::client::blocking_io::http::Http;
 use sidewise_git::location::{Form, GitAt};
 
+// A child of `cache` so it shares the `names` helpers; the file sits beside `cache.rs`.
+#[path = "evict.rs"]
+mod evict;
 mod names;
 
+pub use self::evict::{EvictReport, evict};
 use self::names::Names;
 use crate::fetch::job::{local_ref, open_options};
 use crate::{Limits, RemoteAt, RemoteProblem};
@@ -61,7 +65,8 @@ impl Cache {
         let _in_process = mutex.lock().unwrap_or_else(PoisonError::into_inner);
         let _across_processes = lock_file(&self.root, &names.lock())?;
         names.remove_staging();
-        // RG6b: evict here (NC223 rule 6), with this key's lock held and before the fetch.
+        // NC223 rule 6: an eviction error leaves the cache as it is and never fails the fetch.
+        evict(&self.root, names.key(), limits.max_bytes).ok();
         let live = names.live();
         let local = match live_state(&live) {
             Live::Opens => crate::fetch_with(&live, &at.url, &at.rev, http, limits)?,
