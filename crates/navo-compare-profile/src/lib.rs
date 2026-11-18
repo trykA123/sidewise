@@ -30,6 +30,9 @@ mod pick_tests;
 mod recent_tests;
 
 #[cfg(test)]
+mod remote_side_tests;
+
+#[cfg(test)]
 mod session_tests;
 
 #[cfg(test)]

@@ -55,11 +55,13 @@ fn pair(id: &str) -> Session {
             kind: SideKind::Path,
             path: near.join("book-left"),
             rev: None,
+            url: None,
         },
         right: SideRef {
             kind: SideKind::Path,
             path: near.join("book-right"),
             rev: None,
+            url: None,
         },
         rules: Rules {
             whitespace: "keep".to_string(),

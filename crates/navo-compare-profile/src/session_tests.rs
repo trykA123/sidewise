@@ -58,6 +58,7 @@ fn side(kind: SideKind, name: &str, rev: Option<&str>) -> SideRef {
         kind,
         path: abs(name),
         rev: rev.map(str::to_string),
+        url: None,
     }
 }
 

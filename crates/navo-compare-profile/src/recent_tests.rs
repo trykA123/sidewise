@@ -11,6 +11,7 @@ fn side(kind: SideKind, path: &str, rev: Option<&str>) -> SideRef {
         kind,
         path: PathBuf::from(path),
         rev: rev.map(str::to_string),
+        url: None,
     }
 }
 
@@ -63,6 +64,7 @@ fn side_text_replaces_invalid_bytes() {
         kind: SideKind::Path,
         path: PathBuf::from(bytes),
         rev: None,
+        url: None,
     };
     assert_eq!(side_text(&weird), "/data/\u{FFFD}");
 }

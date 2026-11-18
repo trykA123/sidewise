@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use sidewise_git_address::{RemoteRev, RemoteUrl};
 
 /// The layout version written to each session file.
 pub const SESSION_VERSION: u32 = 1;
@@ -54,16 +55,19 @@ pub enum SessionKind {
     Texts,
 }
 
-/// One resolved side: absolute path plus, for Git, the revision.
+/// One resolved side: an absolute path, a Git revision, or a remote address.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SideRef {
-    /// Whether the side is a path or a Git revision.
+    /// Whether the side is a path, a Git revision or a remote repository.
     pub kind: SideKind,
-    /// Absolute path (NS9).
+    /// Absolute path (NS9); empty for a remote side.
     pub path: PathBuf,
     /// Git revision; `None` for a path side.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rev: Option<String>,
+    /// Canonical https address of a remote side; `None` for path and Git sides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 impl SideRef {
@@ -73,6 +77,7 @@ impl SideRef {
             kind: SideKind::Path,
             path,
             rev: None,
+            url: None,
         }
     }
 
@@ -82,6 +87,17 @@ impl SideRef {
             kind: SideKind::Git,
             path: repo,
             rev: Some(rev),
+            url: None,
+        }
+    }
+
+    /// Makes a remote side: canonical address `url` and revision `rev`; the path stays empty.
+    pub fn remote(url: String, rev: String) -> SideRef {
+        SideRef {
+            kind: SideKind::Remote,
+            path: PathBuf::new(),
+            rev: Some(rev),
+            url: Some(url),
         }
     }
 }
@@ -94,6 +110,8 @@ pub enum SideKind {
     Path,
     /// A revision read through Git.
     Git,
+    /// A revision of a remote https Git repository, read from Sidewise's own cache.
+    Remote,
 }
 
 /// The compare rules stored with a session.
@@ -136,12 +154,17 @@ pub(crate) fn sides_valid(session: &Session) -> bool {
 
 /// Returns true when one side can be stored under NS9.
 fn side_valid(side: &SideRef) -> bool {
-    if !side.path.is_absolute() {
-        return false;
-    }
     match side.kind {
-        SideKind::Path => side.rev.is_none(),
-        SideKind::Git => side.rev.as_deref().is_some_and(rev_valid),
+        SideKind::Path => side.path.is_absolute() && side.rev.is_none() && side.url.is_none(),
+        SideKind::Git => {
+            side.path.is_absolute()
+                && side.url.is_none()
+                && side.rev.as_deref().is_some_and(rev_valid)
+        }
+        SideKind::Remote => {
+            side.path.as_os_str().is_empty()
+                && remote_valid(side.url.as_deref(), side.rev.as_deref())
+        }
     }
 }
 
@@ -152,4 +175,18 @@ fn rev_valid(rev: &str) -> bool {
         && rev.len() <= 256
         && !rev.starts_with('-')
         && !rev.chars().any(char::is_control)
+}
+
+/// Returns true when `url` and `rev` are canonical remote values; false otherwise.
+fn remote_valid(url: Option<&str>, rev: Option<&str>) -> bool {
+    let (Some(url), Some(rev)) = (url, rev) else {
+        return false;
+    };
+    let Ok(parsed_url) = RemoteUrl::parse(url) else {
+        return false;
+    };
+    let Ok(parsed_rev) = RemoteRev::parse(rev) else {
+        return false;
+    };
+    parsed_url.as_str() == url && parsed_rev.as_str() == rev
 }

@@ -57,11 +57,13 @@ fn sample(id: &str) -> Session {
             kind: SideKind::Path,
             path: near.join("left"),
             rev: None,
+            url: None,
         },
         right: SideRef {
             kind: SideKind::Git,
             path: near.join("repo"),
             rev: Some("main".to_string()),
+            url: None,
         },
         rules: Rules {
             whitespace: "keep".to_string(),

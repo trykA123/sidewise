@@ -77,7 +77,7 @@ pub fn start_rows(sessions: &[Session], now: i64) -> StartRows {
     rows
 }
 
-/// Shows a side as `<path>`, or `<path>@<rev>` for a Git side with a rev.
+/// Shows a side as `<path>`, `<path>@<rev>` for a Git side, or `<url>@<rev>` for a remote side.
 ///
 /// The path is converted lossily, so invalid UTF-8 becomes a replacement
 /// character. Never fails.
@@ -85,6 +85,9 @@ pub fn side_text(side: &SideRef) -> String {
     let path = side.path.to_string_lossy().into_owned();
     match (side.kind, side.rev.as_deref()) {
         (SideKind::Git, Some(rev)) => format!("{path}@{rev}"),
+        (SideKind::Remote, Some(rev)) => {
+            format!("{}@{rev}", side.url.as_deref().unwrap_or_default())
+        }
         _ => path,
     }
 }
@@ -107,7 +110,10 @@ pub fn age_text(opened: i64, now: i64) -> String {
 
 /// Returns the row kind from the two side kinds.
 fn row_kind(left: &SideRef, right: &SideRef) -> RowKind {
-    match (left.kind == SideKind::Git, right.kind == SideKind::Git) {
+    match (
+        matches!(left.kind, SideKind::Git | SideKind::Remote),
+        matches!(right.kind, SideKind::Git | SideKind::Remote),
+    ) {
         (true, true) => RowKind::GitRefs,
         (false, false) => RowKind::Paths,
         _ => RowKind::Mixed,
