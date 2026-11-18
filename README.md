@@ -107,6 +107,8 @@ Do not edit or delete files in the journal folder while Sidewise runs.
 
 On the Start screen, type `<repository folder>@<revision>` in a side field, for example `C:\src\app@main`, `C:\src\app@v1.2`, `C:\src\app@HEAD~3` or `C:\src\app@1a2b3c4`. The other side can be another revision or a plain folder, such as `C:\src\app` itself; on the command line, run `sidewise C:\src\app@main C:\src\app`. A revision is one commit: a branch, a tag, a commit id or an expression such as `HEAD~3`. A range, or a name that is not a commit, shows "No such revision", and the repository folder must be the top folder of the repository. A Git side is read-only: Sidewise copies nothing to it, and it has no file on disk to reveal. Sidewise never starts `git`, never runs hooks, filters or other programs from the repository, and never fetches. A file over 64 MiB shows as unreadable.
 
+A clone's remote branches work as sides too: type `C:\src\app@origin/main` to compare the remote branch as it was at your last `git fetch`. Sidewise never fetches, so run `git fetch` yourself to bring the remote branch up to date. Pull request refs such as `@refs/pull/12/head` work the same way when your fetch settings bring them into the clone.
+
 ## Uninstall
 
 Open Settings > Apps > Installed apps, find Sidewise and choose Uninstall. Your settings, sessions and backups stay in `%APPDATA%\Sidewise` and `%LOCALAPPDATA%\Sidewise`. Delete those two folders to remove them too. The journal folder with your backups is inside `%LOCALAPPDATA%\Sidewise`. For the zip: delete its folder.

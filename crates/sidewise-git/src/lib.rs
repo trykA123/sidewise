@@ -8,5 +8,7 @@ pub mod index;
 pub mod location;
 mod lookup;
 mod pointers;
+#[cfg(test)]
+mod remote_refs_tests;
 pub mod repo;
 pub mod side;
