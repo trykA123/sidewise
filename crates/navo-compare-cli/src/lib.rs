@@ -3,6 +3,7 @@
 
 pub mod args;
 mod quote;
+mod side_arg;
 
 #[cfg(test)]
 mod args_pick_tests;
