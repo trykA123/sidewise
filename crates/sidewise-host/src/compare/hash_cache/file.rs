@@ -2,6 +2,7 @@
 //! Opens, locks, replays and appends to `hashes.v1`; the compare engine uses it through `HashCache`.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -30,8 +31,30 @@ pub struct FileHashes {
     path: Option<PathBuf>,
     /// Rows at which `put` stops adding new keys.
     ceiling_rows: usize,
+    /// True when another process held the profile lock at open: this store cannot clear.
+    contended: bool,
     state: Mutex<State>,
 }
+
+/// Why `clear_all` did not clear.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClearError {
+    /// Another process holds the cache; nothing changed.
+    Busy,
+    /// The file could not be removed (the text); the rows are kept.
+    Io(String),
+}
+
+impl fmt::Display for ClearError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Busy => f.write_str("another Sidewise window is using the compare cache"),
+            Self::Io(text) => f.write_str(text),
+        }
+    }
+}
+
+impl std::error::Error for ClearError {}
 
 /// One cached hash and its write order (`seq`, rising), used when rewriting.
 pub(super) struct Row {
@@ -77,6 +100,7 @@ impl FileHashes {
             return Self::memory();
         }
         let mut writer = take_lock(path);
+        let contended = writer.is_none();
         let replay = read_log(path);
         let damaged = !replay.header_ok || replay.bad > 0 || replay.torn;
         let records = replay.rows.len() + replay.bad;
@@ -93,6 +117,7 @@ impl FileHashes {
         Self {
             path: Some(path.to_path_buf()),
             ceiling_rows: limits.ceiling_rows,
+            contended,
             state: Mutex::new(State {
                 rows,
                 next_seq,
@@ -107,6 +132,7 @@ impl FileHashes {
         Self {
             path: None,
             ceiling_rows: Limits::DEFAULT.ceiling_rows,
+            contended: false,
             state: Mutex::new(State {
                 rows: HashMap::new(),
                 next_seq: 0,
@@ -133,6 +159,29 @@ impl FileHashes {
     /// True when the store holds no hash.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Drops every hash and returns how many there were. A writer also removes the file, and
+    /// later puts start a fresh one. Memory-only stores (no file, or a writer whose open or
+    /// append failed) clear memory only. Fails with `Busy` when another process holds the
+    /// cache, and with `Io` when the file cannot be removed (rows are kept then).
+    pub fn clear_all(&self) -> Result<usize, ClearError> {
+        if self.contended {
+            return Err(ClearError::Busy);
+        }
+        let mut state = self.state();
+        if let (Some(path), Some(writer)) = (&self.path, state.writer.as_mut()) {
+            writer.log = None;
+            match fs::remove_file(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(ClearError::Io(error.to_string())),
+            }
+        }
+        state.pending.clear();
+        let count = state.rows.len();
+        state.rows.clear();
+        Ok(count)
     }
 
     /// Locks the state; a panic in another thread leaves plain data, so poison is ignored.
