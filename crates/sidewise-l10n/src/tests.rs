@@ -91,6 +91,34 @@ fn the_git_strings_are_embedded() {
 }
 
 #[test]
+fn the_git_remote_strings_are_embedded() {
+    let ids = [
+        "git-remote-chip-revision",
+        "git-remote-chip-bad-address",
+        "git-remote-unreachable",
+        "git-remote-not-found",
+        "git-remote-redirected",
+        "git-remote-no-such-revision",
+        "git-remote-too-large",
+        "git-remote-object-too-large",
+        "git-remote-timed-out",
+        "git-remote-broken",
+        "git-remote-cli-refused",
+    ];
+    for id in ids {
+        assert!(catalog().has(id), "{id} is missing");
+    }
+}
+
+#[test]
+fn the_git_remote_not_found_text_is_exact() {
+    assert_eq!(
+        t!("git-remote-not-found"),
+        "Repository not found, or it needs a sign-in (not supported yet)"
+    );
+}
+
+#[test]
 fn the_git_side_without_a_file_names_the_revision() {
     assert_eq!(
         t!("git-side-no-file", rev = "main"),
