@@ -67,9 +67,13 @@ impl GitSides {
     /// As `side`, for a new compare run: the cached side only while its revision still names
     /// the same commit, else a new side that becomes the newest entry. The old side is never
     /// changed (another tab may read it). A revision that no longer resolves opens again, so
-    /// it fails as `open`, naming the problem.
+    /// it fails as `open`, naming the problem. A checkout side is never reused: its line
+    /// endings depend on config and attributes that may have changed (NC229 f).
     pub fn fresh(&self, at: &GitAt) -> Result<Arc<GitTreeSide>, GitProblem> {
         let key = key_of(at);
+        if at.form == Form::Checkout {
+            return self.open_and_replace(at, key);
+        }
         if let Some(hit) = self.live(&key)
             && hit.resolve_now().ok() == Some(hit.commit())
         {
@@ -97,6 +101,25 @@ impl GitSides {
         // The last reference to a displaced side may close its repository: not under the lock.
         drop(displaced);
         Ok(side)
+    }
+
+    /// Opens `at` and makes it the newest side for `key`, replacing any held one. Fails as the
+    /// opener, leaving the held entry untouched.
+    fn open_and_replace(&self, at: &GitAt, key: Key) -> Result<Arc<GitTreeSide>, GitProblem> {
+        let opened = Arc::new((self.open)(&at.repo, &at.rev, at.form)?);
+        let displaced = {
+            let mut list = lock(&self.entries);
+            list.retain(|(_, weak)| weak.strong_count() > 0);
+            let held = list
+                .iter()
+                .position(|(found, _)| *found == key)
+                .and_then(|found| list.remove(found).1.upgrade());
+            list.push((key, Arc::downgrade(&opened)));
+            held
+        };
+        // The last reference to a displaced side may close its repository: not under the lock.
+        drop(displaced);
+        Ok(opened)
     }
 
     /// Stores `opened` under `key`. When a live side is already there, the one whose commit is

@@ -26,6 +26,14 @@ fn at(fixture: &Fixture, rev: &str) -> GitAt {
     }
 }
 
+/// As `at`, in the checkout form.
+fn checkout_at(fixture: &Fixture, rev: &str) -> GitAt {
+    GitAt {
+        form: Form::Checkout,
+        ..at(fixture, rev)
+    }
+}
+
 fn fixture() -> Fixture {
     let fixture = Fixture::new();
     let _ = fixture.commit(
@@ -62,6 +70,26 @@ fn same_key_shares_one_side() {
     let sides = isolated();
     let first = sides.side(&at(&fixture, "main")).expect("open");
     let second = sides.side(&at(&fixture, "main")).expect("hit");
+    assert!(Arc::ptr_eq(&first, &second));
+}
+
+#[test]
+fn a_fresh_checkout_side_is_never_reused() {
+    let fixture = fixture();
+    let sides = isolated();
+    let first = sides.fresh(&checkout_at(&fixture, "main")).expect("open");
+    let second = sides.fresh(&checkout_at(&fixture, "main")).expect("open");
+    assert!(!Arc::ptr_eq(&first, &second));
+    let held = sides.side(&checkout_at(&fixture, "main")).expect("hit");
+    assert!(Arc::ptr_eq(&held, &second));
+}
+
+#[test]
+fn a_fresh_stored_side_is_still_reused() {
+    let fixture = fixture();
+    let sides = isolated();
+    let first = sides.fresh(&at(&fixture, "main")).expect("open");
+    let second = sides.fresh(&at(&fixture, "main")).expect("hit");
     assert!(Arc::ptr_eq(&first, &second));
 }
 
