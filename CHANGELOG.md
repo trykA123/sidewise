@@ -4,6 +4,8 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-alpha.5] — 2026-11-19
+
 ### Added
 
 - Faster re-compares. Sidewise remembers each file's content hash on this PC. When you compare the same folders again (from Recent, by typing the paths, or after a restart), files whose size, modified time and file identity did not change are not read again. A row shows Different only after both files were read in this run; a remembered hash only ever confirms Same.
@@ -14,10 +16,13 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - After a command chosen with the mouse in a right-click menu, the focus returns to the list the menu was opened from.
+- Opening a Recent row whose compare is already open switches to that tab instead of opening it twice.
+- A compare enters Recent only once both sides opened. A remote address that fails, or a revision that does not exist, is not added.
 
 ### Fixed
 
 - A rolled-back interrupted Undo now says it was an undo, and that the files are as they were after the copy.
+- `F5` compares again while the filter field has focus.
 
 ### Known limits
 

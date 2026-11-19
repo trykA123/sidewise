@@ -2,7 +2,7 @@
 
 Sidewise compares two folders or two files. It is built from its own crates in this repository. They began as the compare engine of [Navo](https://github.com/trykA123/navo) and were imported with their history.
 
-Status: alpha pre-release 0.1.0-alpha.4. Windows only. It compares folders, files and Git revisions, can copy changes between the two sides with Undo, and never leaves a half-written file. See [Copy and Undo](#copy-and-undo).
+Status: alpha pre-release 0.1.0-alpha.5. Windows only. It compares folders, files and Git revisions (local or from a public `https://` address), can copy changes between the two sides with Undo, and never leaves a half-written file. See [Copy and Undo](#copy-and-undo).
 
 See the [CHANGELOG](CHANGELOG.md) for the full list of what this release has and lacks.
 
@@ -10,14 +10,14 @@ See the [CHANGELOG](CHANGELOG.md) for the full list of what this release has and
 
 Get the files from the [Releases page](https://github.com/trykA123/sidewise/releases):
 
-- `sidewise-0.1.0-alpha.4-windows-x64-setup.exe`
-- `sidewise-0.1.0-alpha.4-windows-x64.zip`
+- `sidewise-0.1.0-alpha.5-windows-x64-setup.exe`
+- `sidewise-0.1.0-alpha.5-windows-x64.zip`
 - `SHA256SUMS`
 
 Check each file before you run it:
 
 1. Open PowerShell in the download folder.
-2. Run `Get-FileHash -Algorithm SHA256 .\sidewise-0.1.0-alpha.4-windows-x64-setup.exe`. Do the same for `sidewise-0.1.0-alpha.4-windows-x64.zip`.
+2. Run `Get-FileHash -Algorithm SHA256 .\sidewise-0.1.0-alpha.5-windows-x64-setup.exe`. Do the same for `sidewise-0.1.0-alpha.5-windows-x64.zip`.
 3. Check that the `Hash` value matches the line for that file in `SHA256SUMS`.
 
 ### Install
