@@ -59,6 +59,8 @@ pub struct CompareRun {
     meters: PhaseMeters,
     options: CompareOptions,
     wake: Waker,
+    /// True once the engine sent an update that is not a failure: both sides opened.
+    opened: bool,
 }
 
 impl CompareRun {
@@ -81,6 +83,7 @@ impl CompareRun {
             meters: PhaseMeters::default(),
             options,
             wake,
+            opened: false,
         };
         run.restart(hooks, false);
         Ok(run)
@@ -106,6 +109,13 @@ impl CompareRun {
         self.session = Some(FolderSession::new(number, control, self.roots.clone()));
         self.updates = updates;
         self.meters = PhaseMeters::default();
+        self.opened = false;
+    }
+
+    /// Whether the run reached the point where rows can arrive: two files, or the engine sent
+    /// an update other than a failure.
+    pub fn opened(&self) -> bool {
+        self.kind == RunKind::Files || self.opened
     }
 
     /// The text of a compare that did not start, as the engine reported it.
@@ -117,6 +127,7 @@ impl CompareRun {
     pub fn drain(&mut self) -> bool {
         let mut applied = false;
         for update in self.updates.try_iter() {
+            self.opened |= !matches!(update, CompareUpdate::Failed(_));
             applied |= self.meters.observe(&update);
             if let Some(session) = self.session.as_mut() {
                 applied |= session.apply(update);

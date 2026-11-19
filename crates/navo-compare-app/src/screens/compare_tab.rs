@@ -103,6 +103,10 @@ pub struct CompareTab {
     pub(super) shown: Option<u64>,
     /// The text of a compare that did not start; the tab shows it instead of the listing.
     pub(super) failure: Option<SharedString>,
+    /// True once `attach` ran: the shell has subscribed, so `SidesOpened` reaches it.
+    pub(super) attached: bool,
+    /// True once `SidesOpened` was sent; a failed run never sets it, so F5 can still send it.
+    pub(super) opened_sent: bool,
     title: SharedString,
     focus: FocusHandle,
     pub(super) subscriptions: Vec<Subscription>,
@@ -117,6 +121,11 @@ impl gpui_kit::EventEmitter<Rewrote> for CompareTab {}
 pub struct ClearedViewed;
 
 impl gpui_kit::EventEmitter<ClearedViewed> for CompareTab {}
+
+/// The run opened both sides, so the compare is worth a Recent row; the shell records it.
+pub struct SidesOpened;
+
+impl gpui_kit::EventEmitter<SidesOpened> for CompareTab {}
 
 impl CompareTab {
     /// Starts the run for `request`; a bad side returns `RunError` before any entity exists.
@@ -163,6 +172,8 @@ impl CompareTab {
             screen,
             shown: None,
             failure: None,
+            attached: false,
+            opened_sent: false,
             title: title_of(request),
             focus: cx.focus_handle(),
             subscriptions: Vec::new(),
@@ -273,6 +284,7 @@ impl CompareTab {
         if drained {
             self.note_failure(cx);
         }
+        self.note_opened(cx);
         let polled = self
             .screen
             .update(cx, |screen, cx| screen.poll_compare_screen(false, cx));

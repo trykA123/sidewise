@@ -6,7 +6,9 @@ use sidewise_kit::prelude::*;
 use super::Shell;
 use crate::chrome::topbar_status::{Crumbs, TopbarMode};
 use crate::screens::compare_run::RunError;
-use crate::screens::compare_tab::{ClearedViewed, CompareRequest, CompareTab, Rewrote, TabView};
+use crate::screens::compare_tab::{
+    ClearedViewed, CompareRequest, CompareTab, Rewrote, SidesOpened, TabView,
+};
 use crate::start::{StartEvent, StartScreen};
 
 /// The start screen's crumb detail: the two kinds of compare its tabs offer.
@@ -154,7 +156,7 @@ impl Shell {
                 choice: *choice,
             },
         };
-        self.open_recorded((index, request), window, cx);
+        let _ = self.open_compare((index, request), window, cx);
     }
 
     /// Replaces the tab at `index` with a compare tab, makes it active and syncs the chrome.
@@ -179,6 +181,11 @@ impl Shell {
             }
         };
         let tab = cx.new(|cx| CompareTab::from_started(started, &request, cx));
+        let recorded = request.clone();
+        cx.subscribe(&tab, move |shell, _, _: &SidesOpened, cx| {
+            shell.remember(&recorded, cx);
+        })
+        .detach();
         tab.update(cx, |tab, cx| tab.attach(&request, window, cx));
         cx.observe(&tab, |shell, _, cx| shell.sync_mode(cx))
             .detach();
@@ -359,3 +366,7 @@ impl Shell {
 #[cfg(test)]
 #[path = "shell_session_tests.rs"]
 mod session_tests;
+
+#[cfg(test)]
+#[path = "shell_recent_tests.rs"]
+mod recent_tests;

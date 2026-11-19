@@ -63,7 +63,7 @@ fn open(cx: &mut App, pair: Option<(SideSpec, SideSpec)>) -> Result<(), String> 
         shell.update(cx, |shell, cx| {
             shell.sync_rows(cx);
             if let Some((left, right)) = pair {
-                shell.open_recorded(
+                let _ = shell.open_compare(
                     (
                         0,
                         CompareRequest {

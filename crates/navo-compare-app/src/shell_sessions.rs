@@ -101,22 +101,8 @@ impl Shell {
         toast::notify_undo("Removed from Recent", undo, cx);
     }
 
-    /// `open_compare`; when it returns Ok, remembers the request. An error already toasted.
-    pub(crate) fn open_recorded(
-        &mut self,
-        (index, request): (usize, CompareRequest),
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self
-            .open_compare((index, request.clone()), window, cx)
-            .is_ok()
-        {
-            self.remember(&request, cx);
-        }
-    }
-
     /// Records the compare in the book (no book: nothing); a save error shows as a toast.
+    /// The tab asks for it once its run opened both sides (`SidesOpened`).
     pub(super) fn remember(&mut self, request: &CompareRequest, cx: &mut Context<Self>) {
         if !cx.has_global::<Sessions>() {
             return;
@@ -153,7 +139,7 @@ impl Shell {
                     right: side_spec(visit.right),
                     choice,
                 };
-                self.open_recorded((index, request), window, cx);
+                let _ = self.open_compare((index, request), window, cx);
             }
             Err(text) => {
                 self.toast(text, cx);

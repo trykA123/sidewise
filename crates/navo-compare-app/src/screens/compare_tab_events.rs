@@ -9,7 +9,9 @@ use sidewise_ui::compare_diff::{PairRequest, UndoStart};
 use sidewise_ui::window_view::{CompareScreen, ScreenEvent};
 
 use super::compare_run::RunKind;
-use super::compare_tab::{ClearedViewed, CompareRequest, CompareTab, Rewrote, TabView};
+use super::compare_tab::{
+    ClearedViewed, CompareRequest, CompareTab, Rewrote, SidesOpened, TabView,
+};
 use super::folders_view::FoldersEvent;
 use super::pair_requests::{neighbour, pair_request, stream_one};
 use crate::layers::toast;
@@ -45,6 +47,17 @@ impl CompareTab {
                 right: Some(roots[1].clone()),
             };
             self.show_pair(pair, window, cx);
+        }
+        self.attached = true;
+        self.note_opened(cx);
+    }
+
+    /// Tells the shell once per run that both sides opened (a failed side never does).
+    /// Waits for `attach`: before it nobody listens.
+    pub(super) fn note_opened(&mut self, cx: &mut Context<Self>) {
+        if self.attached && !self.opened_sent && self.failure.is_none() && self.run.opened() {
+            self.opened_sent = true;
+            cx.emit(SidesOpened);
         }
     }
 
