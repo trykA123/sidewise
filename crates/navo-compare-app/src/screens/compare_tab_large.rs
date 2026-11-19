@@ -41,6 +41,7 @@ impl CompareTab {
             meters: self.run.meters().clone(),
             totals: session.totals(),
             slow: session.slow_paths().to_vec(),
+            reading: session.reading().cloned(),
             checking: session.checking(),
         };
         let finished = !snapshot.checking;

@@ -1,7 +1,11 @@
-//! Presentation model for the large compare screen: per-stage meters, the D5 tiles and the
-//! slow-file note. It reads engine updates and holds no GPUI state.
+//! Presentation model for the large compare screen: per-stage meters, the D5 tiles,
+//! the running-read line and the slow-file note. It reads engine updates and holds no GPUI state.
 
+use sidewise_l10n::t;
 use sidewise_ui::browser::{ComparePhase, CompareTotals, CompareUpdate, SlowPath};
+
+/// A running read shows in the Large view once it is this old (ms).
+const READING_SHOWN_MS: u64 = 1000;
 
 /// The number of walk stages the meter strip shows, one per `ComparePhase`.
 const PHASES: usize = 3;
@@ -50,7 +54,8 @@ impl PhaseMeters {
             | CompareUpdate::Stopped { generation, .. }
             | CompareUpdate::Continued { generation }
             | CompareUpdate::PhaseProgress { generation, .. }
-            | CompareUpdate::SlowPath { generation, .. } => *generation,
+            | CompareUpdate::SlowPath { generation, .. }
+            | CompareUpdate::Reading { generation, .. } => *generation,
             CompareUpdate::Failed(_) => return false,
         };
         if generation < self.generation {
@@ -126,6 +131,18 @@ pub fn slow_note(slow: &[SlowPath]) -> Option<String> {
         1 => format!("1 slow file so far; it took {seconds:.1} s."),
         count => format!("{count} slow files so far; the slowest took {seconds:.1} s."),
     })
+}
+
+/// The running-read line, e.g. `Reading a/b.bin · 6.2 s`; `None` when no read runs or it
+/// is younger than 1 s, so quick files never flicker past.
+pub fn reading_line(reading: Option<&SlowPath>) -> Option<String> {
+    let reading = reading.filter(|read| read.elapsed_ms >= READING_SHOWN_MS)?;
+    let seconds = format!("{:.1}", reading.elapsed_ms as f64 / 1000.0);
+    Some(t!(
+        "compare-large-reading",
+        path = reading.path.as_str(),
+        seconds = seconds
+    ))
 }
 
 /// The heading and sub-line of one walk stage.

@@ -337,8 +337,10 @@ fn forward_limit(
 /// Returns false when the receiver is gone.
 fn forward(events: &Sender<CompareEvent>, batch: RowBatch) -> bool {
     let (generation, totals, is_final) = (batch.generation, batch.totals, batch.is_final);
-    let has_content =
-        !batch.rows.is_empty() || !batch.progress.is_empty() || batch.problem.is_some();
+    let has_content = !batch.rows.is_empty()
+        || !batch.progress.is_empty()
+        || batch.problem.is_some()
+        || batch.reading.is_some();
     if has_content && events.send(CompareEvent::Rows(batch)).is_err() {
         return false;
     }

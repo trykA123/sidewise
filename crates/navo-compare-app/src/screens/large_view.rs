@@ -7,7 +7,7 @@ use sidewise_kit::prelude::*;
 use sidewise_kit::tokens;
 use sidewise_ui::browser::{ComparePhase, CompareTotals, SlowPath};
 
-use super::large_model::{PhaseMeters, phase_label, slow_note, tiles};
+use super::large_model::{PhaseMeters, phase_label, reading_line, slow_note, tiles};
 use crate::motion;
 
 gpui_kit::actions!(large, [ShowFolders]);
@@ -28,6 +28,8 @@ pub struct LargeSnapshot {
     pub meters: PhaseMeters,
     pub totals: CompareTotals,
     pub slow: Vec<SlowPath>,
+    /// The oldest content read still running; `None` when none runs.
+    pub reading: Option<SlowPath>,
     pub checking: bool,
 }
 
@@ -66,6 +68,7 @@ impl LargeView {
                 meters: PhaseMeters::default(),
                 totals: CompareTotals::default(),
                 slow: Vec::new(),
+                reading: None,
                 checking: true,
             },
             shown: [Some(0.0); 3],
@@ -215,10 +218,11 @@ impl LargeView {
 }
 
 impl Render for LargeView {
-    /// Draws the status tag, the meters, the tiles and the slow note inside the `Large` context.
+    /// Draws the status tag, the meters, the running read, the tiles and the slow note inside the `Large` context.
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = tokens::current(cx);
         let note = slow_note(&self.snapshot.slow);
+        let reading = reading_line(self.snapshot.reading.as_ref());
         div()
             .key_context(CONTEXT)
             .track_focus(&self.focus)
@@ -230,6 +234,12 @@ impl Render for LargeView {
             .p(t.spacing.xxl * 2.)
             .child(self.status_tag(cx))
             .children((0..PHASES.len()).map(|slot| self.meter_view(slot, cx)))
+            .children(reading.map(|text| {
+                div()
+                    .text_size(t.typography.small)
+                    .text_color(t.colors.muted)
+                    .child(text.clone().test_text(text))
+            }))
             .child(self.tiles_view(cx))
             .children(note.map(|text| {
                 div()

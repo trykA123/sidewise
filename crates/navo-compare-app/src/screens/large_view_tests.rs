@@ -6,7 +6,7 @@ use std::rc::Rc;
 use gpui_kit::base::test_support::texts;
 use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, Focusable as _, TestAppContext};
 use sidewise_kit::tokens::Mode;
-use sidewise_ui::browser::{ComparePhase, CompareTotals, CompareUpdate};
+use sidewise_ui::browser::{ComparePhase, CompareTotals, CompareUpdate, SlowPath};
 
 use super::large_model::PhaseMeters;
 use super::large_view::{LargeEvent, LargeSnapshot, LargeView, bind_keys};
@@ -41,6 +41,7 @@ fn snapshot(checking: bool) -> LargeSnapshot {
         meters,
         totals: CompareTotals::default(),
         slow: Vec::new(),
+        reading: None,
         checking,
     }
 }
@@ -85,4 +86,25 @@ fn enter_emits_show_folders(cx: &mut TestAppContext) {
         .expect("window");
     cx.simulate_keystrokes(w, "enter");
     assert_eq!(*log.borrow(), [LargeEvent::ShowFolders]);
+}
+
+#[gpui_kit::test]
+fn a_long_running_read_shows_its_path_and_age(cx: &mut TestAppContext) {
+    let (w, v) = view(cx);
+    let reading = LargeSnapshot {
+        reading: Some(SlowPath {
+            path: "crates/big.bin".to_owned(),
+            elapsed_ms: 6200,
+        }),
+        ..snapshot(true)
+    };
+    cx.update_window(w, |_, _, cx| {
+        v.update(cx, |v, cx| v.set_snapshot(reading, cx))
+    })
+    .expect("window");
+    let all = shown(cx, w);
+    assert!(
+        all.iter().any(|t| t == "Reading crates/big.bin · 6.2 s"),
+        "{all:?}"
+    );
 }

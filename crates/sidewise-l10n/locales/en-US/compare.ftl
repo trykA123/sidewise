@@ -389,3 +389,5 @@ compare-gutter-pending = …
 compare-gutter-not-checked = unchecked
 compare-gutter-unavailable = can't read
 compare-files-cannot-open = Files cannot be opened here.
+# The Large view while one file is still being read; $seconds is preformatted, e.g. 6.2.
+compare-large-reading = Reading { $path } · { $seconds } s

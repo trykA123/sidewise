@@ -59,7 +59,7 @@ fn failure_text(error: &CompareError) -> String {
     navo_l10n::tr(named.unwrap_or("compare-could-not-start"))
 }
 
-/// A row batch as rows, then its phase progress, then one slow path per file.
+/// A row batch as rows, then its phase progress, the running read, and one slow path per file.
 fn rows_of(batch: RowBatch) -> Vec<CompareUpdate> {
     let generation = batch.generation.get();
     let mut updates = vec![CompareUpdate::Rows {
@@ -81,6 +81,13 @@ fn rows_of(batch: RowBatch) -> Vec<CompareUpdate> {
             phase: phase_of(phase.phase),
             done: phase.done,
             total: phase.total,
+        });
+    }
+    if let Some(entry) = batch.reading {
+        updates.push(CompareUpdate::Reading {
+            generation,
+            path: entry.rel.as_path().to_text(),
+            elapsed_ms: entry.elapsed_ms,
         });
     }
     updates.extend(batch.slow.into_iter().map(|entry| CompareUpdate::SlowPath {

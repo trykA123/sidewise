@@ -2,7 +2,7 @@
 
 use sidewise_ui::browser::{ComparePhase, CompareTotals, CompareUpdate, SlowPath};
 
-use super::large_model::{Meter, PhaseMeters, phase_label, slow_note, tiles};
+use super::large_model::{Meter, PhaseMeters, phase_label, reading_line, slow_note, tiles};
 
 /// Builds one phase progress update for `generation`.
 fn progress(generation: u64, phase: ComparePhase, done: u64, total: Option<u64>) -> CompareUpdate {
@@ -218,4 +218,19 @@ fn totals_and_slow_path_reset_at_a_newer_generation() {
         assert!(meters.observe(&update));
         assert_eq!(meters.meter(ComparePhase::Listing), Meter::default());
     }
+}
+
+/// The running read shows its path and age from 1 s on, and nothing before.
+#[test]
+fn reading_line_texts() {
+    let read = |elapsed_ms| SlowPath {
+        path: "a/b.bin".to_owned(),
+        elapsed_ms,
+    };
+    assert_eq!(
+        reading_line(Some(&read(6200))),
+        Some("Reading a/b.bin · 6.2 s".to_owned())
+    );
+    assert_eq!(reading_line(Some(&read(400))), None);
+    assert_eq!(reading_line(None), None);
 }
