@@ -1,5 +1,5 @@
-//! View tests of what enters Recent (TN1): a compare is recorded once its run opened both
-//! sides, never when a side failed to open.
+//! View tests of Recent: a compare is recorded once its run opened both sides, never when a
+//! side failed to open (TN1); a Recent row of an open compare switches to its tab (TN2).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -66,17 +66,12 @@ fn held_shell(
     (opened, sink)
 }
 
-/// Makes the active start screen ask for a compare of the two folders, then settles.
-fn compare(
+/// Makes the active start screen emit `event`, then settles.
+fn emit(
     cx: &mut TestAppContext,
     (window, shell): &(AnyWindowHandle, Entity<Shell>),
-    f: &Folders,
+    event: StartEvent,
 ) {
-    let event = StartEvent::Compare {
-        left: SideSpec::Path(f.left.path().to_path_buf()),
-        right: SideSpec::Path(f.right.path().to_path_buf()),
-        choice: StartChoice::default(),
-    };
     cx.update_window(*window, |_, window, cx| {
         let screen = shell.read(cx).active_screen().cloned().expect("start tab");
         screen.update(cx, |_, cx| cx.emit(event));
@@ -84,6 +79,16 @@ fn compare(
     })
     .expect("window");
     cx.run_until_parked();
+}
+
+/// Makes the active start screen ask for a compare of the two folders, then settles.
+fn compare(cx: &mut TestAppContext, opened: &(AnyWindowHandle, Entity<Shell>), f: &Folders) {
+    let event = StartEvent::Compare {
+        left: SideSpec::Path(f.left.path().to_path_buf()),
+        right: SideSpec::Path(f.right.path().to_path_buf()),
+        choice: StartChoice::default(),
+    };
+    emit(cx, opened, event);
 }
 
 /// Sends `update` through the newest run's sink and lets the tab's wake pump apply it.
@@ -154,5 +159,36 @@ fn f5_on_a_tab_that_now_opens_records_it(cx: &mut TestAppContext) {
         folders.stored().len(),
         1,
         "the retry that opened was not recorded"
+    );
+}
+
+#[gpui_kit::test]
+fn a_recent_row_of_an_open_compare_switches_to_its_tab(cx: &mut TestAppContext) {
+    let folders = Folders::new("tn2");
+    let (opened, sink) = held_shell(cx, &folders);
+    compare(cx, &opened, &folders);
+    for update in rows_script() {
+        send(cx, &sink, update);
+    }
+    let (window, shell) = (opened.0, &opened.1);
+    cx.update_window(window, |_, window, cx| {
+        shell.update(cx, |shell, cx| shell.new_tab(window, cx));
+    })
+    .expect("window");
+    assert_eq!(shell.read_with(cx, |shell, _| shell.active()), 1);
+    let sidebar = shell.read_with(cx, |shell, _| shell.sidebar().clone());
+    let id = sidebar.read_with(cx, |sidebar, _| sidebar.rows().recent[0].id.clone());
+    let before = folders.stored()[0].opened;
+    emit(cx, &opened, StartEvent::Open { id });
+    assert_eq!(shell.read_with(cx, |shell, _| shell.tab_count()), 2);
+    assert_eq!(
+        shell.read_with(cx, |shell, _| shell.compare_tabs().len()),
+        1
+    );
+    assert_eq!(shell.read_with(cx, |shell, _| shell.active()), 0);
+    assert_eq!(
+        folders.stored()[0].opened,
+        before,
+        "nothing is recorded again"
     );
 }

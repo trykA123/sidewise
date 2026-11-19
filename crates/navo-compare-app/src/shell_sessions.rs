@@ -118,7 +118,22 @@ impl Shell {
         self.sync_rows(cx);
     }
 
-    /// Opens stored session `id` in the tab at `index`; a bad session shows one toast and the rows refresh.
+    /// The index of a tab that already shows a compare of the same two sides and the same
+    /// gitignore choice as `request`.
+    fn compare_like(&self, request: &CompareRequest, cx: &App) -> Option<usize> {
+        self.tabs.iter().position(|tab| match &tab.kind {
+            TabKind::Compare(open) => {
+                let open = open.read(cx).request();
+                open.left == request.left
+                    && open.right == request.right
+                    && open.choice.respect_gitignore == request.choice.respect_gitignore
+            }
+            TabKind::Start(_) => false,
+        })
+    }
+
+    /// Opens stored session `id` in the tab at `index`, or switches to the tab that already shows
+    /// it; a bad session shows one toast and the rows refresh.
     pub(in crate::shell) fn reopen(
         &mut self,
         (index, id): (usize, &str),
@@ -139,6 +154,9 @@ impl Shell {
                     right: side_spec(visit.right),
                     choice,
                 };
+                if let Some(open) = self.compare_like(&request, cx) {
+                    return self.select_tab(open, window, cx);
+                }
                 let _ = self.open_compare((index, request), window, cx);
             }
             Err(text) => {

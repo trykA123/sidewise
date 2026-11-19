@@ -70,7 +70,10 @@ fn a_git_compare_opens_is_listed_and_reopens(cx: &mut TestAppContext) {
     let rows = sidebar.read_with(cx, |sidebar, _| sidebar.rows().clone());
     assert_eq!(rows.recent.len(), 1, "Recent lists the Git compare");
     cx.update_window(opened.0, |_, window, cx| {
-        shell.update(cx, |shell, cx| shell.new_tab(window, cx));
+        shell.update(cx, |shell, cx| {
+            shell.new_tab(window, cx);
+            shell.close_tab(0, window, cx);
+        });
     })
     .expect("window");
     emit(
@@ -80,8 +83,8 @@ fn a_git_compare_opens_is_listed_and_reopens(cx: &mut TestAppContext) {
             id: rows.recent[0].id.clone(),
         },
     );
-    assert_eq!(shell.read_with(cx, |shell, _| shell.tab_count()), 2);
-    let again = shell.read_with(cx, |shell, _| shell.tab_title(1).to_string());
+    assert_eq!(shell.read_with(cx, |shell, _| shell.tab_count()), 1);
+    let again = shell.read_with(cx, |shell, _| shell.tab_title(0).to_string());
     assert_eq!(again, title, "the row reopens the same pair");
     let _ = fs::remove_dir_all(&folder);
 }

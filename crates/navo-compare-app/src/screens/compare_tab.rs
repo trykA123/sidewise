@@ -107,6 +107,7 @@ pub struct CompareTab {
     pub(super) attached: bool,
     /// True once `SidesOpened` was sent; a failed run never sets it, so F5 can still send it.
     pub(super) opened_sent: bool,
+    request: CompareRequest,
     title: SharedString,
     focus: FocusHandle,
     pub(super) subscriptions: Vec<Subscription>,
@@ -174,6 +175,7 @@ impl CompareTab {
             failure: None,
             attached: false,
             opened_sent: false,
+            request: request.clone(),
             title: title_of(request),
             focus: cx.focus_handle(),
             subscriptions: Vec::new(),
@@ -196,6 +198,11 @@ impl CompareTab {
         let mut tab = Self::from_started(started, &request, cx);
         tab.attach(&request, window, cx);
         Ok(tab)
+    }
+
+    /// What the tab was opened with; the shell compares it with a Recent row's compare.
+    pub fn request(&self) -> &CompareRequest {
+        &self.request
     }
 
     /// The tab's title: both folder names around an arrow.
