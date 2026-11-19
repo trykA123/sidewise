@@ -194,7 +194,7 @@ fn f5_shows_a_new_commit_and_an_older_tab_on_the_same_branch_keeps_its_rows(
         repo: repo.path().to_path_buf(),
         rev: "main".into(),
         inner: String::new(),
-        form: Form::Stored,
+        form: Form::Checkout,
     };
     let old = sides.side(&at).expect("the first tab's side");
     let old_commit = old.commit();

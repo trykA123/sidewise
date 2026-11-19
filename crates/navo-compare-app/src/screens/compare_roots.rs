@@ -1,6 +1,6 @@
 //! Turns the two sides of a compare into a run kind and two roots; part of the compare run model.
-//! A path side is a local root; a Git side is a stored-form `git` folder root; a remote Git
-//! side is a `git-remote` root.
+//! A path side is a local root; a Git side is a `git` folder root, or `git-checkout` against a
+//! plain folder; a remote Git side is a `git-remote` root.
 
 use std::path::Path;
 
@@ -50,13 +50,14 @@ pub(crate) fn location_of(path: &Path) -> Result<Location, RunError> {
         .map_err(|error| RunError::Location(error.to_string()))
 }
 
-/// Turns one side into its root: a local location for a path, a `git` location for a revision.
+/// Turns one side into its root: a local location for a path, a `git` or `git-checkout` location for a revision.
 /// A Git side whose location cannot be encoded is a `Location` error.
-fn root_of(spec: &SideSpec) -> Result<Location, RunError> {
+fn root_of(spec: &SideSpec, form: Form) -> Result<Location, RunError> {
     match spec {
         SideSpec::Path(path) => location_of(path),
-        SideSpec::GitRev { repo, rev } => encode(repo, rev, Form::Stored)
-            .map_err(|error| RunError::Location(format!("{error:?}"))),
+        SideSpec::GitRev { repo, rev } => {
+            encode(repo, rev, form).map_err(|error| RunError::Location(format!("{error:?}")))
+        }
         SideSpec::GitUrl { url, rev } => remote_root(url, rev),
     }
 }
@@ -81,6 +82,14 @@ fn git_with_path(path: &Path, side: Side) -> Result<RunKind, RunError> {
     }
 }
 
+/// The Git form for a side whose other side is `other`: checkout against a folder, else stored.
+fn form_against(other: &SideSpec) -> Form {
+    match other {
+        SideSpec::Path(_) => Form::Checkout,
+        _ => Form::Stored,
+    }
+}
+
 /// Decides the run kind and the two roots for a pair of sides.
 /// Two paths classify by the file system; a Git side counts as a folder; errors name the side.
 pub fn roots_of(left: &SideSpec, right: &SideSpec) -> Result<(RunKind, [Location; 2]), RunError> {
@@ -97,5 +106,11 @@ pub fn roots_of(left: &SideSpec, right: &SideSpec) -> Result<(RunKind, [Location
             git_with_path(path, Side::Left)?
         }
     };
-    Ok((kind, [root_of(left)?, root_of(right)?]))
+    Ok((
+        kind,
+        [
+            root_of(left, form_against(right))?,
+            root_of(right, form_against(left))?,
+        ],
+    ))
 }

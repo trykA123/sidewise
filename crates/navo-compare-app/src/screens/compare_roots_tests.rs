@@ -57,8 +57,32 @@ fn git_and_folder_are_folders() {
     let right = SideSpec::Path(dir.path().to_path_buf());
     let (kind, roots) = roots_of(&git(dir.path()), &right).expect("roots");
     assert_eq!(kind, RunKind::Folders);
-    assert!(roots[0].as_str().starts_with("git:"));
+    assert!(roots[0].as_str().starts_with("git-checkout:"));
     assert!(roots[1].is_local());
+}
+
+/// A folder and a Git side: the Git root on the right is the checkout form.
+#[test]
+fn folder_and_git_gives_the_right_side_checkout() {
+    let dir = Dir::new("fg");
+    let left = SideSpec::Path(dir.path().to_path_buf());
+    let (kind, roots) = roots_of(&left, &git(dir.path())).expect("roots");
+    assert_eq!(kind, RunKind::Folders);
+    assert!(roots[0].is_local());
+    assert!(roots[1].as_str().starts_with("git-checkout:"));
+}
+
+/// A local revision against a remote one keeps the stored form; the remote stays `git-remote`.
+#[test]
+fn git_and_remote_are_both_stored() {
+    let dir = Dir::new("gr");
+    let right = SideSpec::GitUrl {
+        url: "https://github.com/owner/repo".into(),
+        rev: "main".into(),
+    };
+    let (_, roots) = roots_of(&git(dir.path()), &right).expect("roots");
+    assert!(roots[0].as_str().starts_with("git:"));
+    assert!(roots[1].as_str().starts_with("git-remote:"));
 }
 
 /// A Git side and a file cannot be compared.
