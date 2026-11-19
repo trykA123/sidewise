@@ -4,6 +4,19 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- A Git revision against a working folder now shows its files as Git would check them out: `core.autocrlf`, `core.eol` and the `text`, `eol`, `ident` and `working-tree-encoding` attributes apply, so a folder checked out with `core.autocrlf=true` (the default in Git for Windows) shows only real edits. The attributes come from the revision, not from the folder. No filter program runs.
+- The Large view names the file it is reading when one read takes longer than a second, for example "Reading data/big.bin · 6.2 s", so a slow network file no longer looks like a frozen compare.
+
+### Known limits
+
+- Filter programs such as Git LFS never run, so an LFS file shows its pointer text and differs from the working folder.
+- A remote Git side shows its stored line endings, so against a working folder checked out with `core.autocrlf=true` its text files differ.
+- The system Git config is read from `%ProgramFiles%\Git\etc\gitconfig` (or the 32-bit and per-user Git folders); `%ProgramData%\Git\config` is not read.
+- The `ident` expansion is one byte shorter than Git's, so an `ident` file differs from a Git checkout of it by one byte.
+- A file with the `ident` or `working-tree-encoding` attribute over 1 MiB shows as unreadable against a working folder. Each compare and `F5` reads the Git side's text files again.
+
 ## [0.1.0-alpha.5] — 2026-11-19
 
 ### Added
