@@ -11,6 +11,7 @@ use gix::objs::tree::{EntryKind as GitKind, EntryRef};
 use gix::traverse::tree::{Visit, visit::Action};
 use sidewise_engine::model::{CancelToken, EntryKind, Reason};
 
+use crate::checkout::Checkout;
 pub use crate::lookup::lookup;
 use crate::repo::{Commit, Repo};
 
@@ -70,6 +71,42 @@ impl TreeIndex {
             .binary_search_by(|child| child.name.as_str().cmp(name))
             .ok()?;
         children.get(at)
+    }
+
+    /// Sets every file to its checkout size through `checkout.fix_child`, reading blobs with
+    /// `read`; folders in sorted key order, children in their order. Fails with `Stopped`
+    /// when `cancel` is set before a file; the index is then half-converted and must be dropped.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the G17 plan fixes this signature; the side calls it once per build"
+    )]
+    pub(crate) fn convert_sizes(
+        &mut self,
+        checkout: &mut Checkout,
+        repo: &gix::Repository,
+        read: &mut dyn FnMut(gix::ObjectId) -> Result<Vec<u8>, Reason>,
+        cancel: &CancelToken,
+    ) -> Result<(), Reason> {
+        let mut folders: Vec<(&String, &mut Vec<Child>)> = self.folders.iter_mut().collect();
+        folders.sort_by(|left, right| left.0.cmp(right.0));
+        let files = folders.into_iter().flat_map(|(folder, children)| {
+            children
+                .iter_mut()
+                .filter(|child| child.kind == EntryKind::File)
+                .map(move |child| (folder, child))
+        });
+        for (folder, child) in files {
+            if cancel.is_cancelled() {
+                return Err(Reason::Stopped);
+            }
+            let rel = if folder.is_empty() {
+                child.name.clone()
+            } else {
+                format!("{folder}/{}", child.name)
+            };
+            checkout.fix_child(repo, &rel, child, read);
+        }
+        Ok(())
     }
 }
 
