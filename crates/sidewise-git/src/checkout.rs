@@ -62,17 +62,24 @@ fn plan_from(attrs: &gix::attrs::search::Outcome, auto_crlf: bool) -> Plan {
 impl Checkout {
     /// Builds the converter for `tree` with drivers cleared and the eol settings of `repo`, else
     /// of `system`. A network `core.attributesFile` is `Unsupported`; a gix error or panic is
-    /// `Broken`. A repository with a working tree reads attributes from it, then its index.
+    /// `Broken`. Attributes come from `tree` only (an index made from it), never the working tree.
     pub fn open(
         repo: &gix::Repository,
         tree: gix::ObjectId,
         system: Option<&gix::config::File>,
     ) -> Result<Checkout, GitProblem> {
+        use gix::worktree::stack::state::attributes::Source;
         checkout_config::check_attributes_file(repo)?;
         catch_unwind(AssertUnwindSafe(|| {
-            let (pipeline, _index) = repo
-                .filter_pipeline(Some(tree))
+            let index = repo
+                .index_from_tree(&tree)
                 .map_err(|_| GitProblem::Broken)?;
+            let stack = repo
+                .attributes_only(&index, Source::IdMapping)
+                .map_err(|_| GitProblem::Broken)?
+                .detach();
+            let pipeline =
+                gix::filter::Pipeline::new(repo, stack).map_err(|_| GitProblem::Broken)?;
             let (mut pipeline, stack) = pipeline.into_parts();
             let options = pipeline.options_mut();
             options.drivers.clear();

@@ -4,6 +4,7 @@
 use crate::pointers::refuse_network;
 use crate::repo::GitProblem;
 use std::ffi::OsString;
+use std::io::Read;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
@@ -26,7 +27,9 @@ pub fn system_config_path(
 ) -> Option<PathBuf> {
     if let Some(flag) = var("GIT_CONFIG_NOSYSTEM") {
         let flag = flag.to_string_lossy().trim().to_ascii_lowercase();
-        if matches!(flag.as_str(), "1" | "true" | "yes" | "on") {
+        // Git's bool rules: any integer but 0 is true.
+        let number = flag.parse::<i64>().is_ok_and(|n| n != 0);
+        if number || matches!(flag.as_str(), "true" | "yes" | "on") {
             return None;
         }
     }
@@ -56,19 +59,31 @@ pub fn system_config_path(
     ];
     candidates.iter().find_map(|(key, tail)| {
         let path = Path::new(&non_empty(var, key)?).join(tail);
+        refuse_network(&path.to_string_lossy()).ok()?;
         exists(&path).then_some(path)
     })
 }
 
-/// Reads the system config at `path` without following includes. `None` for a network path,
-/// an unreadable file, one over `MAX_SYSTEM_CONFIG` bytes or a parse error.
+/// Reads the system config at `path` once, without following includes. `None` for a network
+/// path, an unreadable file, one over `MAX_SYSTEM_CONFIG` bytes, a parse error or a panic.
 pub fn read_system(path: &Path) -> Option<gix::config::File> {
+    use gix::config::file::Metadata;
     refuse_network(&path.to_string_lossy()).ok()?;
-    let meta = std::fs::metadata(path).ok()?;
-    if meta.len() > MAX_SYSTEM_CONFIG {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(MAX_SYSTEM_CONFIG + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_SYSTEM_CONFIG {
         return None;
     }
-    gix::config::File::from_path_no_includes(path.to_owned(), gix::config::Source::System).ok()
+    let meta = Metadata::from(gix::config::Source::System).at(path);
+    catch_unwind(AssertUnwindSafe(|| {
+        gix::config::File::from_bytes_no_includes(&bytes, meta, Default::default()).ok()
+    }))
+    .ok()
+    .flatten()
 }
 
 /// The system config of this machine, found from the environment and read without includes.

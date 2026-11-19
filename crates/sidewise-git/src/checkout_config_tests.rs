@@ -35,11 +35,35 @@ fn nosystem_wins_over_an_explicit_system_path() {
 
 #[test]
 fn nosystem_off_does_not_count() {
-    let vars = env(&[
-        ("GIT_CONFIG_NOSYSTEM", "off"),
-        ("GIT_CONFIG_SYSTEM", "/x/c"),
-    ]);
-    assert_eq!(path_for(&vars, false, &[]), Some(PathBuf::from("/x/c")));
+    for off in ["off", "0", " 0 "] {
+        let vars = env(&[("GIT_CONFIG_NOSYSTEM", off), ("GIT_CONFIG_SYSTEM", "/x/c")]);
+        assert_eq!(
+            path_for(&vars, false, &[]),
+            Some(PathBuf::from("/x/c")),
+            "{off}"
+        );
+    }
+}
+
+#[test]
+fn nosystem_any_nonzero_integer_is_true() {
+    for on in ["1", "2", "-1", " 42 "] {
+        let vars = env(&[("GIT_CONFIG_NOSYSTEM", on), ("GIT_CONFIG_SYSTEM", "/x/c")]);
+        assert_eq!(path_for(&vars, false, &[]), None, "{on}");
+    }
+}
+
+#[test]
+fn a_network_windows_candidate_is_never_checked() {
+    let vars = env(&[("LOCALAPPDATA", r"\\host\share")]);
+    let found = system_config_path(&|key| vars.get(key).cloned(), true, &|path| {
+        assert!(
+            !path.to_string_lossy().starts_with(r"\\"),
+            "stat of {path:?}"
+        );
+        true
+    });
+    assert_eq!(found, None);
 }
 
 #[test]

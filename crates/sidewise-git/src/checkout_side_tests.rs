@@ -15,13 +15,14 @@ fn rel(text: &str) -> RelPath {
 }
 
 /// A fixture with `a.txt` = `"one\ntwo\n"`, `autocrlf = true` in its config and `attributes`
-/// (when not empty) as the working tree `.gitattributes`.
+/// (when not empty) committed as `.gitattributes`.
 fn crlf_fixture(attributes: &str) -> Fixture {
     let fixture = Fixture::new();
-    let _ = fixture.commit("main", &[("a.txt", b"one\ntwo\n")]);
+    let mut files: Vec<(&str, &[u8])> = vec![("a.txt", b"one\ntwo\n")];
     if !attributes.is_empty() {
-        std::fs::write(fixture.path().join(".gitattributes"), attributes).expect("attributes");
+        files.push((".gitattributes", attributes.as_bytes()));
     }
+    let _ = fixture.commit("main", &files);
     let mut config = std::fs::OpenOptions::new()
         .append(true)
         .open(fixture.path().join(".git/config"))
@@ -103,7 +104,7 @@ fn minus_text_attribute_keeps_stored_size() {
     let fixture = crlf_fixture("*.txt -text\n");
     let side = side(&fixture, Form::Checkout);
     let list = listed(&side, &CancelToken::new()).expect("list");
-    assert_eq!(list, vec![("a.txt".to_owned(), 8)]);
+    assert!(list.contains(&("a.txt".to_owned(), 8)), "{list:?}");
     assert_eq!(read_all(&side, "a.txt"), b"one\ntwo\n");
 }
 

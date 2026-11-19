@@ -11,18 +11,19 @@ use std::io::Write;
 const fn assert_send<T: Send>() {}
 const _: () = assert_send::<Checkout>();
 
-/// A fixture with `files` committed, `attributes` as the working tree `.gitattributes` and
-/// `config` appended to `.git/config`; returns it with the opened repository and the tree id.
+/// A fixture with `files` committed, `attributes` (when not empty) committed as `.gitattributes`
+/// and `config` appended to `.git/config`; returns it with the opened repository and the tree id.
 fn setup(
     files: &[(&str, &[u8])],
     attributes: &str,
     config: &str,
 ) -> (Fixture, gix::Repository, gix::ObjectId) {
     let fixture = Fixture::new();
-    let commit = fixture.commit("main", files);
+    let mut all = files.to_vec();
     if !attributes.is_empty() {
-        std::fs::write(fixture.path().join(".gitattributes"), attributes).expect("attributes");
+        all.push((".gitattributes", attributes.as_bytes()));
     }
+    let commit = fixture.commit("main", &all);
     let mut file = std::fs::OpenOptions::new()
         .append(true)
         .open(fixture.path().join(".git/config"))
@@ -212,5 +213,27 @@ fn a_network_attributes_file_refuses_to_open() {
     assert_eq!(
         Checkout::open(&repo, tree, None).err(),
         Some(GitProblem::Unsupported)
+    );
+}
+
+#[test]
+fn uncommitted_working_tree_attributes_are_ignored() {
+    let (f, repo, tree) = setup(&[("a.txt", b"l\n")], "", "");
+    std::fs::write(f.path().join(".gitattributes"), "* text eol=crlf\n").expect("attributes");
+    let mut checkout = Checkout::open(&repo, tree, None).expect("open");
+    assert_eq!(
+        checkout.convert(&repo, "a.txt", b"l\n").expect("convert"),
+        b"l\n"
+    );
+}
+
+#[test]
+fn committed_attributes_apply_without_the_working_file() {
+    let (f, repo, tree) = setup(&[("a.txt", b"l\n")], "*.txt text eol=crlf\n", "");
+    assert!(!f.path().join(".gitattributes").exists());
+    let mut checkout = Checkout::open(&repo, tree, None).expect("open");
+    assert_eq!(
+        checkout.convert(&repo, "a.txt", b"l\n").expect("convert"),
+        b"l\r\n"
     );
 }
