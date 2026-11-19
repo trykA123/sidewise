@@ -150,10 +150,9 @@ fn no_filter_driver_runs() {
     let tmp = tempfile::tempdir().expect("temp");
     let marker = tmp.path().join("marker");
     let script = marker_script(tmp.path(), &marker);
-    let config = format!(
-        "{AUTOCRLF}[filter \"x\"]\n\tsmudge = {}\n",
-        script.display()
-    );
+    // Git config treats `\` as an escape, so a Windows path is quoted with its `\` doubled.
+    let path = script.display().to_string().replace('\\', "\\\\");
+    let config = format!("{AUTOCRLF}[filter \"x\"]\n\tsmudge = \"{path}\"\n");
     let (_f, repo, tree) = setup(&[("a.txt", b"one\n")], "*.txt filter=x\n", &config);
     let mut checkout = Checkout::open(&repo, tree, None).expect("open");
     let out = checkout.convert(&repo, "a.txt", b"one\n");
