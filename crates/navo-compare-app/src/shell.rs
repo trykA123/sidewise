@@ -217,7 +217,7 @@ impl Render for Shell {
         let t = tokens::current(cx);
         let (background, text) = (t.colors.background, t.colors.text);
         let (font, size) = (t.typography.ui_font.clone(), t.typography.body);
-        let root = div().key_context(CONTEXT).track_focus(&self.handle);
+        let root = shell_keys::wire_refresh(div().key_context(CONTEXT), &self.handle, cx);
         shell_menus::recent_actions(keys_sheet::wire(root, &self.layers.keys), cx)
             .relative()
             .on_action(cx.listener(|this, _: &NewTab, window, cx| this.new_tab(window, cx)))

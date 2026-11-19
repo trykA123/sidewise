@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use gpui_kit::test::TestWindowExt as _;
-use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext};
+use gpui_kit::{
+    AnyWindowHandle, AppContext as _, Entity, Modifiers, TestAppContext, VisualTestContext,
+};
 use navo_compare_cli::args::SideSpec;
 use sidewise_core::Location;
 use sidewise_git::fixture::Fixture;
@@ -249,4 +251,29 @@ fn f5_empties_the_folders_view_until_the_new_walk_sends_rows(cx: &mut TestAppCon
     assert!(lines(cx) > 0, "the tab lists its rows first");
     cx.simulate_keystrokes(*window, "f5");
     assert_eq!(lines(cx), 0, "no stale row ids before the first drain");
+}
+
+#[gpui_kit::test]
+fn f5_compares_again_from_the_filter_field_and_keeps_the_filter_text(cx: &mut TestAppContext) {
+    let repo = Fixture::new();
+    let _ = repo.commit("main", &[("a.txt", b"a")]);
+    let folder = TempDir::new("tn3-f5-filter");
+    fs::write(folder.path().join("a.txt"), b"a").expect("write");
+    let opened = shell(cx);
+    let runs = install_relay(cx);
+    open_at(cx, &opened, &runs, (0, git_request(&repo, "main", &folder)));
+    let (window, shell) = &opened;
+    let center = cx
+        .update_window(*window, |_, window, _| {
+            window.find("top-search").bounds().center()
+        })
+        .expect("window");
+    VisualTestContext::from_window(*window, cx).simulate_click(center, Modifiers::none());
+    cx.simulate_input(*window, "a.t");
+    let filter = |cx: &mut TestAppContext| shell.read_with(cx, |shell, cx| shell.topbar_filter(cx));
+    assert_eq!(filter(cx), "a.t", "the filter field has focus and its text");
+    let before = lock(&runs).len();
+    cx.simulate_keystrokes(*window, "f5");
+    assert_eq!(lock(&runs).len(), before + 1, "F5 compares again");
+    assert_eq!(filter(cx), "a.t", "the filter text stays");
 }

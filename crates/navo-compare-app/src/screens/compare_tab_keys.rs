@@ -93,7 +93,7 @@ impl CompareTab {
     /// branch's newest commit. The Folders rows are
     /// cleared at once (old row ids mean nothing to the new session); a restart starts at the
     /// root with no filter, as intended. Clears a failure, so a fixed side can be retried.
-    fn refresh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn refresh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(hooks) = compare_hooks(cx) else {
             return;
         };
