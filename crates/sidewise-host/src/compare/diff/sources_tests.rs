@@ -60,3 +60,14 @@ fn a_git_location_still_reaches_the_side_hook() {
     assert_eq!(result.err(), Some(Reason::NotFound));
     assert!(called.load(Ordering::SeqCst));
 }
+
+/// A `git-checkout` location reaches the side hook and its reason comes back unchanged.
+#[test]
+fn a_git_checkout_location_reaches_the_side_hook() {
+    let called = Arc::new(AtomicBool::new(false));
+    let sources = Sources::new(None, recording_side(&called));
+    let at = location("git-checkout", "/repo@main/a.txt");
+    let result = sources.open(&at, &CompareSettings::default(), &CancelToken::new());
+    assert_eq!(result.err(), Some(Reason::NotFound));
+    assert!(called.load(Ordering::SeqCst));
+}

@@ -167,10 +167,13 @@ impl Sources {
     }
 }
 
-/// True for the providers whose sides read Git objects through the side hook: `git` and
-/// `git-remote`.
+/// True for the providers whose sides read Git objects through the side hook: `git`,
+/// `git-checkout` and `git-remote`.
 fn reads_git(location: &Location) -> bool {
-    matches!(location.provider().as_str(), "git" | "git-remote")
+    matches!(
+        location.provider().as_str(),
+        "git" | "git-checkout" | "git-remote"
+    )
 }
 
 /// One Git blob to read: the side it lives on and its listing entry.

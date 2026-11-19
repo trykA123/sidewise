@@ -123,6 +123,19 @@ fn a_git_remote_target_is_read_only() {
     assert_eq!(ends_of(&request).unwrap_err(), CopyRefusal::ReadOnly);
 }
 
+/// A target on the `git-checkout` provider is never copyable.
+#[test]
+fn a_git_checkout_target_is_read_only() {
+    let (_work, mut request) = fixture(LEFT, RIGHT);
+    let checkout = Location::with_provider(
+        ProviderId::new("git-checkout").unwrap(),
+        ProviderPath::from_text("/x"),
+    )
+    .unwrap();
+    request.pair.right = Some(checkout);
+    assert_eq!(ends_of(&request).unwrap_err(), CopyRefusal::ReadOnly);
+}
+
 #[test]
 fn a_one_sided_pair_is_not_copyable() {
     let (_work, mut request) = fixture(LEFT, RIGHT);
