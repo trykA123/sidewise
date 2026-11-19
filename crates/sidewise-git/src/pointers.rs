@@ -116,7 +116,7 @@ fn check_alternates(start: Vec<PathBuf>) -> Result<(), GitProblem> {
 
 /// `Unsupported` for a UNC (`\\host`, `//host`), device (`\\?\UNC\`, `\\.\`) or NT
 /// (`\??\`) path, in either slash form.
-fn refuse_network(text: &str) -> Result<(), GitProblem> {
+pub(crate) fn refuse_network(text: &str) -> Result<(), GitProblem> {
     let back = text.replace('/', "\\");
     if back.starts_with("\\\\") || back.starts_with("\\??\\") {
         return Err(GitProblem::Unsupported);
